@@ -52,7 +52,9 @@ pub fn random_tx_set(n: &usize) -> Vec<Transaction> {
         outs.push((whoto, Scalar::from(out)));
 
 
-        Transaction::spend(&otas_creators, &outs.iter().map(|(a,v)|(a,v)).collect(), &get_test_ring(12), &Scalar::from(fee),)
+        let x = Transaction::spend(&otas_creators, &outs.iter().map(|(a,v)|(a,v)).collect(), &get_test_ring(12), &Scalar::from(fee),);
+        x.verify().unwrap();
+        x
     }).collect::<Vec<Transaction>>()
 }
 

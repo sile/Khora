@@ -16,11 +16,12 @@ use crate::external::transcript::TranscriptProtocol;
 use crate::external::inner_product_proof;
 use crate::external::util::{sub_vec, mul_vec, sum_of_powers, exp_iter, smul_vec, kron_vec, add_vec, inv_vec, VecPoly1};
 use crate::account::{OTAccount, Tag};
-use bytes::buf::BufExt;
+// use bytes::buf::BufExt;
 use std::time::Instant;
 
 use rayon::iter::ParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
+
 
 
 #[derive(Debug, Default, Hash, Clone, Serialize, Deserialize)]
@@ -136,7 +137,8 @@ impl SealSig{
         u4.extend( vexps  );
 
         let theta = add_vec( &v0.clone(), &smul_vec(z, &v1));
-        let theta_inv = inv_vec(&theta);
+        let theta_inv = inv_vec(&theta).into_par_iter().map(|x| if x==Scalar::zero() {Scalar::one()} else {x}).collect::<Vec<Scalar>>();
+        /*the origional version of the code did not impliment the hadamard inverse         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
         let mut zexp = z*z;
         let mut mu = smul_vec(&zexp, &v2);
         for iterv in vec![v3,v4,v5,v6,v7,v8.clone()] {
@@ -158,7 +160,7 @@ impl SealSig{
         let m = 3 + ring.len() + ring.len()*tags.len() + outputs.len()*BETA + 3 * tags.len();
 
         transcript.sealsig_domain_sep(ring.len() as u64, outputs.len() as u64);
-        let start = Instant::now();
+
         for (_i,acct) in ring.iter().enumerate() {
             transcript.append_point(b"in pk", &acct.pk.compress());
             transcript.append_point(b"in Com", &acct.com.com.compress());
@@ -244,7 +246,7 @@ impl SealSig{
         for inp in &inputs {
             cl.extend(inp.com.randomness);
             cr.extend(iter::once(Scalar::zero()));
-        }// master secret key used here
+        }
         
         for inp in &inputs {
             cl.extend(iter::once(inp.get_sk().unwrap()));
@@ -474,7 +476,7 @@ mod tests {
         let mut poss = Vec::<usize>::new();
         let mut ring = get_test_ring(123);
 
-        let acct = Account::new();
+        let acct = Account::new(&"hi".to_string());
         let accts = vec![acct.derive_ot(&Scalar::from(6u64)), acct.derive_ot(&Scalar::from(10u64))];
 
         for acct in accts.iter(){

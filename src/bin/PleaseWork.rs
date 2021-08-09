@@ -308,6 +308,7 @@ fn main() -> Result<(),std::io::Error> {
 
     // /* these next 2 lines are for if you dont want to store all the otaccounts. save a in a txt file and read location ___ */
     // let a = history.par_iter().map(|x|[x.pk.compress(),x.com.com.compress()]).collect::<Vec<[CompressedRistretto;2]>>();
+    // do storage stuff
     // let b = a.par_iter().map(|z| OTAccount::summon_ota(z)).collect::<Vec<_>>();
     
 
