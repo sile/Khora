@@ -1,0 +1,40 @@
+[package]
+name = "kora"
+version = "0.1.0"
+authors = ["CRGK"]
+edition = "2018"
+
+# cargo build
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "PleaseWork"
+path = "src/bin/PleaseWork.rs"
+
+[dependencies]
+curve25519-dalek = { version = "3", features = ["serde"] }
+rand = "0.7.3"
+serde = { version = "1.0", features = ["derive"] }
+sha3 = "0.9.1"
+merlin = "2.0.0"
+rayon = "1.5.0"
+byteorder = "1"
+aes-gcm-siv = "0.9.0"
+hmac = "0.10.1"
+bytes = "0.5.6"
+serde_cbor = "0.11.1"
+serde_json = "1.0.59"
+bincode = "1"
+structopt = "0.3.20"
+indicatif = "0.15.0"
+itertools = "0.8"
+modinverse = "0.1.1"
+polynomial-over-finite-prime-field = "0.3.1"
+buffered_offset_reader = "0.6.0"
+palaver = "0.2.5"
+bit-vec = "0.6.3"
+ahash = "0.7.4"
+rand_chacha = "0.3.1"
+crypto = "0.3.0"
+sha2 = "0.9.5"
+bitbuffer = "0.10.3"
+bitbit = "0.2.0"
