@@ -29,7 +29,6 @@ pub fn key_hash(key: &u32, t: &u32) -> i128 {
     i128::from_le_bytes(c.to_vec()[..16].try_into().unwrap())
 }
 const P: i128 = 9223372036854775783;//a little below 2^63 so hash approximatly finds a rand num in this field
-/* IT IS NOW ILLEGAL TO HAVE RINGS OF THE SAME SIZE AS INPUTS */ // <------ i dont think thats true anymore
 pub fn generate_ring(s: &Vec<usize>, r: &u64, now: &u64) -> Vec<u8> {
     /*
     IF YOU WANT TO MAKE SURE EVERY MEMBER OOF THE RING IS UNIQUE,
@@ -40,8 +39,6 @@ pub fn generate_ring(s: &Vec<usize>, r: &u64, now: &u64) -> Vec<u8> {
     let s = s.to_owned();
     let r = *r as i128;
 
-    /* errors are spit out for non primes */
-    // println!("{:?}",u64::MAX); //
 
     let mut rng = rand::thread_rng();
     let key: u32 = rng.gen();
@@ -93,7 +90,7 @@ pub fn generate_ring(s: &Vec<usize>, r: &u64, now: &u64) -> Vec<u8> {
     }
 
 
-    /* these next few lines are irrelevant */
+    /* these next few lines are irrelevant (they just print the polynomial. feel free to uncomment it out) */
     // let mut places = Vec::<i128>::new();
     // for x in 0..r {
     //     let mut throwaway = poly.eval(&(x as i128));
@@ -131,19 +128,18 @@ pub fn generate_ring(s: &Vec<usize>, r: &u64, now: &u64) -> Vec<u8> {
     let mut coefficients = Vec::<u64>::new();
     for mut c in poly.coefs() {
         if c < 0 {c = c+P;}
-        coefficients.push(c as u64); // i hope this doesnt cause a super rare error!
+        coefficients.push(c as u64);
     }
 
     let mut send = Vec::<u8>::new();
-    // send.push(r as u8);
-    send.extend((r as u32).to_le_bytes());
-    send.extend(key.to_le_bytes()); // i can discriminate stake tx by making them less shorter than 16 bytes (just 1 number)
-    send.extend(now.to_le_bytes()); // or now r key = 0
+    send.extend((r as u16).to_le_bytes());
+    send.extend(key.to_le_bytes());
+    send.extend(now.to_le_bytes());
     for i in coefficients.clone() {
         send.extend(i.to_le_bytes());
     }
 
-    // /* send key, polynomial, now, ring size */
+    /* send ring size, key, now, polynomial */
 
     send
 }
@@ -154,9 +150,9 @@ pub fn recieve_ring(recieved: &Vec<u8>) -> Vec<u64> {
 
     /* send the info over */
     let mut recieved = recieved.to_owned();
-    let r_bytes: Vec<u8> = recieved.par_drain(..4).collect(); //u32
-    let r_bytes: Result<[u8;4],_> = r_bytes.try_into();
-    let r = u32::from_le_bytes(r_bytes.unwrap());
+    let r_bytes: Vec<u8> = recieved.par_drain(..2).collect(); //u16
+    let r_bytes: Result<[u8;2],_> = r_bytes.try_into();
+    let r = u16::from_le_bytes(r_bytes.unwrap());
 
     let key_bytes: Vec<u8> = recieved.par_drain(..4).collect(); //u32
     let key_bytes: Result<[u8;4],_> = key_bytes.try_into();
@@ -172,7 +168,6 @@ pub fn recieve_ring(recieved: &Vec<u8>) -> Vec<u64> {
     while recieved.len() > 0 {
         let ci: Vec<u8> = recieved.par_drain(..8).collect();
         let ci: [u8;8] = ci.try_into().unwrap();
-        // print_type_of(&ci);
         coefficients.push(u64::from_le_bytes(ci));
     }
 
@@ -202,10 +197,6 @@ pub fn recieve_ring(recieved: &Vec<u8>) -> Vec<u64> {
 
     }
 
-    // let set: HashSet<_> = places.drain(..).collect();
-    // places.extend(set.into_iter()); // this ruins the order
-    // places.sort();
-    // places.dedup();
     
     places.iter().unique().map(|&x| x as u64).collect()
 }

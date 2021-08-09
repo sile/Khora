@@ -65,20 +65,12 @@ impl BinRep for Scalar {
 
 impl SealSig{
     fn get_G(u: &Scalar, v: &Scalar, ring: &[&OTAccount], tags: &[&Tag], outputs: &[&OTAccount], fee: &Scalar, w: &Scalar, P: &Vec<RistrettoPoint>, Gprime: &Vec<RistrettoPoint> ) -> Vec<RistrettoPoint> {
-        // this function should use fee somewhere
-        // let start = Instant::now();
         let T_hat = RistrettoPoint::vartime_multiscalar_mul(
             exp_iter(*v).take(tags.len()).map(|vexp|u*u*vexp), //exp_iter makes a vector of powers
             tags.iter().map(|tag| tag.decompress().unwrap()));
 
-        // println!("get_G {:?} ms", start.elapsed().as_millis()); let start = Instant::now();
         let mut innerG = vec![RISTRETTO_BASEPOINT_POINT, PEDERSEN_H(), T_hat];
-        // println!("get_G {:?} ms", start.elapsed().as_millis()); let start = Instant::now();
         innerG.par_extend(ring.par_iter().map(|inp| inp.pk + u*inp.com.com).collect::<Vec<RistrettoPoint>>());
-        // for inp in ring{
-        //     innerG.push(inp.pk + u*inp.com.com)
-        // }
-        // println!("get_G {:?} ms", start.elapsed().as_millis()); let start = Instant::now();
 
         let mut Gw: Vec<RistrettoPoint> = innerG.par_iter().zip(P).map(|(gP,iP)|w*gP + iP).collect();
         Gw.par_extend(Gprime);
@@ -171,24 +163,23 @@ impl SealSig{
             transcript.append_point(b"in pk", &acct.pk.compress());
             transcript.append_point(b"in Com", &acct.com.com.compress());
         }
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+
         for (_i,acct) in outputs.iter().enumerate() {
             transcript.append_point(b"out pk", &acct.pk.compress());
             transcript.append_point(b"out Com", &acct.com.com.compress());
         }
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+
         let u = transcript.challenge_scalar(b"u for exponents");
         let v = transcript.challenge_scalar(b"v for exponents");
         let F = transcript.challenge_point(b"F for vec-com");
         let mut P = vec![transcript.challenge_point(b"blinding G"),
                          transcript.challenge_point(b"blinding H"),
                          transcript.challenge_point(b"blinding Tag")];
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for _ in 0..(ring.len()) {
             P.push(transcript.challenge_point(b"blinding Vs"));
         }
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
-        // let Gprime: Vec<RistrettoPoint> = (0..(ring.len()*tags.len() + outputs.len()*64 + 3*tags.len())).into_par_iter().map(|_| transcript.clone().challenge_point(b"Gprime")).collect();
+        
         let Gprime: Vec<RistrettoPoint> = (0..(ring.len()*tags.len() + outputs.len()*BETA + 3*tags.len())).map(|_| transcript.challenge_point(b"Gprime")).collect();
         let H: Vec<RistrettoPoint> = (0..m).map(|_| transcript.challenge_point(b"H")).collect();
 
@@ -204,7 +195,7 @@ impl SealSig{
         let mut ehat = vec![Scalar::zero(); ring.len()];
         let mut B = Vec::<Vec<Scalar>>::new();
         let mut Bminus1 = Vec::<Vec<Scalar>>::new();
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for (acct, vexp) in inputs.iter().zip(exp_iter(v).take(inputs.len())) {
             let mut ei = vec![Scalar::zero(); ring.len()];
             for (i, racct) in ring.iter().enumerate() {
@@ -213,17 +204,17 @@ impl SealSig{
                     ehat[i] += vexp;
                     break;
                 }
-            } // I could totally parallelize this
+            }
             Eminus1.push(sub_vec(&ei, &vec![Scalar::one(); ring.len()]));
             E.push(ei);
         }
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for acct in outputs {
             let bin = acct.com.amount.unwrap().to_binary()[..BETA].to_vec();
             Bminus1.push(sub_vec(&bin,&vec![Scalar::one(); BETA]));
-            B.push(bin); // and this
+            B.push(bin);
         }
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         // master secret key used here
         let xi = -exp_iter(v).take(tags.len()).zip(&inputs).map(|(vexp, acct)| vexp*( u*acct.com.amount.unwrap() + u*u*acct.get_sk().unwrap().invert()  ) ).sum::<Scalar>();
         let eta = -exp_iter(v).take(tags.len()).zip(&inputs).map(|(vexp, acct)| vexp*( u*acct.com.randomness.unwrap() + acct.get_sk().unwrap()  ) ).sum::<Scalar>();
@@ -233,33 +224,33 @@ impl SealSig{
         let mut cl: Vec<Scalar> = iter::once(xi).chain(iter::once(eta))
             .chain(iter::once(Scalar::one()))
             .chain(ehat.iter().cloned()).collect();
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for (e,em) in E.iter().zip(Eminus1) {
             cl.extend(e);
             cr.extend(em);
         }
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for (b,bm) in B.iter().zip(Bminus1) {
             cl.extend(b);
             cr.extend(bm);
         }
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
 
         for inp in &inputs {
             cl.extend(inp.com.amount);
             cr.extend(iter::once(Scalar::zero()));
         }
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for inp in &inputs {
             cl.extend(inp.com.randomness);
             cr.extend(iter::once(Scalar::zero()));
         }// master secret key used here
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for inp in &inputs {
             cl.extend(iter::once(inp.get_sk().unwrap()));
             cr.extend(iter::once(inp.get_sk().unwrap().invert()));
         }
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
 
         let A = rA*F
             + RistrettoPoint::multiscalar_mul(&cl, &G0)
@@ -333,12 +324,12 @@ impl SealSig{
 
         let mut Gpad = Gw;
         let mut Hpad = H;
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for _ in 0..padlen {
             Gpad.push(transcript.challenge_point(b"padding G"));
             Hpad.push(transcript.challenge_point(b"padding H"));
         }
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
 
         let ipp_proof = inner_product_proof::InnerProductProof::create(
             transcript,
@@ -350,7 +341,7 @@ impl SealSig{
             lpad.clone(),
             rpad.clone(),
         );
-        // println!("{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
 
         Ok(SealSig{
             A: A.compress(),
@@ -370,17 +361,16 @@ impl SealSig{
 
         transcript.sealsig_domain_sep(ring.len() as u64, outputs.len() as u64);
 
-        // let start = Instant::now();
         for (_i,acct) in ring.iter().enumerate() {
             transcript.append_point(b"in pk", &acct.pk.compress());
             transcript.append_point(b"in Com", &acct.com.com.compress());
         }
-        // println!("a{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for (_i,acct) in outputs.iter().enumerate() {
             transcript.append_point(b"out pk", &acct.pk.compress());
             transcript.append_point(b"out Com", &acct.com.com.compress());
         }
-        // println!("b{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
 
         let u = transcript.challenge_scalar(b"u for exponents");
         let v = transcript.challenge_scalar(b"v for exponents");
@@ -388,12 +378,10 @@ impl SealSig{
         let mut P = vec![transcript.challenge_point(b"blinding G"),
                          transcript.challenge_point(b"blinding H"),
                          transcript.challenge_point(b"blinding Tag")];
-        // println!("c{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for _ in 0..(ring.len()) {
             P.push(transcript.challenge_point(b"blinding Vs"));
         }
-        // println!("d{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
-        // let Gprime: Vec<RistrettoPoint> = (0..(ring.len()*tags.len() + outputs.len()*64 + 3*tags.len())).into_par_iter().map(|_| transcript.clone().challenge_point(b"Gprime")).collect();
         let Gprime: Vec<RistrettoPoint> = (0..(ring.len()*tags.len() + outputs.len()*BETA + 3*tags.len())).map(|_| transcript.challenge_point(b"Gprime")).collect();
         let H: Vec<RistrettoPoint> = (0..m).map(|_| transcript.challenge_point(b"H")).collect();
 
@@ -409,9 +397,9 @@ impl SealSig{
 
         let x = transcript.challenge_scalar(b"x");
 
-        // println!("e{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         let Gw = SealSig::get_G(&u, &v, &ring, &tags, &outputs, fee, &w, &P, &Gprime );
-        // println!("f{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
 
         transcript.append_scalar(b"tau", &self.tau);
         transcript.append_scalar(b"r", &self.r);
@@ -423,7 +411,7 @@ impl SealSig{
 
         let Q = ippw * RISTRETTO_BASEPOINT_POINT;
 
-        // println!("g{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         let ipPmQ = RistrettoPoint::vartime_multiscalar_mul(iter::once(Scalar::one())
                                                                 .chain(iter::once(x))
                                                                 .chain(alpha)
@@ -437,7 +425,7 @@ impl SealSig{
                                                                 .chain(iter::once(Q)));
 
 
-        // println!("h{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         let padlen = m.next_power_of_two() -m;
 
         let mut G_factors: Vec<Scalar> = iter::repeat(Scalar::one()).take(m).collect();
@@ -447,19 +435,18 @@ impl SealSig{
 
         let mut Gpad = Gw.clone();
         let mut Hpad = H.clone();
-        // println!("i{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         for _ in 0..padlen {
             Gpad.push(transcript.challenge_point(b"padding G"));
             Hpad.push(transcript.challenge_point(b"padding H"));
         }
-        // println!("j{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
+        
         
         if self.ipp_proof.verify(Gpad.len(), transcript, G_factors, H_factors, &ipPmQ, &Q, &Gpad, &Hpad).is_err() {
             return Err(SealError::VerificationErrorIPP)
         }
 
-        // println!("k{:?} ms", start.elapsed().as_millis()); let start = Instant::now();
-
+        
         let lnd = self.t*RISTRETTO_BASEPOINT_POINT + self.tau*PEDERSEN_H();
         let comsum = exp_iter(y).take(outputs.len()).zip(outputs).map(|(yexp,acct)| (z*z*yexp)*acct.com.com).sum::<RistrettoPoint>();
         let rnd = delta*RISTRETTO_BASEPOINT_POINT + comsum + x*self.T1.decompress().unwrap() + x*x*self.T2.decompress().unwrap();
@@ -474,48 +461,48 @@ impl SealSig{
 }
 
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use rand::random;
-//     use crate::transaction::get_test_ring;
-//     use crate::account::Account;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::random;
+    use crate::transaction::get_test_ring;
+    use crate::account::Account;
 
-//     #[test]
-//     fn sealsig_create() {
-//         let mut prover_transcript = Transcript::new(b"test example");
-//         let mut poss = Vec::<usize>::new();
-//         let mut ring = get_test_ring(123);
+    #[test]
+    fn sealsig_create() {
+        let mut prover_transcript = Transcript::new(b"test example");
+        let mut poss = Vec::<usize>::new();
+        let mut ring = get_test_ring(123);
 
-//         let acct = Account::new();
-//         let accts = vec![acct.derive_ot(&Scalar::from(6u64)), acct.derive_ot(&Scalar::from(10u64))];
+        let acct = Account::new();
+        let accts = vec![acct.derive_ot(&Scalar::from(6u64)), acct.derive_ot(&Scalar::from(10u64))];
 
-//         for acct in accts.iter(){
-//             let mut pos = random::<usize>() % ring.len();
-//             while poss.contains(&pos) {
-//                 pos = random::<usize>() % ring.len();
-//             }
-//             ring[pos] = acct.clone();
-//             poss.push(pos);
-//         }
-//         let mut outputs = Vec::<OTAccount>::new();
-//         let recipients = vec![(&acct,Scalar::from(6u64)),(&acct,Scalar::from(10u64))];
-//         for (rcpt, amout) in recipients {
-//             outputs.push(rcpt.derive_ot(&amout));
-//         }
+        for acct in accts.iter(){
+            let mut pos = random::<usize>() % ring.len();
+            while poss.contains(&pos) {
+                pos = random::<usize>() % ring.len();
+            }
+            ring[pos] = acct.clone();
+            poss.push(pos);
+        }
+        let mut outputs = Vec::<OTAccount>::new();
+        let recipients = vec![(&acct,Scalar::from(6u64)),(&acct,Scalar::from(10u64))];
+        for (rcpt, amout) in recipients {
+            outputs.push(rcpt.derive_ot(&amout));
+        }
 
-//         let tagelem: Vec<Tag> = poss.iter().map(|pos| ring[*pos].clone()).map(|acct| acct.get_tag().unwrap().clone()).collect();
-//         let tags: Vec<&Tag> = tagelem.iter().map(|t|t).collect();
+        let tagelem: Vec<Tag> = poss.iter().map(|pos| ring[*pos].clone()).map(|acct| acct.get_tag().unwrap().clone()).collect();
+        let tags: Vec<&Tag> = tagelem.iter().map(|t|t).collect();
 
-//         let inputs:Vec<OTAccount> = ring.iter().map(|acct|(acct.clone())).collect();
-//         let sigin:Vec<&OTAccount> = ring.iter().map(|acct|acct).collect();
-//         let sigout:Vec<&OTAccount> = outputs.iter().map(|acct|acct).collect();
+        let inputs:Vec<OTAccount> = ring.iter().map(|acct|(acct.clone())).collect();
+        let sigin:Vec<&OTAccount> = ring.iter().map(|acct|acct).collect();
+        let sigout:Vec<&OTAccount> = outputs.iter().map(|acct|acct).collect();
 
-//         let sigma = SealSig::sign(&mut prover_transcript, &sigin, &tags, &poss, &sigout, &Scalar::zero()).expect("work not");
+        let sigma = SealSig::sign(&mut prover_transcript, &sigin, &tags, &poss, &sigout, &Scalar::zero()).expect("work not");
 
-//         let mut verifier_transcript = Transcript::new(b"test example");
+        let mut verifier_transcript = Transcript::new(b"test example");
 
-//         let s = sigma.verify(&mut verifier_transcript, &sigin, &tags, &sigout, &Scalar::zero());
-//         assert!(s.is_ok());
-//     }
-// }
+        let s = sigma.verify(&mut verifier_transcript, &sigin, &tags, &sigout, &Scalar::zero());
+        assert!(s.is_ok());
+    }
+}

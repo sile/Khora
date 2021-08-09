@@ -41,12 +41,12 @@ impl Transaction {
 
     pub fn spend(accts: &Vec<OTAccount>, recipients: &Vec<(&Account, &Scalar)>, inring: &Vec<OTAccount>, fee_amount: &Scalar) -> Transaction{
         let mut poss = Vec::<usize>::new();
-        let mut ring = inring.clone(); // some ring members get replaces with me, so 2 inp => outs>2
+        let mut ring = inring.clone();
         for acct in accts.iter(){
             let mut pos = random::<usize>() % ring.len();
             while poss.contains(&pos) { // This  puts the 2 inps in random locations
                 pos = random::<usize>() % ring.len();
-            } // I'm going to do that log scheme thing
+            }
             ring[pos] = acct.clone();
             poss.push(pos);
         }
@@ -132,7 +132,6 @@ impl Transaction {
     }
 
     pub fn try_receive(&self, acc: &Account) -> Vec<OTAccount> {
-        // let mut accts = Vec::<OTAccount>::new();
         let outputs: Vec<OTAccount> = self.outputs.clone();
         let mine: Vec<OTAccount> = outputs.into_iter().filter(|x| acc.receive_ot(x).is_ok()).collect();
         let accts: Vec<OTAccount> = mine.iter().map(|x| acc.receive_ot(x).unwrap()).collect();
@@ -232,21 +231,21 @@ impl SavedTransactionFull {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     #![allow(dead_code)]
-//     use super::*;
-//     use crate::commitment::Commitment;
+#[cfg(test)]
+mod tests {
+    #![allow(dead_code)]
+    use super::*;
+    use crate::commitment::Commitment;
 
-//     #[test]
-//     fn create_tx() {
+    #[test]
+    fn create_tx() {
 
-//         let acct = Account::new();
-//         let ota1 = acct.derive_ot(&Scalar::from(6u64));
-//         let ota2 = acct.derive_ot(&Scalar::from(10u64));
-//         let ota3 = acct.derive_ot(&Scalar::from(5u64));
+        let acct = Account::new();
+        let ota1 = acct.derive_ot(&Scalar::from(6u64));
+        let ota2 = acct.derive_ot(&Scalar::from(10u64));
+        let ota3 = acct.derive_ot(&Scalar::from(5u64));
 
-//         let tx = Transaction::spend(&vec![ota1,ota2,ota3], &vec![(&acct,&Scalar::from(6u64)),(&acct,&Scalar::from(3u64)),(&acct,&Scalar::from(12u64))], &get_test_ring(123));
-//         assert!(tx.verify().is_ok());
-//     }
-// }
+        let tx = Transaction::spend(&vec![ota1,ota2,ota3], &vec![(&acct,&Scalar::from(6u64)),(&acct,&Scalar::from(3u64)),(&acct,&Scalar::from(12u64))], &get_test_ring(123));
+        assert!(tx.verify().is_ok());
+    }
+}

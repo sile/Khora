@@ -1,7 +1,6 @@
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::ristretto::{RistrettoPoint, CompressedRistretto};
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-// use std::default::default;
 use std::hash::{Hash, Hasher};
 use sha3::{Digest, Sha3_512};
 use rand::{thread_rng, Rng};
@@ -68,15 +67,6 @@ impl Default for OTAccount{
         }
     }
 }
-
-// pub const STAKEREADER_ACC: Account = Account{
-//     sk: Scalar::one(),
-//     pk: Account::tag_k_gen(Scalar::one()),
-//     ask: Scalar::one(),
-//     apk: RISTRETTO_BASEPOINT_POINT,
-//     vsk: Scalar::one(),
-//     vpk: RISTRETTO_BASEPOINT_POINT,
-// };
 
 pub fn stakereader_acc() -> Account { // use this to check the to staker verifies
     Account{
@@ -202,7 +192,6 @@ impl Account {
     pub fn read_ot(&self, acc: &OTAccount) -> Result<OTAccount, AccountError> {
         let mut label = acc.pk.compress().as_bytes().to_vec();
         label.extend( acc.com.com.compress().as_bytes().to_vec());
-        // keep in mind i dont actually save the encrypted coin key in the blockchain for inputs
         let ck = match acc.eck.as_ref().unwrap().decrypt(&self.vsk, &label) {
             Ok(ck) => ck,  // viewing secret key (can also view amount)
             Err(_) => return Err(AccountError::NotOurAccount)
@@ -229,7 +218,7 @@ impl Account {
         let com = Commitment::commit(amount, &randomness);
         let contains = ( *amount, randomness);
         let serialized = serde_cbor::to_vec(&contains).unwrap();
-        let ek = [0u8; 32]; // <----- if you want OT stk account, set this to something else
+        let ek = [0u8; 32]; // <----- if you want OT stk account, set this to something else (thugh they can't actually associate it with you)
         let mut hasher = Sha3_512::new();
         hasher.update(&self.pk.compress().as_bytes());
         hasher.update(&ek);

@@ -47,7 +47,7 @@ use kora::lpke::Ciphertext;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 // use omniring::validation::*;
-use kora::cleaned_up::*;
+use kora::validation::*;
 use kora::seal::BETA;
 use kora::constants::PEDERSEN_H;
 /*
@@ -57,7 +57,7 @@ cargo run --bin PleaseWork --release -- -r  123
 */
 
 /* Anonymity ring size: proof size = 2*ceil(log_2 (3+|R|+|R||S|+β|T|+3|S|))+9... */
-// |R| = floor((2^n-3-64|T|-3|S|)/(1+|S|)) for maximum efficiency (constant inner product proof size)
+// |R| = floor((2^n-3-β|T|-3|S|)/(1+|S|)) for maximum efficiency (constant inner product proof size)
 // we'd make 2^n = 128 or something REMEMBER TO SWITCH TO FLOAT FOR THIS... we cant do max efficiency with poly predefine
 // we're going with a bit less than 128, β = 64
 // there's an upper bound on the number of outputs (page 6)
@@ -114,17 +114,12 @@ fn main() -> Result<(),std::io::Error> {
 
 
 
-    /* true means no onw tried to burn you */
-    // println!("{:?}",burn_down_the_burn()); // maybe make it auto delete the tx with the lowest amount of money?
-    // wait burn bug still works for old tx
-
-
 
 
     /* i can save a LOT of memory by only saving the first 8 digits of all scalars given no one has that much money */
 
     /* shard 0 act as either collectors (run block merger) or miners (make txses); ~128ish tx/block? this can be determined after release? */
-    // File::create("saved/outputs/pk").unwrap(); // 
+    // File::create("saved/outputs/pk").unwrap();
     // File::create("saved/outputs/com").unwrap();
     // File::create("saved/outputs/stk_pk").unwrap();
     // File::create("saved/outputs/stk_amnt").unwrap();
@@ -134,7 +129,7 @@ fn main() -> Result<(),std::io::Error> {
     /* lets not directly say hardware requirements, do suggestions that evolve over time */
     /* etherium has comittes of 128 or more */
     /* if the leader makes multiple blocks, they get slashed */
-    let tx_processed = 64 as usize; /* make low stakers less likely to be selected to avoin sybal attacks */
+    let tx_processed = 256 as usize; /* make low stakers less likely to be selected to avoin sybal attacks */
     let max_shards = 64usize; /* this if for teting purposes... there IS NO MAX SHARDS */
     
 
@@ -194,8 +189,9 @@ fn main() -> Result<(),std::io::Error> {
     let mut sheight = 0u64;
     block.stkscan(&ryan, &mut smine, &mut sheight);
     println!("my stk accs: {:?}",smine.len());
-    // println!("I exit being a staker");
 
+
+    // println!("I exit being a staker");
     // let mut txvec = random_polytx_set(&tx_processed, &history, &lastheight);
     // let txsleave = Transaction::spend_ring(&vec![smine[0].1.to_owned()], &vec![]).polyform(&smine[0].0.to_le_bytes().to_vec());
     // txsleave.verifystk(&stkinfo).unwrap();// all to fee so shouldn't mess up my ordering with the randblock (but mught with comittee)
@@ -230,6 +226,7 @@ fn main() -> Result<(),std::io::Error> {
 
 
     let mut queue = (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
+    let mut exitqueue = (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
     let mut comittee = (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<Vec<usize>>()).collect::<Vec<_>>();
     let mut alltagsever = Vec::<CompressedRistretto>::new();
     let mut nextblock = NextBlock::default();
@@ -246,7 +243,7 @@ fn main() -> Result<(),std::io::Error> {
         let last_name = Scalar::from_hash(hasher.clone()).as_bytes().to_vec();
         println!("time to hash last block: {:?} ms",start.elapsed().as_millis());
         for i in 0..max_shards {
-            select_stakers(&last_name,&(i as u128),&mut queue[i],&mut comittee[i],&stkinfo);
+            select_stakers(&last_name,&(i as u128),&mut queue[i], &mut exitqueue[i],&mut comittee[i],&stkinfo);
         }
         println!("comittee 0: {:?}",comittee[0]);
         println!("queue 0: {:?}",queue[0]);
@@ -255,7 +252,6 @@ fn main() -> Result<(),std::io::Error> {
             let b = a.derive_stk_ot(&Scalar::from(stkinfo[*x].1));
             a.receive_ot(&b).unwrap().sk.unwrap()
         }).collect::<Vec<Scalar>>()).collect::<Vec<Vec<Scalar>>>();
-        // let val_pool = vals.par_iter().map(|x|(x*PEDERSEN_H()).compress()).collect::<Vec<CompressedRistretto>>();
         let val_pool = comittee.par_iter().map(|y|y.par_iter().map(|x| *x as u64).collect::<Vec<u64>>()).collect::<Vec<Vec<u64>>>();
 
         let lkey = vals[0][2];

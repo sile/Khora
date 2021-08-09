@@ -8,4 +8,4 @@ pub mod external;
 pub mod ringmaker;
 pub mod randblock;
 pub mod bloom;
-pub mod cleaned_up;
+pub mod validation;

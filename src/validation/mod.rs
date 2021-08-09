@@ -24,7 +24,7 @@ use std::collections::{HashSet, VecDeque};
 use std::iter::FromIterator;
 use crate::constants::PEDERSEN_H;
 
-pub const NUMBER_OF_VALIDATORS: u16 = 16;
+pub const NUMBER_OF_VALIDATORS: u16 = 128;
 pub const REPLACERATE: usize = 4;
 const BLOCK_KEYWORD: [u8;7] = [107,141,142,162,151,145,154]; // Gabriel in octal
 pub const INFLATION_CONSTANT: u64 = 2u64.pow(40);
@@ -44,7 +44,7 @@ pub struct Syncedtx{
     pub fees: u64,
 }
 
-impl Syncedtx { // more sent vs more calculated... do i store this in true block structure?
+impl Syncedtx {
     pub fn from0(txs: &Vec<SavedTransactionFull>)->Syncedtx {
         let stkout = Vec::<u64>::new();
         let stkin = txs.par_iter().map(|x|
@@ -282,16 +282,6 @@ impl Block { // need to sign the staker inputs too
         mine.par_extend(stkin.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.stake_acc().receive_ot(x) {Some((i as u64+*height,y))} else {None}).collect::<Vec<(u64,OTAccount)>>());
         *height += stkin.len() as u64; // probably going to do similar thing for stk
     }
-    // pub fn tofastsync(&self) -> LightningSyncBlock {
-    //     LightningSyncBlock {
-    //         validators: self.validators.to_owned(),
-    //         shards: self.shards.to_owned(),
-    //         leader: self.leader.to_owned(),
-    //         txs: self.txs.to_owned().into_par_iter().map(|x| x.shorten()).flatten().collect::<Vec<OTAccount>>(),
-    //         bnum: self.bnum.to_owned(),
-    //         forker: self.forker.to_owned(),
-    //     }
-    // }
 }
 
 
@@ -548,9 +538,9 @@ impl NextBlock { // need to sign the staker inputs too
         }
         alltagsever.par_extend(&newtags);
         mine.par_extend(newmine);
-        // println!("{}", x.txout.len());
-        *height += x.txout.len() as u64; // probably going to do similar thing for stk
-        // println!("{}",height);
+
+        *height += x.txout.len() as u64;
+
         x
     }
     pub fn scanstk(&self, me: &Account, mine: &mut Vec<(u64,OTAccount)>, height: &mut u64, val_pools: &Vec<u64>) {
@@ -667,10 +657,9 @@ impl LightningSyncBlock {
         }
         alltagsever.par_extend(&newtags);
         mine.par_extend(newmine);
-        // println!("{}",height);
-        // println!("{}", x.txout.len());
-        *height += x.txout.len() as u64; // probably going to do similar thing for stk
-        // println!("{}",height);
+        
+        *height += x.txout.len() as u64;
+
         x
     }
     pub fn scan_as_noone(&self,history: &mut Vec<OTAccount>,valinfo: &mut Vec<(CompressedRistretto,u64)>,val_pools: &Vec<u64>) {
@@ -706,7 +695,7 @@ impl LightningSyncBlock {
 
 
 
-pub fn select_stakers(block: &Vec<u8>, shard: &u128, queue: &mut VecDeque<usize>, comittee: &mut Vec<usize>, stkstate: &Vec<(CompressedRistretto,u64)>) {
+pub fn select_stakers(block: &Vec<u8>, shard: &u128, queue: &mut VecDeque<usize>, exitqueue: &mut VecDeque<usize>, comittee: &mut Vec<usize>, stkstate: &Vec<(CompressedRistretto,u64)>) {
     let (_pool,y): (Vec<CompressedRistretto>,Vec<u128>) = stkstate.into_par_iter().map(|(x,y)| (x.to_owned(),*y as u128)).unzip();
     let tot_stk: u128 = y.par_iter().sum(); /* initial queue will be 0 for all non0 shards... */
     // println!("average stake:     {}",tot_stk/(y.len() as u128));
@@ -738,13 +727,16 @@ pub fn select_stakers(block: &Vec<u8>, shard: &u128, queue: &mut VecDeque<usize>
 
     let mut s = AHasher::new_with_keys(1, *shard);
     s.write(&block);
-    let loser = (0..REPLACERATE).collect::<Vec<usize>>().par_iter().map(|x| {
+    let mut loser = (0..REPLACERATE).collect::<Vec<usize>>().par_iter().map(|x| {
         let mut s = s.clone();
         s.write(&x.to_le_bytes()[..]);
         let c = s.finish() as usize;
         c%NUMBER_OF_VALIDATORS as usize
-    }).collect::<Vec<usize>>();
+    }).collect::<VecDeque<usize>>();
     // println!("loser locations: {:?}",loser);
+    exitqueue.append(&mut loser);
+    let loser = exitqueue.par_drain(..REPLACERATE).collect::<Vec<usize>>();
+
     for (i,j) in loser.iter().enumerate() {
         comittee[*j] = winner[i];
     }
