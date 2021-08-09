@@ -164,34 +164,7 @@ fn main() -> Result<(),std::io::Error> {
     println!("shard validators: {:?}",block.shards.len());
     println!("full block: {} bytes",bincode::serialize(&block).unwrap().len());
     println!("block 0 done (unverified and unchecked transactions inside)!");
-    // println!("lightning block: {} bytes",bincode::serialize(&block.tofastsync()).unwrap().len());
     println!("-------------------------------->");
-    // block.tofastsync().verify(&val_pool).unwrap();
-
-
-    // BloomFile::initialize_bloom_file();
-    // let bloom = BloomFile::from_keys(1, 2);
-    // let start = Instant::now();
-    // Block::valicreate(&Scalar::from(1u8),&leader,&txvec[..tx_per_shard],&bnum,&bloom);
-    // println!("time clean block: {:?} ms",start.elapsed().as_millis());
-    // let txs = txvec.par_chunks(tx_per_shard).map(|x| x.to_vec()).collect::<Vec<Vec<Transaction>>>(); // this is the tx they recieved (actual Transaction objects, not Vecs sent to them)
-    // let sigs = txs.clone().into_par_iter().map(|b| (0..(128-lazyness)).into_par_iter().map(|x: u64| Block::valicreate(&Scalar::from(x),&leader,&b,&bnum,&bloom)).collect::<Vec<Block>>()).collect::<Vec<Vec<Block>>>();
-    // let start = Instant::now();
-    // let _ = Block::finish(&lkey, &sigs[0], &val_pool, &bnum);
-    // println!("time to complete shard block: {:?} ms",start.elapsed().as_millis());
-    // let blocks = (0..shards).into_par_iter().map(|x| Block::finish(&lkey, &sigs[x], &val_pool, &bnum)).collect::<Vec<Block>>();
-    // let sigs = (0..(128-lazyness)).into_par_iter().map(|x: u64| Block::valimerge(&Scalar::from(x),&leader,&blocks,&vec![val_pool.clone();blocks.len()], &bnum)).collect::<Vec<Signature>>();
-    // let start = Instant::now();
-    // let block = Block::finishmerge(&lkey, &sigs, &blocks, &vec![val_pool.clone();shards], &val_pool, &bnum);
-    // println!("time to finish merge block: {:?} ms",start.elapsed().as_millis());
-    // let start = Instant::now();
-    // Block::verify(&block, &val_pool).unwrap();
-    // println!("time to verify merged block: {:?} ms",start.elapsed().as_millis());
-    // println!("tx: {:?}",block.txs.len());
-    // println!("shard validators: {:?}",block.shards.len());
-    // println!("full block: {} bytes",bincode::serialize(&block).unwrap().len());
-    // println!("lightning block: {} bytes",bincode::serialize(&block.tofastsync()).unwrap().len());
-    // block.tofastsync().verify(&val_pool).unwrap();
 
 
     let mut info = block.scan_as_noone();

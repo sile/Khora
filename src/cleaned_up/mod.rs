@@ -26,7 +26,7 @@ use crate::constants::PEDERSEN_H;
 
 pub const NUMBER_OF_VALIDATORS: u16 = 16;
 pub const REPLACERATE: usize = 4;
-const BLOCK_KEYWORD: [u8;7] = [4,2,2,7,4,3,5]; // gabriel in phone dial letters
+const BLOCK_KEYWORD: [u8;7] = [107,141,142,162,151,145,154]; // Gabriel in octal
 pub const INFLATION_CONSTANT: u64 = 2u64.pow(40);
 
 

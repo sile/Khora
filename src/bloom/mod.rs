@@ -28,16 +28,16 @@ extern crate rand;
 use bit_vec::BitVec;
 use rand::Rng;
 use std::cmp::{min,max};
-use std::hash::{Hash,Hasher};
+use std::hash::Hasher;
 use std::iter::Iterator;
 use std::fs;
-use ahash::{AHasher, RandomState};
-use rayon::prelude::*;
+use ahash::AHasher;
+// use rayon::prelude::*;
 use std::fs::OpenOptions;
 use std::fs::File;
-use std::io::{Seek, SeekFrom, Read, Write, BufReader, BufWriter};
+use std::io::{Seek, SeekFrom, Read, Write, BufReader};//, BufWriter};
 // use bitbuffer::{BitReadBuffer, LittleEndian, BitReadStream, BitRead, BitWrite, BitWriteStream};
-use bitbit::*;
+// use bitbit::*;
 pub struct BloomFilter {
     pub bits: BitVec,
     pub num_hashes: u32,
@@ -186,18 +186,20 @@ impl BloomFilter {
 
 
 
-
 pub struct BloomFile {
     h1: AHasher,
     h2: AHasher,
 }
+
+static FILE_NAME: &str = "bloomfile";
 const FILE_SIZE: usize = 1_000_000*4;// 1_000_000_000*4; // problems are somewhere
+
 impl BloomFile {
 
     pub fn initialize_bloom_file() { // lol this is actually fast!
         // 6 hashes is best for 1_000_000_000 outputs
-        File::create("bloomfile").unwrap();
-        let mut f = OpenOptions::new().append(true).open("bloomfile").unwrap();
+        File::create(FILE_NAME).unwrap();
+        let mut f = OpenOptions::new().append(true).open(FILE_NAME).unwrap();
         for _ in 0..100 {
             f.write_all(&[0u8;FILE_SIZE/100]).unwrap();
         }
@@ -213,11 +215,11 @@ impl BloomFile {
     /// Insert item into this bloomfilter
     pub fn insert(&self, item: &[u8;32]) { // loc, pk, com = 32*3 = 96
         for h in self.get_hashes(item) {
-            let idx = (h % (FILE_SIZE*8) as u64);
+            let idx = h % (FILE_SIZE*8) as u64;
             let mut byte = [0u8];
-            let mut f = BufReader::new(File::open(&"bloomfile".to_string()).unwrap());
+            let mut f = BufReader::new(File::open(FILE_NAME).unwrap());
             f.seek(SeekFrom::Start(idx/8)).expect("Seek failed");
-            f.read(&mut byte);
+            f.read(&mut byte).unwrap();
             let mut delta = 1u8;
             delta <<= idx%8;
             byte[0] |= delta;
@@ -239,9 +241,9 @@ impl BloomFile {
             // let buffer = r.read_bit();
 
             let mut byte = [0u8];
-            let mut r = BufReader::new(File::open(&"bloomfile".to_string()).unwrap());
+            let mut r = BufReader::new(File::open(FILE_NAME).unwrap());
             r.seek(SeekFrom::Start(idx/8)).expect("Seek failed");
-            r.read(&mut byte);
+            r.read(&mut byte).unwrap();
             let mut delta = 1u8;
             delta <<= idx%8;
             if (byte[0] & delta) == 0u8 {
@@ -254,11 +256,11 @@ impl BloomFile {
     
     pub fn insert_lpc(&self, item: &[u8;96]) { // loc, pk, com = 32*3 = 96
         for h in self.get_hashes_lpc(item) {
-            let idx = (h % (FILE_SIZE*8) as u64);
+            let idx = h % (FILE_SIZE*8) as u64;
             let mut byte = [0u8];
-            let mut f = BufReader::new(File::open(&"bloomfile".to_string()).unwrap());
+            let mut f = BufReader::new(File::open(FILE_NAME).unwrap());
             f.seek(SeekFrom::Start(idx/8)).expect("Seek failed");
-            f.read(&mut byte);
+            f.read(&mut byte).unwrap();
             let mut delta = 1u8;
             delta <<= idx%8;
             byte[0] |= delta;
@@ -280,9 +282,9 @@ impl BloomFile {
             // let buffer = r.read_bit();
 
             let mut byte = [0u8];
-            let mut r = BufReader::new(File::open(&"bloomfile".to_string()).unwrap());
+            let mut r = BufReader::new(File::open(FILE_NAME).unwrap());
             r.seek(SeekFrom::Start(idx/8)).expect("Seek failed");
-            r.read(&mut byte);
+            r.read(&mut byte).unwrap();
             let mut delta = 1u8;
             delta <<= idx%8;
             if (byte[0] & delta) == 0u8 {
