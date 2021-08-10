@@ -1,30 +1,30 @@
 use crate::account::{Account, OTAccount};
 use crate::commitment::{Commitment};
-use rand::random;
+// use rand::random;
 use curve25519_dalek::scalar::Scalar;
-use std::time::Instant;
+// use std::time::Instant;
 use crate::transaction::*;
-use std::fs::File;
+// use std::fs::File;
 //use std::io::Write;
 use std::collections::HashMap;
 use rand::{thread_rng, Rng};
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_COMPRESSED;
+// use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+// use curve25519_dalek::constants::RISTRETTO_BASEPOINT_COMPRESSED;
 use curve25519_dalek::ristretto::{RistrettoPoint, CompressedRistretto};
 use sha3::{Digest, Sha3_512};
-use std::io::prelude::*;
-use std::str;
-use std::env;
-use std::fs;
-use bytes::Bytes;
+// use std::io::prelude::*;
+// use std::str;
+// use std::env;
+// use std::fs;
+// use bytes::Bytes;
 use std::convert::{TryFrom, TryInto};
 use byteorder::{ByteOrder, LittleEndian};
 use serde::{Serialize, Deserialize};
 use rayon::prelude::*;
 use crate::ringmaker::{generate_ring, recieve_ring};
-use rand::distributions::Alphanumeric;
-use std::fs::remove_file;
-use crate::validation::*;
+// use rand::distributions::Alphanumeric;
+// use std::fs::remove_file;
+// use crate::validation::*;
 use crate::seal::BETA;
 
 
@@ -52,9 +52,7 @@ pub fn random_tx_set(n: &usize) -> Vec<Transaction> {
         outs.push((whoto, Scalar::from(out)));
 
 
-        let x = Transaction::spend(&otas_creators, &outs.iter().map(|(a,v)|(a,v)).collect(), &get_test_ring(12), &Scalar::from(fee),);
-        x.verify().unwrap();
-        x
+        Transaction::spend(&otas_creators, &outs.iter().map(|(a,v)|(a,v)).collect(), &get_test_ring(5), &Scalar::from(fee),)
     }).collect::<Vec<Transaction>>()
 }
 
@@ -80,8 +78,8 @@ pub fn random_polytx_set(n: &usize, y: &Vec<OTAccount>, oldheight: &u64) -> Vec<
         if condition {outs.push((whofrom.stake_acc(), Scalar::from(stk)));}
         outs.push((whoto, Scalar::from(out)));
 
-        
-        let rname = generate_ring(&vec![((x+n-1)%n)+*oldheight as usize], &8, &height);
+        let ringsize = 11;
+        let rname = generate_ring(&vec![((x+n-1)%n)+*oldheight as usize], &ringsize, &height);
         let ring = recieve_ring(&rname);
         /* vvv this is where people send you the ring members  vvv */ 
         let mut rlring = ring.par_iter().map(|x| y[*x as usize].to_owned()).collect::<Vec<OTAccount>>();

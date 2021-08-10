@@ -1,7 +1,6 @@
 use rand::{Rng, distributions::Uniform};
 use rayon::prelude::*;
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
+// use std::hash::{Hash, Hasher};
 use std::usize;
 use itertools::{Itertools, izip};
 use polynomial_over_finite_prime_field::PolynomialOverP;
@@ -29,7 +28,7 @@ pub fn key_hash(key: &u32, t: &u32) -> i128 {
     i128::from_le_bytes(c.to_vec()[..16].try_into().unwrap())
 }
 const P: i128 = 9223372036854775783;//a little below 2^63 so hash approximatly finds a rand num in this field
-pub fn generate_ring(s: &Vec<usize>, r: &u64, now: &u64) -> Vec<u8> {
+pub fn generate_ring(s: &Vec<usize>, r: &u16, now: &u64) -> Vec<u8> {
     /*
     IF YOU WANT TO MAKE SURE EVERY MEMBER OOF THE RING IS UNIQUE,
     YOU'D HAVE TO RUN THIS N TIMES
@@ -59,7 +58,7 @@ pub fn generate_ring(s: &Vec<usize>, r: &u64, now: &u64) -> Vec<u8> {
     }
 
     /* offset I want to be (0 mod now) */
-    let shift: Vec<_> = (0..s.len()).map(|i| {let a: u64 = rng.gen();
+    let shift: Vec<_> = (0..s.len()).map(|_| {let a: u64 = rng.gen();
         (a%(P as u64 / now as u64))*(now as u64)
     }).collect();
     

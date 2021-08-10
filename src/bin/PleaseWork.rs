@@ -1,7 +1,5 @@
 // #![allow(dead_code)] //failed attempt to disable warnings
 // #![allow(non_snake_case)]
-use structopt::StructOpt;
-//use indicatif::{ProgressBar, ProgressStyle};
 use kora::account::*;
 use kora::commitment::*;
 use rand::random;
@@ -17,22 +15,12 @@ use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_COMPRESSED;
 use curve25519_dalek::ristretto::{RistrettoPoint, CompressedRistretto};
 use sha3::{Digest, Sha3_512};
-use std::io::prelude::*;
-use std::str;
-use std::env;
-use std::fs;
-// extern crate byte_string;
-// use byte_string::ByteStr;
-use bytes::Bytes;
-use std::convert::TryFrom;
-use kora::external::inner_product_proof::InnerProductProof;
 use kora::seal::{SealSig};
 use std::thread; //this can be used to parallelize stuff
 use byteorder::{ByteOrder, LittleEndian};
 use serde::{Serialize, Deserialize};
 use rayon::prelude::*;
 use kora::ringmaker::*;
-// use safe_modular_arithmetic::{Modular,StaticModular};
 use kora::randblock::*;
 use std::io::BufReader;
 use buffered_offset_reader::{BufOffsetReader, OffsetReadMut};
@@ -46,7 +34,6 @@ use std::convert::TryInto;
 use kora::lpke::Ciphertext;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-// use omniring::validation::*;
 use kora::validation::*;
 use kora::seal::BETA;
 use kora::constants::PEDERSEN_H;
@@ -64,15 +51,8 @@ cargo run --bin PleaseWork --release -- -r  123
 // no one can EVER have more than 264 uwus of monies
 
 /* the network will shard it's validation when there's enough validators. gives poorer people an opportunity. */
-fn print_type_of<T>(_: &T) {
-    println!("{}", std::any::type_name::<T>())
-}
-fn pt_to_byte(pt: &RistrettoPoint) -> [u8; 32]{
-    pt.compress().to_bytes()
-}
-fn comp_pt_to_byte(pt: &CompressedRistretto) -> [u8; 32]{
-    pt.to_bytes()
-}
+
+
 
 /* do i need to check if tags are uniue in the tx if i know ring is unique? */
 /* make new txt file for saving tx and stuff when speanding anything */
@@ -106,12 +86,6 @@ fn main() -> Result<(),std::io::Error> {
     // let z = "I'm a different, independant person!".to_string();
     // let reciever = Account::new(&z); //make a new account
     
-    // just some constants to use
-    let zerocoin = Scalar::from(0u64);// it's sloppy that i put the ampersants here rather than in function inputs
-    let onecoin = Scalar::from(1u64);
-    // let staker = staker_acc(); //maybe impliment acutal fee
-
-
 
 
 
@@ -129,7 +103,7 @@ fn main() -> Result<(),std::io::Error> {
     /* lets not directly say hardware requirements, do suggestions that evolve over time */
     /* etherium has comittes of 128 or more */
     /* if the leader makes multiple blocks, they get slashed */
-    let tx_processed = 256 as usize; /* make low stakers less likely to be selected to avoin sybal attacks */
+    let tx_processed = 256usize; /* make low stakers less likely to be selected to avoin sybal attacks */
     let max_shards = 64usize; /* this if for teting purposes... there IS NO MAX SHARDS */
     
 
@@ -138,8 +112,8 @@ fn main() -> Result<(),std::io::Error> {
     let leader = (lkey*PEDERSEN_H()).compress();
     let val_pool = (0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (Scalar::from(x)*PEDERSEN_H()).compress()).collect::<Vec<CompressedRistretto>>();
 
-
-
+    StakerState::initialize();
+    History::initialize();
     BloomFile::initialize_bloom_file();
     let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this
 
@@ -162,9 +136,10 @@ fn main() -> Result<(),std::io::Error> {
     println!("-------------------------------->");
 
 
-    let mut info = block.scan_as_noone();
+    let info = block.scan_as_noone();
+    History::append(&info.txout);
     let mut history = info.txout;
-    let mut stkinfo =info.stkin;
+    let mut stkinfo = info.stkin;
     println!("stakers: {:?}",stkinfo.len());
 
     
@@ -185,7 +160,7 @@ fn main() -> Result<(),std::io::Error> {
     let mut height = 0u64;
     block.scan(&ryan, &mut mine, &mut height);
     println!("I'm at {:?}",mine.par_iter().map(|x|x.0).collect::<Vec<_>>());
-    let mut smine = Vec::<(u64,OTAccount)>::new(); // read from file
+    let mut smine = Vec::<[u64;2]>::new(); // read from file
     let mut sheight = 0u64;
     block.stkscan(&ryan, &mut smine, &mut sheight);
     println!("my stk accs: {:?}",smine.len());
@@ -232,8 +207,10 @@ fn main() -> Result<(),std::io::Error> {
     let mut nextblock = NextBlock::default();
 
 
+    let iterations = 3;
+
     let mut bnum = 0u64;
-    for _ in 0..5 { /* there's a lot less new money the random number generator is fine */
+    for _ in 0..iterations { /* there's a lot less new money the random number generator is fine */
         let shards = 2u64.pow(bnum as u32) as usize; /* max of 512 shard without lazyness because number of validators fits inside a u16 */
         let tx_per_shard = tx_processed/shards;
         bnum+=1;
@@ -258,26 +235,42 @@ fn main() -> Result<(),std::io::Error> {
         let leader = (vals[0][2]*PEDERSEN_H()).compress();
         let leader_loc = comittee[0][2] as u64; /* need to change all the signing to H not G */
 
-        let txvec = random_polytx_set(&tx_processed, &history, &lastheight);
+        let mut txvec = random_polytx_set(&tx_processed, &history, &lastheight);
+
+        
+        if bnum == iterations {
+            println!("I exit being a staker on this final turn");
+            println!("stk loc: {:?}",smine[0][0]);
+            println!("stk amount: {:?}",smine[0][1]);
+            println!("stk both: {:?}",stkinfo[smine[0][0] as usize]);
+            let txleave = Transaction::spend_ring(&vec![ryan.stake_acc().receive_ot(&ryan.stake_acc().derive_stk_ot(&Scalar::from(smine[0][1]))).unwrap()], &vec![]);
+            txleave.verify().unwrap();
+            println!("passed test 1");
+            let txleave = txleave.polyform(&smine[0][0].to_le_bytes().to_vec());
+            txleave.verifystk(&stkinfo).unwrap();// all to fee so shouldn't mess up my ordering with the randblock (but mught with comittee)
+            txvec[0] = txleave;
+        }
+
         let txvec = txvec.par_chunks(tx_per_shard).collect::<Vec<&[PolynomialTransaction]>>();
         let mut shardblocks = Vec::<NextBlock>::new();
         for i in 0..shards {
             let start = Instant::now();
-            NextBlock::valicreate(&vals[i][0], &(comittee[i][0] as u64),&leader,&txvec[i].to_vec(),&bnum,&last_name,&bloom,&history,&stkinfo);
+            NextBlock::valicreate(&vals[i][0], &(comittee[i][0] as u64),&leader,&txvec[i].to_vec(),&(i as u16), &bnum,&last_name,&bloom,&history,&stkinfo);
             println!("time clean shard {}: {:?} ms",i,start.elapsed().as_millis());
-            let sigs = vals[i].clone().into_par_iter().zip(comittee[i].clone()).map(|(x,l)| NextBlock::valicreate(&x,&(l as u64), &leader,&txvec[i].to_vec(),&bnum,&last_name,&bloom,&history,&stkinfo)).collect::<Vec<NextBlock>>();
+            let sigs = vals[i].clone().into_par_iter().zip(comittee[i].clone()).map(|(x,l)| NextBlock::valicreate(&x,&(l as u64), &leader,&txvec[i].to_vec(),&(i as u16), &bnum,&last_name,&bloom,&history,&stkinfo)).collect::<Vec<NextBlock>>();
             let start = Instant::now();
-            let block = NextBlock::finish(&lkey, &leader_loc, &sigs, &val_pool[i], &bnum,&last_name,&stkinfo);
+            let block = NextBlock::finish(&lkey, &leader_loc, &sigs, &val_pool[i], &(i as u16), &bnum,&last_name,&stkinfo);
             println!("time to complete shard {}: {:?} ms",i,start.elapsed().as_millis());
             shardblocks.push(block);
         }
         if shards > 1 {
+            let pool_nums = (0..shards).map(|x| x as u16).collect::<Vec<u16>>();
             let start = Instant::now();
-            NextBlock::valimerge(&vals[0][0], &(comittee[0][0] as u64),&leader,&shardblocks,&val_pool,&bnum,&last_name,&stkinfo);
+            NextBlock::valimerge(&vals[0][0], &(comittee[0][0] as u64),&leader,&shardblocks,&val_pool,&pool_nums, &bnum,&last_name,&stkinfo);
             println!("time merge next block: {:?} ms",start.elapsed().as_millis());
-            let sigs = vals[0].clone().into_par_iter().zip(val_pool[0].clone()).map(|(x,l)| NextBlock::valimerge(&x, &(l as u64),&leader,&shardblocks,&val_pool,&bnum,&last_name,&stkinfo)).collect::<Vec<Signature>>();
+            let sigs = vals[0].clone().into_par_iter().zip(val_pool[0].clone()).map(|(x,l)| NextBlock::valimerge(&x, &(l as u64),&leader,&shardblocks,&val_pool,&pool_nums,&bnum,&last_name,&stkinfo)).collect::<Vec<Signature>>();
             let start = Instant::now();
-            nextblock = NextBlock::finishmerge(&lkey, &leader_loc, &sigs, &shardblocks, &val_pool, &val_pool[0], &bnum,&last_name,&stkinfo);
+            nextblock = NextBlock::finishmerge(&lkey, &leader_loc, &sigs, &shardblocks, &val_pool, &val_pool[0], &pool_nums, &bnum,&last_name,&stkinfo);
             println!("time to complete next block: {:?} ms (runs concurrently to time to merge block because leader merges independantly)",start.elapsed().as_millis());
         }
         else {
@@ -296,10 +289,14 @@ fn main() -> Result<(),std::io::Error> {
         println!("full block: {} bytes",bincode::serialize(&nextblock).unwrap().len());
         println!("lightning block: {} bytes",bincode::serialize(&nextblock.tolightning()).unwrap().len());
 
+
+        // StakerState::replace(&stkinfo);
+        // stkinfo = StakerState::read();
+
         lastheight = height;
         nextblock.scan(&ryan, &mut mine, &mut height, &mut alltagsever);
         nextblock.scanstk(&ryan, &mut smine, &mut sheight, &val_pool[0]);
-        nextblock.scan_as_noone(&mut history,&mut stkinfo,&val_pool[0]);
+        nextblock.scan_as_noone(&mut history,&mut stkinfo,&val_pool);
         println!("history: {}",history.len());
         println!("stkinfo: {}",stkinfo.len());
         println!("-------------------------------->"); /* right now, bloom filter filters staker exits? */

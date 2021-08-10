@@ -65,7 +65,7 @@ impl BinRep for Scalar {
 }
 
 impl SealSig{
-    fn get_G(u: &Scalar, v: &Scalar, ring: &[&OTAccount], tags: &[&Tag], outputs: &[&OTAccount], fee: &Scalar, w: &Scalar, P: &Vec<RistrettoPoint>, Gprime: &Vec<RistrettoPoint> ) -> Vec<RistrettoPoint> {
+    fn get_G(u: &Scalar, v: &Scalar, ring: &[&OTAccount], tags: &[&Tag], _outputs: &[&OTAccount], w: &Scalar, P: &Vec<RistrettoPoint>, Gprime: &Vec<RistrettoPoint> ) -> Vec<RistrettoPoint> {
         let T_hat = RistrettoPoint::vartime_multiscalar_mul(
             exp_iter(*v).take(tags.len()).map(|vexp|u*u*vexp), //exp_iter makes a vector of powers
             tags.iter().map(|tag| tag.decompress().unwrap()));
@@ -155,7 +155,7 @@ impl SealSig{
 
     }
 
-    pub fn sign(transcript: &mut Transcript, ring: &[&OTAccount], tags: &[&Tag], positions: &[usize], outputs: &[&OTAccount], fee: &Scalar) -> Result<SealSig, SealError> {
+    pub fn sign(transcript: &mut Transcript, ring: &[&OTAccount], tags: &[&Tag], positions: &[usize], outputs: &[&OTAccount]) -> Result<SealSig, SealError> {
 
         let m = 3 + ring.len() + ring.len()*tags.len() + outputs.len()*BETA + 3 * tags.len();
 
@@ -185,7 +185,7 @@ impl SealSig{
         let Gprime: Vec<RistrettoPoint> = (0..(ring.len()*tags.len() + outputs.len()*BETA + 3*tags.len())).map(|_| transcript.challenge_point(b"Gprime")).collect();
         let H: Vec<RistrettoPoint> = (0..m).map(|_| transcript.challenge_point(b"H")).collect();
 
-        let G0 = SealSig::get_G(&u, &v, &ring, &tags,&outputs, &fee, &Scalar::zero(), &P, &Gprime );
+        let G0 = SealSig::get_G(&u, &v, &ring, &tags,&outputs, &Scalar::zero(), &P, &Gprime );
 
         let mut csrng = rand::thread_rng();
         let rA = Scalar::random(&mut csrng);
@@ -263,7 +263,7 @@ impl SealSig{
         let w = transcript.challenge_scalar(b"w");
 
         let rS = Scalar::random(&mut csrng);
-        let Gw = SealSig::get_G(&u, &v, &ring, &tags, &outputs, &fee, &w, &P, &Gprime );
+        let Gw = SealSig::get_G(&u, &v, &ring, &tags, &outputs, &w, &P, &Gprime );
         let sl: Vec<Scalar> = (0..Gw.len()).map(|_| Scalar::random(&mut csrng)).collect();
         let sr: Vec<Scalar> = cr.iter().map(|c| { match *c == Scalar::zero() {
             true => Scalar::zero(),
@@ -277,7 +277,7 @@ impl SealSig{
         let y = transcript.challenge_scalar(b"y");
         let z = transcript.challenge_scalar(b"z");
 
-        let (theta, theta_inv, mu, _nu, omega, alpha, beta, delta) = SealSig::get_constraints(ring.len(), inputs.len(), outputs.len(), &u, &v, &y, &z);
+        let (theta, theta_inv, mu, _nu, _omega, alpha, _beta, _delta) = SealSig::get_constraints(ring.len(), inputs.len(), outputs.len(), &u, &v, &y, &z);
 
         let l_x = VecPoly1(add_vec(&cl,&alpha),sl.clone());
         let r_x = VecPoly1(add_vec(&mul_vec(&theta, &cr),&mu),mul_vec(&theta,&sr));
@@ -357,7 +357,7 @@ impl SealSig{
         })
     }
 
-    pub fn verify(&self, transcript: &mut Transcript, ring: &[&OTAccount], tags: &[&Tag], outputs: &[&OTAccount], fee: &Scalar) -> Result<(), SealError> {
+    pub fn verify(&self, transcript: &mut Transcript, ring: &[&OTAccount], tags: &[&Tag], outputs: &[&OTAccount]) -> Result<(), SealError> {
 
         let m = 3 + ring.len() + ring.len()*tags.len() + outputs.len()*BETA + 3 * tags.len();
 
@@ -400,14 +400,14 @@ impl SealSig{
         let x = transcript.challenge_scalar(b"x");
 
         
-        let Gw = SealSig::get_G(&u, &v, &ring, &tags, &outputs, fee, &w, &P, &Gprime );
+        let Gw = SealSig::get_G(&u, &v, &ring, &tags, &outputs, &w, &P, &Gprime );
         
 
         transcript.append_scalar(b"tau", &self.tau);
         transcript.append_scalar(b"r", &self.r);
         transcript.append_scalar(b"t", &self.t);
 
-        let (theta, theta_inv, _mu, _nu, _omega, alpha, beta, delta) = SealSig::get_constraints(ring.len(), tags.len(), outputs.len(), &u, &v, &y, &z);
+        let (_theta, theta_inv, _mu, _nu, _omega, alpha, beta, delta) = SealSig::get_constraints(ring.len(), tags.len(), outputs.len(), &u, &v, &y, &z);
 
         let ippw = transcript.challenge_scalar(b"ippw");
 
@@ -500,11 +500,11 @@ mod tests {
         let sigin:Vec<&OTAccount> = ring.iter().map(|acct|acct).collect();
         let sigout:Vec<&OTAccount> = outputs.iter().map(|acct|acct).collect();
 
-        let sigma = SealSig::sign(&mut prover_transcript, &sigin, &tags, &poss, &sigout, &Scalar::zero()).expect("work not");
+        let sigma = SealSig::sign(&mut prover_transcript, &sigin, &tags, &poss, &sigout).expect("work not");
 
         let mut verifier_transcript = Transcript::new(b"test example");
 
-        let s = sigma.verify(&mut verifier_transcript, &sigin, &tags, &sigout, &Scalar::zero());
+        let s = sigma.verify(&mut verifier_transcript, &sigin, &tags, &sigout);
         assert!(s.is_ok());
     }
 }
