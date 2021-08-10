@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 use core::iter;
-use curve25519_dalek::constants::{RISTRETTO_BASEPOINT_POINT, RISTRETTO_BASEPOINT_COMPRESSED};
+use curve25519_dalek::constants::{RISTRETTO_BASEPOINT_POINT};
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::{VartimeMultiscalarMul, MultiscalarMul};
@@ -9,15 +9,12 @@ use merlin::Transcript;
 use rayon::prelude::*;
 use serde::{Serialize, Deserialize};
 
-use crate::commitment::Commitment;
-use crate::constants::{NATIVE, PEDERSEN_H};
+use crate::constants::{PEDERSEN_H};
 use crate::external::inner_product_proof::{InnerProductProof, inner_product};
 use crate::external::transcript::TranscriptProtocol;
 use crate::external::inner_product_proof;
 use crate::external::util::{sub_vec, mul_vec, sum_of_powers, exp_iter, smul_vec, kron_vec, add_vec, inv_vec, VecPoly1};
 use crate::account::{OTAccount, Tag};
-// use bytes::buf::BufExt;
-use std::time::Instant;
 
 use rayon::iter::ParallelIterator;
 use rayon::iter::IntoParallelRefIterator;

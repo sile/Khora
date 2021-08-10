@@ -1,10 +1,8 @@
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::MultiscalarMul;
 use rand::thread_rng;
 use serde::{Serialize, Deserialize};
-use sha3::Sha3_512;
 use std::ops::Add;
 use crate::constants::PEDERSEN_H;
 

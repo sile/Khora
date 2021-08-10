@@ -1,18 +1,12 @@
-use curve25519_dalek::ristretto::{RistrettoPoint, CompressedRistretto};
+use curve25519_dalek::ristretto::{CompressedRistretto};
 use curve25519_dalek::scalar::Scalar;
-use crate::commitment::Commitment;
 use crate::account::*;
-use rayon::{prelude::*, vec};
+use rayon::prelude::*;
 use crate::transaction::*;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use crate::bloom::BloomFile;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-use rand::{thread_rng, Rng};
-use sha2::{Digest, Sha256};
-use sha3::{Sha3_512};
-use crate::seal::SealSig;
-use crate::lpke::Ciphertext;
-use crate::external::inner_product_proof::InnerProductProof;
+use rand::{thread_rng};
+use sha3::{Digest, Sha3_512};
 use ahash::AHasher;
 use std::fs::File;
 use std::fs::OpenOptions;
@@ -22,13 +16,12 @@ use std::io::Write;
 use std::hash::Hasher;
 use serde::{Serialize, Deserialize};
 use std::collections::{HashSet, VecDeque};
-use std::iter::FromIterator;
 use crate::constants::PEDERSEN_H;
 use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
 
 
-pub const NUMBER_OF_VALIDATORS: u16 = 128;
+pub const NUMBER_OF_VALIDATORS: u16 = 8;
 pub const REPLACERATE: usize = 4;
 const BLOCK_KEYWORD: [u8;7] = [107,141,142,162,151,145,154]; // Gabriel in octal
 pub const INFLATION_CONSTANT: u64 = 2u64.pow(30);
@@ -96,21 +89,23 @@ pub struct Signature0{
 impl Signature0 {
     pub fn sign(key: &Scalar, message: &Vec<Vec<u8>>) -> Signature0 {
         let message = message.into_par_iter().flatten().map(|&x| x).collect::<Vec<u8>>();
-        let mut s = Sha256::new();
-        s.update(&message);
+
+
+
         let mut csprng = thread_rng();
         let a = Scalar::random(&mut csprng);
+        let mut s = Sha3_512::new();
+        s.update(&message);
         s.update((a*PEDERSEN_H()).compress().to_bytes());
-        let c = s.finalize();
-        let c = Scalar::from_bytes_mod_order(c.to_vec().try_into().unwrap());
+        let c = Scalar::from_hash(s);
         Signature0{c, r: (a - c*key), pk: (key*PEDERSEN_H()).compress()}
     }
     pub fn verify(&self, message: &Vec<Vec<u8>>) -> bool {
         let message = message.into_par_iter().flatten().map(|&x| x).collect::<Vec<u8>>();
-        let mut s = Sha256::new();
+        let mut s = Sha3_512::new();
         s.update(&message);
         s.update((self.r*PEDERSEN_H() + self.c*self.pk.decompress().unwrap()).compress().to_bytes());
-        self.c == Scalar::from_bytes_mod_order(s.finalize().to_vec().try_into().unwrap())
+        self.c == Scalar::from_hash(s)
     }
 }
 
@@ -174,7 +169,7 @@ impl Block { // need to sign the staker inputs too
         /* my txt file codes are hella optimized but also hella incomplete with respect to polynomials and also hella disorganized */
         let sigs = sigfinale.par_iter().map(|x| x.leader.to_owned()).collect::<Vec<Signature0>>();
         
-        let mut s = Sha256::new();
+        let mut s = Sha3_512::new();
         s.update(&bincode::serialize(&sigs).unwrap().to_vec());
         let c = s.finalize();
         let leader = Signature0::sign(&key, &vec![BLOCK_KEYWORD.to_vec(),bnum.to_le_bytes().to_vec(),c.to_vec(),bincode::serialize(&None::<([Signature0;2],[Vec<u8>;2],u64)>).unwrap()]);
@@ -228,7 +223,7 @@ impl Block { // need to sign the staker inputs too
         let leader = (key*PEDERSEN_H()).compress().as_bytes().to_vec();
         let sigs = sigs.into_par_iter().filter(|x| Signature0::verify(x, &vec![leader.clone(),bincode::serialize(&blk.txs.par_iter().map(|x| x.outputs.to_owned()).flatten().collect::<Vec<OTAccount>>()).unwrap(),bincode::serialize(&blk.shards).unwrap(),bnum.to_le_bytes().to_vec()])).map(|x| x.to_owned()).collect::<Vec<Signature0>>();
         let sigs = sigs.into_par_iter().filter_map(|x| if !pool0.into_par_iter().all(|y| x.pk != *y) {Some(x.clone())} else {None}).collect::<Vec<Signature0>>();
-        let mut s = Sha256::new();
+        let mut s = Sha3_512::new();
         s.update(&bincode::serialize(&sigs).unwrap().to_vec());
         let c = s.finalize();
         let leader = Signature0::sign(&key, &vec![BLOCK_KEYWORD.to_vec(),bnum.to_le_bytes().to_vec(),c.to_vec(),bincode::serialize(&blk.forker).unwrap()]);
@@ -246,7 +241,7 @@ impl Block { // need to sign the staker inputs too
                 return Err("the forker was framed")
             }
         }
-        let mut s = Sha256::new();
+        let mut s = Sha3_512::new();
         s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
         let c = s.finalize();
         if !self.leader.verify(&vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(),c.to_vec(),bincode::serialize(&self.forker).unwrap()]) {
@@ -300,21 +295,20 @@ pub struct Signature{
 impl Signature { // should i make these inputs hashers?
     pub fn sign(key: &Scalar, message: &Vec<u8>, location: &u64) -> Signature {
         // let message = vec![32u8,64u8];
-        let mut s = Sha256::new();
+        let mut s = Sha3_512::new();
         s.update(&message);
         let mut csprng = thread_rng();
         let a = Scalar::random(&mut csprng);
         s.update((a*PEDERSEN_H()).compress().to_bytes());
-        let c = s.finalize();
-        let c = Scalar::from_bytes_mod_order(c.to_vec().try_into().unwrap());
+        let c = Scalar::from_hash(s);
         Signature{c, r: (a - c*key), pk: *location}
     }
     pub fn verify(&self, message: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> bool {
         // let message = vec![32u8,64u8];
-        let mut s = Sha256::new();
+        let mut s = Sha3_512::new();
         s.update(&message);
         s.update((self.r*PEDERSEN_H() + self.c*stkstate[self.pk as usize].0.decompress().unwrap()).compress().to_bytes());
-        self.c == Scalar::from_bytes_mod_order(s.finalize().to_vec().try_into().unwrap())
+        self.c == Scalar::from_hash(s)
     }
 }
 
@@ -397,7 +391,7 @@ impl NextBlock { // need to sign the staker inputs too
         /* my txt file codes are hella optimized but also hella incomplete with respect to polynomials and also hella disorganized */
         let sigs = sigfinale.par_iter().map(|x| x.leader.to_owned()).collect::<Vec<Signature>>();
         /* do i need to add an empty block option that requires >1/3 signatures of you as leader? */
-        let mut s = Sha256::new();
+        let mut s = Sha3_512::new();
         s.update(&bincode::serialize(&sigs).unwrap().to_vec());
         let c = s.finalize();
         let m = vec![BLOCK_KEYWORD.to_vec(),bnum.to_le_bytes().to_vec(),last_name.clone(),c.to_vec(),bincode::serialize(&None::<([Signature;2],[Vec<u8>;2],u64)>).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
@@ -442,7 +436,6 @@ impl NextBlock { // need to sign the staker inputs too
         let mut pools = vec![0u16];
         for (mut b,p) in blks.into_iter().zip(pool_nums) {
             b.txs = b.txs.into_par_iter().filter(|t| {
-                // tags.is_disjoint(&HashSet::from_par_iter(t.tags.par_iter().cloned()))
                 t.tags.par_iter().all(|x| !tags.contains(x))
             }).collect::<Vec<PolynomialTransaction>>();
             blk.txs.par_extend(b.txs.clone());
@@ -455,7 +448,6 @@ impl NextBlock { // need to sign the staker inputs too
             }
         }
         let s = blk.shards.clone();
-        // blk.shards = blk.shards.par_iter().enumerate().filter_map(|(i,x)| if s[..i].par_iter().all(|y| stkstate[*x as usize].0 != stkstate[*y as usize].0) {Some(x.to_owned())} else {None}).collect::<Vec<u64>>();
         blk.shards = blk.shards.into_par_iter().enumerate().filter(|(i,x)| s[..*i].par_iter().all(|y| stkstate[*x as usize].0 != stkstate[*y as usize].0)).map(|(_,x)|x).collect::<Vec<u64>>();
         
         let leader = (key*PEDERSEN_H()).compress().as_bytes().to_vec();
@@ -463,11 +455,10 @@ impl NextBlock { // need to sign the staker inputs too
         let sigs = sigs.into_par_iter().filter(|x|
             Signature::verify(x, &m, stkstate)
         ).collect::<Vec<&Signature>>();
-        // let sigs = sigs.into_par_iter().filter_map(|x| if !pool0.clone().into_par_iter().all(|y| stkstate[x.pk as usize].0 != y) {Some(x.clone())} else {None}).collect::<Vec<Signature>>();
         let sigs = sigs.into_par_iter().filter(|x| !pool0.clone().into_par_iter().all(|y| stkstate[x.pk as usize].0 != y)).collect::<Vec<&Signature>>();
         let sigcopy = sigs.clone();
         let sigs = sigs.into_par_iter().enumerate().filter_map(|(i,x)| if sigcopy[..i].par_iter().all(|y| x.pk != y.pk) {Some(x.to_owned())} else {None}).collect::<Vec<Signature>>();
-        let mut s = Sha256::new();
+        let mut s = Sha3_512::new();
         s.update(&bincode::serialize(&sigs).unwrap().to_vec());
         let c = s.finalize();
 
@@ -477,7 +468,7 @@ impl NextBlock { // need to sign the staker inputs too
     }
     pub fn verify(&self, validator_pools: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
         if let Some((s,v,b)) = &self.forker {
-            if s[0].pk != s[1].pk { /* leader could cause a fork by messing with fork section too, not just who signs */
+            if s[0].pk != s[1].pk { /* leader could cause a fork by messing with fork section or which members sign */
                 return Err("forker is not 1 person")
             }
             if (s[0].c == s[1].c) & (s[0].r == s[1].r) {
@@ -489,7 +480,7 @@ impl NextBlock { // need to sign the staker inputs too
                 return Err("the forker was framed")
             }
         }
-        let mut s = Sha256::new();
+        let mut s = Sha3_512::new();
         s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
         let c = s.finalize();
         let m = vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec(),bincode::serialize(&self.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
@@ -520,7 +511,7 @@ impl NextBlock { // need to sign the staker inputs too
         let fees = self.txs.par_iter().map(|x|x.fee).sum::<u64>();
         let profits = fees/(self.validators.len() as u64);
         let inflation = INFLATION_CONSTANT/self.bnum;
-        for v in val_pools.remove(0) { // font i need to look at the validators here?
+        for v in val_pools.remove(0) {
             if self.validators.par_iter().all(|x|x.pk!=v) {
                 valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
             }
@@ -529,7 +520,7 @@ impl NextBlock { // need to sign the staker inputs too
             }
         }
         for vv in val_pools {
-            for v in vv { // font i need to look at the validators here?
+            for v in vv {
                 if self.shards.par_iter().all(|x|*x!=v) {
                     valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
                 }
@@ -655,7 +646,7 @@ impl LightningSyncBlock {
                 return Err("the forker was framed")
             }
         }
-        let mut s = Sha256::new();
+        let mut s = Sha3_512::new();
         s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
         let c = s.finalize();
         let m = vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec(),bincode::serialize(&self.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
@@ -697,12 +688,10 @@ impl LightningSyncBlock {
         let mut val_pools = val_pools.into_par_iter().enumerate().filter_map(|x|if self.pools.par_iter().all(|y|*y!=(x.0 as u16)) {None} else {Some(x.1.clone())}).collect::<Vec<Vec<u64>>>();
 
         let mut info =self.info.clone();
-        // self.validators; <---- will be number. I can add fee rewards by location
         let fees = info.fees;
         let profits = fees/(self.validators.len() as u64);
         let inflation = INFLATION_CONSTANT/self.bnum;
-        let mut val_pools = val_pools.clone();
-        for v in val_pools.remove(0) { // font i need to look at the validators here?
+        for v in val_pools.remove(0) {
             if self.validators.par_iter().all(|x|x.pk!=v) {
                 valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
             }
@@ -711,7 +700,7 @@ impl LightningSyncBlock {
             }
         }
         for vv in val_pools {
-            for v in vv { // font i need to look at the validators here?
+            for v in vv {
                 if self.shards.par_iter().all(|x|*x!=v) {
                     valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
                 }

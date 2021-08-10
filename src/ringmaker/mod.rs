@@ -1,18 +1,7 @@
 use rand::{Rng, distributions::Uniform};
 use rayon::prelude::*;
-// use std::hash::{Hash, Hasher};
 use std::usize;
-use itertools::{Itertools, izip};
 use polynomial_over_finite_prime_field::PolynomialOverP;
-// use std::thread;
-// use std::sync::{Arc, Mutex};
-// use modular::*;
-// use safe_modular_arithmetic::Modular;
-// use ff::Field;
-// use std::collections::VecDeque;
-// use bitvec::prelude::*;
-// use std::iter::FromIterator;
-// use std::mem::drop;
 use modinverse::modinverse;
 use std::convert::TryInto;
 use sha3::{Digest, Sha3_512};
@@ -72,13 +61,13 @@ pub fn generate_ring(s: &Vec<usize>, r: &u16, now: &u64) -> Vec<u8> {
     /* POLYNOMIAL MAKER */
     let justx = PolynomialOverP::<i128>::new(vec![0, 1], P);
     let mut poly = PolynomialOverP::<i128>::new(vec![], P);
-    for (x, y) in izip!(j.clone(),y.clone()) {
+    for (x, y) in j.iter().zip(y) {
         let mut term = y.clone(); //1+2x+3x^2
         for xi in j.clone() {
-            if x != xi {
+            if *x != xi {
                 let mut top = PolynomialOverP::<i128>::new(vec![xi as i128], P);
                 top = justx.clone() - top;
-                let bot = PolynomialOverP::<i128>::new(vec![x as i128], P)
+                let bot = PolynomialOverP::<i128>::new(vec![*x as i128], P)
                  + PolynomialOverP::<i128>::new(vec![P - xi as i128], P);
                 let bot = modinverse(bot.coefs()[0], P).unwrap();
                 let bot = PolynomialOverP::<i128>::new(vec![bot as i128], P);
@@ -197,7 +186,7 @@ pub fn recieve_ring(recieved: &Vec<u8>) -> Vec<u64> {
     }
 
     
-    places.iter().unique().map(|&x| x as u64).collect()
+    places.par_iter().enumerate().filter_map(|(i,x)| if places[..i].par_iter().all(|y| y!=x) {Some(*x as u64)} else {None}).collect()
 }
 
 

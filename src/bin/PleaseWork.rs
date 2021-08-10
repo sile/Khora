@@ -1,41 +1,16 @@
 // #![allow(dead_code)] //failed attempt to disable warnings
 // #![allow(non_snake_case)]
 use kora::account::*;
-use kora::commitment::*;
-use rand::random;
 use curve25519_dalek::scalar::Scalar;
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use kora::transaction::*;
-use std::fs::File;
-//use std::io::Write;
-use std::collections::HashMap;
-use rand::{thread_rng, Rng};
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_COMPRESSED;
-use curve25519_dalek::ristretto::{RistrettoPoint, CompressedRistretto};
+use curve25519_dalek::ristretto::{CompressedRistretto};
 use sha3::{Digest, Sha3_512};
-use kora::seal::{SealSig};
-use std::thread; //this can be used to parallelize stuff
-use byteorder::{ByteOrder, LittleEndian};
-use serde::{Serialize, Deserialize};
 use rayon::prelude::*;
-use kora::ringmaker::*;
 use kora::randblock::*;
-use std::io::BufReader;
-use buffered_offset_reader::{BufOffsetReader, OffsetReadMut};
-use palaver::*;
 use kora::bloom::*;
-use bit_vec::BitVec;
-use ahash::AHasher;
-use std::io::{Seek, SeekFrom};
-use std::fs::OpenOptions;
-use std::convert::TryInto;
-use kora::lpke::Ciphertext;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use kora::validation::*;
-use kora::seal::BETA;
 use kora::constants::PEDERSEN_H;
 /*
 cargo run --bin PleaseWork --release
@@ -72,38 +47,13 @@ fn main() -> Result<(),std::io::Error> {
     let constantine = Account::new(&x); //make a new account
     let y = format!("{}",3);
     let kimberly = Account::new(&y); //make a new account
-    // let u = "8====D".to_string();
-    // let gabrial = Account::new(&u); //make a new account
-    // let w = ":)🤗 💖<(^v^)>❤️❤️❤️❤️ :D <3 <3 <3 ⭐️ ".to_string();
-    // let ryan = Account::new(&w); //make a new account
-    // let x = "i have tinnitus".to_string();
-    // let constantine = Account::new(&x); //make a new account
-    // let y = "bad bitch warrior time <3".to_string();
-    // let kimberly = Account::new(&y); //make a new account
-    
-    // let a = "Believe in yourself it's a great day!".to_string();
-    // let sender = Account::new(&y); //make a new account
-    // let z = "I'm a different, independant person!".to_string();
-    // let reciever = Account::new(&z); //make a new account
     
 
 
-
-
-    /* i can save a LOT of memory by only saving the first 8 digits of all scalars given no one has that much money */
-
-    /* shard 0 act as either collectors (run block merger) or miners (make txses); ~128ish tx/block? this can be determined after release? */
-    // File::create("saved/outputs/pk").unwrap();
-    // File::create("saved/outputs/com").unwrap();
-    // File::create("saved/outputs/stk_pk").unwrap();
-    // File::create("saved/outputs/stk_amnt").unwrap();
-    // File::create("saved/outputs/stk_rand").unwrap();
-
-    /* need leader to sign hash (everything) */
     /* lets not directly say hardware requirements, do suggestions that evolve over time */
     /* etherium has comittes of 128 or more */
     /* if the leader makes multiple blocks, they get slashed */
-    let tx_processed = 256usize; /* make low stakers less likely to be selected to avoin sybal attacks */
+    let tx_processed = 16usize;
     let max_shards = 64usize; /* this if for teting purposes... there IS NO MAX SHARDS */
     
 

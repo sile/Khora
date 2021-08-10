@@ -32,12 +32,9 @@ use std::hash::Hasher;
 use std::iter::Iterator;
 use std::fs;
 use ahash::AHasher;
-// use rayon::prelude::*;
 use std::fs::OpenOptions;
 use std::fs::File;
-use std::io::{Seek, SeekFrom, Read, Write, BufReader};//, BufWriter};
-// use bitbuffer::{BitReadBuffer, LittleEndian, BitReadStream, BitRead, BitWrite, BitWriteStream};
-// use bitbit::*;
+use std::io::{Seek, SeekFrom, Read, Write, BufReader};
 pub struct BloomFilter {
     pub bits: BitVec,
     pub num_hashes: u32,
