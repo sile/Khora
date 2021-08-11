@@ -123,7 +123,7 @@ impl Account {
         let randomness = Scalar::random(&mut csprng);
         let com = Commitment::commit(amount, &randomness);
         let contains = ( *amount, randomness);
-        let serialized = serde_cbor::to_vec(&contains).unwrap();
+        let serialized = bincode::serialize(&contains).unwrap();
         let ek = thread_rng().gen::<[u8; 32]>();
         // println!("{:?}",ek);
         let mut hasher = Sha3_512::new();
@@ -160,7 +160,7 @@ impl Account {
             Ok(ck) => ck,  // viewing secret key (can also view amount)
             Err(_) => return Err(AccountError::NotOurAccount)
         };
-        let (amount, randomness): (Scalar, Scalar) = serde_cbor::from_slice(&ck).unwrap();
+        let (amount, randomness): (Scalar, Scalar) = bincode::deserialize(&ck).unwrap();
 
         let mut hasher = Sha3_512::new();
         hasher.update(&self.pk.compress().as_bytes());
@@ -197,7 +197,7 @@ impl Account {
             Err(_) => return Err(AccountError::NotOurAccount)
         };
         
-        let (amount, randomness): (Scalar, Scalar) = serde_cbor::from_slice(&ck).unwrap();
+        let (amount, randomness): (Scalar, Scalar) = bincode::deserialize(&ck).unwrap();
         let trcom = Commitment::commit(&amount, &randomness);
 
         Ok(OTAccount{
@@ -217,7 +217,7 @@ impl Account {
         let randomness = Scalar::from(0u8);
         let com = Commitment::commit(amount, &randomness);
         let contains = ( *amount, randomness);
-        let serialized = serde_cbor::to_vec(&contains).unwrap();
+        let serialized = bincode::serialize(&contains).unwrap();
         let ek = [0u8; 32]; // <----- if you want OT stk account, set this to something else (thugh they can't actually associate it with you)
         // anyone with a the viewing key can read this so it being zeros doesnt make it less secure
         

@@ -138,10 +138,6 @@ impl Transaction {
         accts
     }
 
-    pub fn bytes(&self) -> Vec<u8> {
-        serde_cbor::to_vec(self).unwrap()
-    }
-
     pub fn polyform(&self,poly:&Vec<u8>) -> PolynomialTransaction {
         PolynomialTransaction{
             inputs:poly.to_owned(),
