@@ -342,7 +342,7 @@ impl NextBlock { // need to sign the staker inputs too
                     .par_iter().all(|&y|
                     x != y)) /* should i replace this with a bloom filter or hashset??? and not parallelize it? */
                 &
-                x.tags.par_iter().all(|y| !bloom.contains(&y.to_bytes()))
+                x.tags.par_iter().all(|y| {!bloom.contains(&y.to_bytes())})
                 &
                 x.tags.par_iter().enumerate().all(|(i,y)|
                     x.tags[..i].par_iter().all(|z| {y!=z}
@@ -350,7 +350,7 @@ impl NextBlock { // need to sign the staker inputs too
                 &
                 x.verify().is_ok()
                 // x.verify_ram(&history).is_ok()
-                {
+                {//println!("{:?}",x.tags);
                     Some(x.to_owned())
                 }
                 else {None}

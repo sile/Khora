@@ -155,9 +155,11 @@ fn main() -> Result<(),std::io::Error> {
     let mut nextblock = NextBlock::default();
 
 
-    let iterations = 3;
+    let iterations = 5;
 
     let mut bnum = 0u64;
+    let mut txvec = vec![];
+
     for _ in 0..iterations { /* there's a lot less new money the random number generator is fine */
         let shards = 2u64.pow(bnum as u32) as usize; /* max of 512 shard without lazyness because number of validators fits inside a u16 */
         let tx_per_shard = tx_processed/shards;
@@ -183,8 +185,9 @@ fn main() -> Result<(),std::io::Error> {
         let leader = (vals[0][2]*PEDERSEN_H()).compress();
         let leader_loc = comittee[0][2] as u64; /* need to change all the signing to H not G */
 
-        let mut txvec = random_polytx_set(&tx_processed, &history, &lastheight);
-
+        if bnum < 3 {
+            txvec = random_polytx_set(&tx_processed, &history, &lastheight);
+        }
         
         if bnum == iterations {
             println!("I exit being a staker on this final turn");

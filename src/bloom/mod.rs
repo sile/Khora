@@ -31,10 +31,13 @@ use std::cmp::{min,max};
 use std::hash::Hasher;
 use std::iter::Iterator;
 use std::fs;
+use std::os::unix::prelude::FileExt;
 use ahash::AHasher;
 use std::fs::OpenOptions;
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Read, Write, BufReader};
+
+
 pub struct BloomFilter {
     pub bits: BitVec,
     pub num_hashes: u32,
@@ -228,6 +231,16 @@ impl BloomFile {
                 .unwrap();
             f.seek(SeekFrom::Start(idx/8)).expect("Seek failed");
             f.write_all(&byte).expect("Unable to write data");
+
+
+            // let idx = h % (FILE_SIZE*8) as u64;
+            // let mut buf = [0u8];
+            // let f = File::open(FILE_NAME).unwrap();
+            // f.read_at(&mut buf, idx/8).expect("Unable to read data");
+            // let mut delta = 1u8;
+            // delta <<= idx%8;
+            // buf[0] |= delta;
+            // f.write_at(&buf,idx/8).expect("Unable to write data");
         }
     }
     pub fn contains(&self, item: &[u8;32]) -> bool {
@@ -238,9 +251,11 @@ impl BloomFile {
             // let buffer = r.read_bit();
 
             let mut byte = [0u8];
-            let mut r = BufReader::new(File::open(FILE_NAME).unwrap());
-            r.seek(SeekFrom::Start(idx/8)).expect("Seek failed");
-            r.read(&mut byte).unwrap();
+            // let mut r = BufReader::new(File::open(FILE_NAME).unwrap());
+            // r.seek(SeekFrom::Start(idx/8)).expect("Seek failed");
+            // r.read(&mut byte).unwrap();
+            let r = File::open(FILE_NAME).unwrap();
+            r.read_at(&mut byte, idx/8).expect("Unable to read data");
             let mut delta = 1u8;
             delta <<= idx%8;
             if (byte[0] & delta) == 0u8 {
