@@ -7,8 +7,8 @@ edition = "2018"
 # cargo build
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [[bin]]
-name = "PleaseWork"
-path = "src/bin/PleaseWork.rs"
+name = "please_work"
+path = "src/bin/please_work.rs"
 
 [dependencies]
 curve25519-dalek = { version = "3", features = ["serde"] }

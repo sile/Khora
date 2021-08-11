@@ -13,9 +13,7 @@ use kora::bloom::*;
 use kora::validation::*;
 use kora::constants::PEDERSEN_H;
 /*
-cargo run --bin PleaseWork --release
-
-cargo run --bin PleaseWork --release -- -r  123
+cargo run --bin please_work --release
 */
 
 /* Anonymity ring size: proof size = 2*ceil(log_2 (3+|R|+|R||S|+β|T|+3|S|))+9... */
