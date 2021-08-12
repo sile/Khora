@@ -38,13 +38,13 @@ fn main() -> Result<(),std::io::Error> {
     // println!("{:#?}",n.next_power_of_two());
 
     let u = format!("{}",0);
-    let gabrial = Account::new(&u); //make a new account
+    let _gabrial = Account::new(&u); //make a new account
     let w = format!("{}",1);
     let ryan = Account::new(&w); //make a new account
     let x = format!("{}",2);
-    let constantine = Account::new(&x); //make a new account
+    let _constantine = Account::new(&x); //make a new account
     let y = format!("{}",3);
-    let kimberly = Account::new(&y); //make a new account
+    let _kimberly = Account::new(&y); //make a new account
     
 
 
@@ -52,7 +52,7 @@ fn main() -> Result<(),std::io::Error> {
     /* etherium has comittes of 128 or more */
     /* if the leader makes multiple blocks, they get slashed */
     let tx_processed = 16usize;
-    let max_shards = 64usize; /* this if for teting purposes... there IS NO MAX SHARDS */
+    let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
     
 
     let txvec = random_tx_set(&tx_processed);

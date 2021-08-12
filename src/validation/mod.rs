@@ -292,23 +292,21 @@ pub struct Signature{
     pub pk: u64,
 }
 
-impl Signature { // should i make these inputs hashers?
-    pub fn sign(key: &Scalar, message: &Vec<u8>, location: &u64) -> Signature {
-        // let message = vec![32u8,64u8];
-        let mut s = Sha3_512::new();
-        s.update(&message);
+impl Signature { // the inputs are the hashed messages you are checking for signatures on because it's faster for many messages.
+    pub fn sign(key: &Scalar, message: &mut Sha3_512, location: &u64) -> Signature {
+        // let mut s = Sha3_512::new();
+        // s.update(&message);
         let mut csprng = thread_rng();
         let a = Scalar::random(&mut csprng);
-        s.update((a*PEDERSEN_H()).compress().to_bytes());
-        let c = Scalar::from_hash(s);
+        message.update((a*PEDERSEN_H()).compress().to_bytes());
+        let c = Scalar::from_hash(message.to_owned());
         Signature{c, r: (a - c*key), pk: *location}
     }
-    pub fn verify(&self, message: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> bool {
-        // let message = vec![32u8,64u8];
-        let mut s = Sha3_512::new();
-        s.update(&message);
-        s.update((self.r*PEDERSEN_H() + self.c*stkstate[self.pk as usize].0.decompress().unwrap()).compress().to_bytes());
-        self.c == Scalar::from_hash(s)
+    pub fn verify(&self, message: &mut Sha3_512, stkstate: &Vec<(CompressedRistretto,u64)>) -> bool {
+        // let mut s = Sha3_512::new();
+        // s.update(&message);
+        message.update((self.r*PEDERSEN_H() + self.c*stkstate[self.pk as usize].0.decompress().unwrap()).compress().to_bytes());
+        self.c == Scalar::from_hash(message.to_owned())
     }
 }
 
@@ -359,10 +357,12 @@ impl NextBlock { // need to sign the staker inputs too
 
 
         let m = vec![leader.to_bytes().to_vec(),Syncedtx::to_sign(&txs),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+        let mut s = Sha3_512::new();
+        s.update(&m);
         NextBlock {
             validators: vec![],
             shards: vec![],
-            leader: Signature::sign(&key,&m,&location),
+            leader: Signature::sign(&key,&mut s,&location),
             txs: txs.to_owned(),
             last_name: last_name.to_owned(),
             pools: vec![*pool],
@@ -387,7 +387,9 @@ impl NextBlock { // need to sign the staker inputs too
         /* literally just ignore block content with less than 2/3 sigs */
         let shortcut = Syncedtx::to_sign(&sigfinale[0].txs); /* moving this to after the for loop made this code 3x faster. this is just a reminder to optimize everything later. (i can use [0]) */
         let m = vec![leader.clone(),shortcut.to_owned(),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-        let sigfinale = sigfinale.into_par_iter().filter(|x| Signature::verify(&x.leader, &m,&stkstate)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
+        let mut s = Sha3_512::new();
+        s.update(&m);
+        let sigfinale = sigfinale.into_par_iter().filter(|x| Signature::verify(&x.leader, &mut s.clone(),&stkstate)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
         /* my txt file codes are hella optimized but also hella incomplete with respect to polynomials and also hella disorganized */
         let sigs = sigfinale.par_iter().map(|x| x.leader.to_owned()).collect::<Vec<Signature>>();
         /* do i need to add an empty block option that requires >1/3 signatures of you as leader? */
@@ -395,7 +397,9 @@ impl NextBlock { // need to sign the staker inputs too
         s.update(&bincode::serialize(&sigs).unwrap().to_vec());
         let c = s.finalize();
         let m = vec![BLOCK_KEYWORD.to_vec(),bnum.to_le_bytes().to_vec(),last_name.clone(),c.to_vec(),bincode::serialize(&None::<([Signature;2],[Vec<u8>;2],u64)>).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
-        let leader = Signature::sign(&key, &m,&location);
+        let mut s = Sha3_512::new();
+        s.update(&m);
+        let leader = Signature::sign(&key, &mut s,&location);
         
         NextBlock{validators: sigs, shards: vec![], leader, txs, last_name: last_name.to_owned(), pools: vec![*pool], bnum: bnum.to_owned(), forker: None}
     }
@@ -425,7 +429,9 @@ impl NextBlock { // need to sign the staker inputs too
 
 
         let m = vec![leader.to_bytes().to_vec(),Syncedtx::to_sign(&blk.txs),bincode::serialize(&blk.shards).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-        Signature::sign(&key,&m, &location)
+        let mut s = Sha3_512::new();
+        s.update(&m);
+        Signature::sign(&key,&mut s, &location)
     }
     pub fn finishmerge(key: &Scalar, location: &u64, sigs: &Vec<Signature>, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, pool0: &Vec<u64>, pool_nums: &Vec<u16>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock {
         let pool0 = pool0.into_par_iter().map(|x|stkstate[*x as usize].0).collect::<Vec<CompressedRistretto>>();
@@ -452,8 +458,10 @@ impl NextBlock { // need to sign the staker inputs too
         
         let leader = (key*PEDERSEN_H()).compress().as_bytes().to_vec();
         let m = vec![leader.clone(),Syncedtx::to_sign(&blk.txs),bincode::serialize(&blk.shards).unwrap(),bnum.to_le_bytes().to_vec(),last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+        let mut s = Sha3_512::new();
+        s.update(&m);
         let sigs = sigs.into_par_iter().filter(|x|
-            Signature::verify(x, &m, stkstate)
+            Signature::verify(x, &mut s.clone(), stkstate)
         ).collect::<Vec<&Signature>>();
         let sigs = sigs.into_par_iter().filter(|x| !pool0.clone().into_par_iter().all(|y| stkstate[x.pk as usize].0 != y)).collect::<Vec<&Signature>>();
         let sigcopy = sigs.clone();
@@ -463,7 +471,9 @@ impl NextBlock { // need to sign the staker inputs too
         let c = s.finalize();
 
         let m = vec![BLOCK_KEYWORD.to_vec(),bnum.to_le_bytes().to_vec(), last_name.clone(),c.to_vec(),bincode::serialize(&blk.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
-        let leader = Signature::sign(&key, &m, &location);
+        let mut s = Sha3_512::new();
+        s.update(&m);
+        let leader = Signature::sign(&key, &mut s, &location);
         NextBlock{validators: sigs.to_owned(), shards: blk.shards, leader, txs: blk.txs, last_name: last_name.clone(), pools, bnum: bnum.to_owned(), forker: None}
     }
     pub fn verify(&self, validator_pools: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
@@ -476,7 +486,11 @@ impl NextBlock { // need to sign the staker inputs too
             }
             let x = vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[0].to_owned()].into_par_iter().flatten().collect::<Vec<u8>>();
             let y = vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[1].to_owned()].into_par_iter().flatten().collect::<Vec<u8>>();
-            if !s[0].verify(&x, &stkstate) | !s[1].verify(&y, &stkstate) {
+            let mut h = Sha3_512::new();
+            h.update(&x);
+            let mut a = Sha3_512::new();
+            a.update(&y);
+            if !s[0].verify(&mut h, &stkstate) | !s[1].verify(&mut a, &stkstate) {
                 return Err("the forker was framed")
             }
         }
@@ -484,11 +498,15 @@ impl NextBlock { // need to sign the staker inputs too
         s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
         let c = s.finalize();
         let m = vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec(),bincode::serialize(&self.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
-        if !self.leader.verify(&m, &stkstate) {
+        let mut h = Sha3_512::new();
+        h.update(&m);
+        if !self.leader.verify(&mut h, &stkstate) {
             return Err("leader is fake")
         }
         let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(),Syncedtx::to_sign(&self.txs),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-        if !self.validators.par_iter().all(|x| x.verify(&m, &stkstate)) {
+        let mut h = Sha3_512::new();
+        h.update(&m);
+        if !self.validators.par_iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
             return Err("at least 1 validator is fake")
         }
         if !self.validators.par_iter().all(|x| !validator_pools.clone().into_par_iter().all(|y| x.pk != y)) {
@@ -642,7 +660,11 @@ impl LightningSyncBlock {
             }
             let x = vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[0].to_owned()].into_par_iter().flatten().collect::<Vec<u8>>();
             let y = vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[1].to_owned()].into_par_iter().flatten().collect::<Vec<u8>>();
-            if !s[0].verify(&x, &stkstate) | !s[1].verify(&y, &stkstate) {
+            let mut h = Sha3_512::new();
+            h.update(&x);
+            let mut a = Sha3_512::new();
+            a.update(&y);
+            if !s[0].verify(&mut h, &stkstate) | !s[1].verify(&mut a, &stkstate) {
                 return Err("the forker was framed")
             }
         }
@@ -650,11 +672,15 @@ impl LightningSyncBlock {
         s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
         let c = s.finalize();
         let m = vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec(),bincode::serialize(&self.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
-        if !self.leader.verify(&m, &stkstate) {
+        let mut h = Sha3_512::new();
+        h.update(&m);
+        if !self.leader.verify(&mut h, &stkstate) {
             return Err("leader is fake")
         }
         let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(),bincode::serialize(&self.info).unwrap(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-        if !self.validators.par_iter().all(|x| x.verify(&m, &stkstate)) {
+        let mut h = Sha3_512::new();
+        h.update(&m);
+        if !self.validators.par_iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
             return Err("at least 1 validator is fake")
         }
         if !self.validators.par_iter().all(|x| !validator_pool.into_par_iter().all(|y| x.pk != *y)) {

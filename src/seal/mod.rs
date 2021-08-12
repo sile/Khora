@@ -493,7 +493,7 @@ mod tests {
         let tagelem: Vec<Tag> = poss.iter().map(|pos| ring[*pos].clone()).map(|acct| acct.get_tag().unwrap().clone()).collect();
         let tags: Vec<&Tag> = tagelem.iter().map(|t|t).collect();
 
-        let inputs:Vec<OTAccount> = ring.iter().map(|acct|(acct.clone())).collect();
+        let _inputs:Vec<OTAccount> = ring.iter().map(|acct|(acct.clone())).collect();
         let sigin:Vec<&OTAccount> = ring.iter().map(|acct|acct).collect();
         let sigout:Vec<&OTAccount> = outputs.iter().map(|acct|acct).collect();
 
