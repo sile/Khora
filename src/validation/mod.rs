@@ -23,7 +23,7 @@ use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
 pub const NUMBER_OF_VALIDATORS: u16 = 8;
 pub const REPLACERATE: usize = 4;
-const BLOCK_KEYWORD: [u8;7] = [107,141,142,162,151,145,154]; // Gabriel in octal
+const BLOCK_KEYWORD: [u8;7] = [107,141,142,162,151,145,154];
 pub const INFLATION_CONSTANT: u64 = 2u64.pow(30);
 
 
@@ -31,7 +31,7 @@ pub fn hash_to_scalar(message: &Vec<u8>) -> Scalar {
     let mut hasher = Sha3_512::new();
     hasher.update(&message);
     Scalar::from_hash(hasher)
-}
+} /* this is for testing purposes. it is used to check if 2 long messages are identicle */
 
 #[derive(Default, Clone, Serialize, Deserialize, Debug)]
 pub struct Syncedtx{
@@ -42,22 +42,6 @@ pub struct Syncedtx{
 }
 
 impl Syncedtx {
-    pub fn from0(txs: &Vec<SavedTransactionFull>)->Syncedtx {
-        let stkout = Vec::<u64>::new();
-        let stkin = txs.par_iter().map(|x|
-            x.outputs.par_iter().filter_map(|y| 
-                if let Ok(z) = stakereader_acc().read_ot(y) {Some((z.pk.compress(),u64::from_le_bytes(z.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())))} else {None}
-            ).collect::<Vec<_>>()
-        ).flatten().collect::<Vec<(CompressedRistretto,u64)>>();
-        let txout = txs.into_par_iter().map(|x|
-            x.outputs.to_owned().into_par_iter().filter(|x| stakereader_acc().read_ot(x).is_err()).collect::<Vec<_>>()
-        ).flatten().collect::<Vec<OTAccount>>();
-        let fees = txs.par_iter().map(|x|x.fee).sum::<u64>();
-        Syncedtx{stkout,stkin,txout,fees}
-    }
-    pub fn to_sign0(txs: &Vec<SavedTransactionFull>)->Vec<u8> {
-        bincode::serialize(&Syncedtx::from0(txs)).unwrap()
-    }
     pub fn from(txs: &Vec<PolynomialTransaction>)->Syncedtx {
         let stkout = txs.par_iter().filter_map(|x|
             if x.inputs.len() == 8 {Some(u64::from_le_bytes(x.inputs.to_owned().try_into().unwrap()))} else {None}
@@ -78,211 +62,6 @@ impl Syncedtx {
     }
 }
 
-
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
-pub struct Signature0{
-    pub c: Scalar,
-    pub r: Scalar,
-    pub pk: CompressedRistretto,
-}
-
-impl Signature0 {
-    pub fn sign(key: &Scalar, message: &Vec<Vec<u8>>) -> Signature0 {
-        let message = message.into_par_iter().flatten().map(|&x| x).collect::<Vec<u8>>();
-
-
-
-        let mut csprng = thread_rng();
-        let a = Scalar::random(&mut csprng);
-        let mut s = Sha3_512::new();
-        s.update(&message);
-        s.update((a*PEDERSEN_H()).compress().to_bytes());
-        let c = Scalar::from_hash(s);
-        Signature0{c, r: (a - c*key), pk: (key*PEDERSEN_H()).compress()}
-    }
-    pub fn verify(&self, message: &Vec<Vec<u8>>) -> bool {
-        let message = message.into_par_iter().flatten().map(|&x| x).collect::<Vec<u8>>();
-        let mut s = Sha3_512::new();
-        s.update(&message);
-        s.update((self.r*PEDERSEN_H() + self.c*self.pk.decompress().unwrap()).compress().to_bytes());
-        self.c == Scalar::from_hash(s)
-    }
-}
-
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
-pub struct Block {
-    pub validators: Vec<Signature0>,
-    pub shards: Vec<CompressedRistretto>,
-    pub leader: Signature0,
-    pub txs: Vec<SavedTransactionFull>,
-    pub bnum: u64,
-    pub forker: Option<([Signature0;2],[Vec<u8>;2],u64)>,
-} /* do they need to sign the hash of the previous block? */
-impl Block { // need to sign the staker inputs too
-    pub fn valicreate(key: &Scalar, leader: &CompressedRistretto, txs: &Vec<Transaction>, bnum: &u64, _bloom: &BloomFile) -> Block {
-        // let txs = // i don't care about block 0
-        //     txs.into_par_iter().enumerate().filter_map(|(i,x)| {
-        //         if 
-        //         x.tags.par_iter().all(|&x|
-        //             txs[..i].par_iter().flat_map(|x| x.tags.clone()).collect::<Vec<CompressedRistretto>>()
-        //             .par_iter().all(|&y| // i do flatten it a lot
-        //             x != y))
-        //         & // only need to check tags for non stk btw
-        //         x.tags.par_iter().all(|y| !bloom.contains(&y.to_bytes()))
-        //         &
-        //         x.tags.par_iter().enumerate().all(|(i,y)|
-        //             x.tags[..i].par_iter().all(|z| {y!=z}
-        //         ))
-        //         &
-        //         x.verify().is_ok()
-        //         {
-        //             Some(x.to_owned())
-        //         }
-        //         else {None}
-        //     }).collect::<Vec<Transaction>>(); /* input of 1 tx -> it's from a staker*/
-        let txs = txs.par_iter().map(|x|SavedTransactionFull::from(x)).collect::<Vec<SavedTransactionFull>>();
-        Block {
-            validators: vec![],
-            shards: vec![],
-            leader: Signature0::sign(&key,&vec![leader.to_bytes().to_vec(),Syncedtx::to_sign0(&txs),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec()]),
-            txs: txs.to_owned(),
-            bnum: *bnum,
-            forker: None,
-        }
-    }
-    pub fn finish(key: &Scalar, sigs: &Vec<Block>, validator_pool: &Vec<CompressedRistretto>, bnum: &u64) -> Block {
-        let leader = (key*PEDERSEN_H()).compress().as_bytes().to_vec();
-        let sigs = sigs.into_par_iter().filter(|x| !validator_pool.into_par_iter().all(|y| x.leader.pk != *y)).map(|x| x.to_owned()).collect::<Vec<Block>>();
-        let mut sigs = sigs.par_iter().enumerate().filter_map(|(i,x)| if sigs[..i].par_iter().all(|y| x.leader.pk != y.leader.pk) {Some(x.to_owned())} else {None}).collect::<Vec<Block>>();
-        let mut txs = Vec::<SavedTransactionFull>::new();
-        let mut sigfinale = Vec::<Block>::new();
-        for _ in 0..(sigs.len() as u16 - 2*NUMBER_OF_VALIDATORS/3) {
-            let b = sigs.pop().unwrap();
-            txs = b.txs;
-            sigfinale = sigs.par_iter().filter(|x| if let (Ok(z),Ok(y)) = (bincode::serialize(&x.txs),bincode::serialize(&txs)) {z==y} else {false}).map(|x| x.to_owned()).collect::<Vec<Block>>();
-            if sigfinale.len() as u16 > 2*NUMBER_OF_VALIDATORS/3 {
-                break;
-            }
-        }
-        let shortcut = Syncedtx::to_sign0(&sigfinale[0].txs); /* moving this to after the for loop made this code 3x faster. this is just a reminder to optimize everything later. (i can use [0]) */
-        let sigfinale = sigfinale.into_par_iter().filter(|x| Signature0::verify(&x.leader, &vec![leader.clone(),shortcut.to_owned(),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec()])).map(|x| x.to_owned()).collect::<Vec<Block>>();
-        /* my txt file codes are hella optimized but also hella incomplete with respect to polynomials and also hella disorganized */
-        let sigs = sigfinale.par_iter().map(|x| x.leader.to_owned()).collect::<Vec<Signature0>>();
-        
-        let mut s = Sha3_512::new();
-        s.update(&bincode::serialize(&sigs).unwrap().to_vec());
-        let c = s.finalize();
-        let leader = Signature0::sign(&key, &vec![BLOCK_KEYWORD.to_vec(),bnum.to_le_bytes().to_vec(),c.to_vec(),bincode::serialize(&None::<([Signature0;2],[Vec<u8>;2],u64)>).unwrap()]);
-        Block{validators: sigs, shards: vec![], leader, txs, bnum: bnum.to_owned(), forker: None}
-    }
-    pub fn valimerge(key: &Scalar, leader: &CompressedRistretto, blks: &Vec<Block>, val_pools: &Vec<Vec<CompressedRistretto>>, bnum: &u64) -> Signature0 {
-        let mut blks: Vec<Block> = blks.par_iter().zip(val_pools).filter_map(|(x,y)| if x.verify(&y).is_ok() {Some(x.to_owned())} else {None}).collect();
-        let mut blk = blks.remove(0);
-        blk.shards.par_extend(blk.validators.par_iter().map(|x| x.pk).collect::<Vec<CompressedRistretto>>());
-        let mut tags = blk.txs.par_iter().map(|x| x.tags.clone()).flatten().collect::<HashSet<Tag>>();
-        for mut b in blks {
-            if b.bnum == *bnum {
-                b.txs = b.txs.into_par_iter().filter(|t| {
-                    // tags.is_disjoint(&HashSet::from_par_iter(t.tags.par_iter().cloned()))
-                    t.tags.par_iter().all(|x| !tags.contains(x))
-                }).collect::<Vec<SavedTransactionFull>>();
-                blk.txs.par_extend(b.txs.clone());
-                let x = b.txs.len();
-                tags = tags.union(&b.txs.into_par_iter().map(|x| x.tags).flatten().collect::<HashSet<Tag>>()).map(|&x| x).collect::<HashSet<CompressedRistretto>>();
-                if x > 64 {
-                    blk.shards.par_extend(b.shards);
-                    blk.shards.par_extend(b.validators.into_par_iter().map(|x| x.pk).collect::<Vec<CompressedRistretto>>());
-                }
-            }
-        }
-        let s = blk.shards.clone();
-        blk.shards = blk.shards.par_iter().enumerate().filter_map(|(i,x)| if s[..i].par_iter().all(|y| x != y) {Some(x.to_owned())} else {None}).collect::<Vec<CompressedRistretto>>();
-        // blk.shards = blk.shards.into_par_iter().collect::<HashSet<CompressedRistretto>>().into_par_iter().collect::<Vec<CompressedRistretto>>(); /* marginally slower */
-        Signature0::sign(&key,&vec![leader.to_bytes().to_vec(),Syncedtx::to_sign0(&blk.txs),bincode::serialize(&blk.shards).unwrap(),bnum.to_le_bytes().to_vec()])
-    }
-    pub fn finishmerge(key: &Scalar, sigs: &Vec<Signature0>, blks: &Vec<Block>, val_pools: &Vec<Vec<CompressedRistretto>>, pool0: &Vec<CompressedRistretto>, bnum: &u64) -> Block {
-        let mut blks: Vec<Block> = blks.par_iter().zip(val_pools).filter_map(|(x,y)| if x.verify(&y).is_ok() {Some(x.to_owned())} else {None}).collect();
-        let mut blk = blks.remove(0);
-        blk.shards.par_extend(blk.validators.par_iter().map(|x| x.pk).collect::<Vec<CompressedRistretto>>());
-        let mut tags = blk.txs.par_iter().map(|x| x.tags.clone()).flatten().collect::<HashSet<Tag>>();
-        for mut b in blks {
-            b.txs = b.txs.into_par_iter().filter(|t| {
-                // tags.is_disjoint(&HashSet::from_par_iter(t.tags.par_iter().cloned()))
-                t.tags.par_iter().all(|x| !tags.contains(x))
-            }).collect::<Vec<SavedTransactionFull>>();
-            blk.txs.par_extend(b.txs.clone());
-            let x = b.txs.len();
-            tags = tags.union(&b.txs.into_par_iter().map(|x| x.tags).flatten().collect::<HashSet<Tag>>()).map(|&x| x).collect::<HashSet<CompressedRistretto>>();
-            if x > 64 {
-                blk.shards.par_extend(b.shards);
-                blk.shards.par_extend(b.validators.into_par_iter().map(|x| x.pk).collect::<Vec<CompressedRistretto>>());
-            }
-        }
-        let s = blk.shards.clone();
-        blk.shards = blk.shards.par_iter().enumerate().filter_map(|(i,x)| if s[..i].par_iter().all(|y| x != y) {Some(x.to_owned())} else {None}).collect::<Vec<CompressedRistretto>>();
-        let leader = (key*PEDERSEN_H()).compress().as_bytes().to_vec();
-        let sigs = sigs.into_par_iter().filter(|x| Signature0::verify(x, &vec![leader.clone(),bincode::serialize(&blk.txs.par_iter().map(|x| x.outputs.to_owned()).flatten().collect::<Vec<OTAccount>>()).unwrap(),bincode::serialize(&blk.shards).unwrap(),bnum.to_le_bytes().to_vec()])).map(|x| x.to_owned()).collect::<Vec<Signature0>>();
-        let sigs = sigs.into_par_iter().filter_map(|x| if !pool0.into_par_iter().all(|y| x.pk != *y) {Some(x.clone())} else {None}).collect::<Vec<Signature0>>();
-        let mut s = Sha3_512::new();
-        s.update(&bincode::serialize(&sigs).unwrap().to_vec());
-        let c = s.finalize();
-        let leader = Signature0::sign(&key, &vec![BLOCK_KEYWORD.to_vec(),bnum.to_le_bytes().to_vec(),c.to_vec(),bincode::serialize(&blk.forker).unwrap()]);
-        Block{validators: sigs, shards: blk.shards, leader, txs: blk.txs, bnum: bnum.to_owned(), forker: None}
-    }
-    pub fn verify(&self, validator_pool: &Vec<CompressedRistretto>) -> Result<bool, &'static str> {
-        if let Some((s,v,b)) = &self.forker {
-            if s[0].pk != s[1].pk {
-                return Err("forker is not 1 person")
-            }
-            if (s[0].c == s[1].c) & (s[0].r == s[1].r) {
-                return Err("forker is not a forker")
-            }
-            if !s[0].verify(&vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[0].to_owned()]) | !s[1].verify(&vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[1].to_owned()]) {
-                return Err("the forker was framed")
-            }
-        }
-        let mut s = Sha3_512::new();
-        s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
-        let c = s.finalize();
-        if !self.leader.verify(&vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(),c.to_vec(),bincode::serialize(&self.forker).unwrap()]) {
-            return Err("leader is fake")
-        }
-        if !self.validators.par_iter().all(|x| x.verify(&vec![self.leader.pk.as_bytes().to_vec().clone(),Syncedtx::to_sign0(&self.txs),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec()])) {
-            return Err("at least 1 validator is fake")
-        }
-        if !self.validators.par_iter().all(|x| !validator_pool.into_par_iter().all(|y| x.pk != *y)) {
-            return Err("at least 1 validator is not in the pool")
-        }
-        if validator_pool.par_iter().filter(|x| !self.validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < (2*NUMBER_OF_VALIDATORS as usize/3) {
-            return Err("there aren't enough validators")
-        }
-        let x = self.validators.par_iter().map(|x| x.pk).collect::<Vec<CompressedRistretto>>();
-        if !x.clone().par_iter().enumerate().all(|(i,y)| x.clone()[..i].into_par_iter().all(|z| y != z)) {
-            return Err("there's multiple signatures from the same validator")
-        }
-        return Ok(true)
-    }
-    pub fn scan_as_noone(&self) -> Syncedtx {
-        Syncedtx::from0(&self.txs)
-    }
-    pub fn scan(&self, me: &Account, mine: &mut Vec<(u64,OTAccount)>, height: &mut u64) -> Syncedtx {
-        let x = Syncedtx::from0(&self.txs); // will need to include something for stker amnt update
-        mine.par_extend(x.txout.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.receive_ot(x) {Some((i as u64+*height,y))} else {None}).collect::<Vec<(u64,OTAccount)>>());
-        *height += x.txout.len() as u64; // probably going to do similar thing for stk
-        x
-    }
-    pub fn stkscan(&self, me: &Account, mine: &mut Vec<[u64;2]>, height: &mut u64) {
-        let stkin = self.txs.par_iter().map(|x|
-            x.outputs.par_iter().filter_map(|y| 
-                if let Ok(z) = stakereader_acc().read_ot(y) {Some(z)} else {None}
-            ).collect::<Vec<_>>()
-        ).flatten().collect::<Vec<OTAccount>>();
-        
-        // mine.par_extend(stkin.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.stake_acc().receive_ot(x) {Some((i as u64+*height,y))} else {None}).collect::<Vec<(u64,OTAccount)>>());
-        mine.par_extend(stkin.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.stake_acc().receive_ot(x) {Some([i as u64+*height,u64::from_le_bytes(y.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())])} else {None}).collect::<Vec<[u64;2]>>());
-        *height += stkin.len() as u64; // probably going to do similar thing for stk
-    }
-}
 
 
 #[derive(Default, Clone, Serialize, Deserialize, Debug)]

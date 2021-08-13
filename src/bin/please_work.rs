@@ -3,6 +3,7 @@
 use kora::account::*;
 use curve25519_dalek::scalar::Scalar;
 use std::collections::VecDeque;
+use std::convert::TryInto;
 use std::time::Instant;
 use kora::transaction::*;
 use curve25519_dalek::ristretto::{CompressedRistretto};
@@ -56,80 +57,47 @@ fn main() -> Result<(),std::io::Error> {
     
 
     let txvec = random_tx_set(&tx_processed);
-    let lkey = Scalar::from(0u64);
-    let leader = (lkey*PEDERSEN_H()).compress();
-    let val_pool = (0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (Scalar::from(x)*PEDERSEN_H()).compress()).collect::<Vec<CompressedRistretto>>();
 
+    
     StakerState::initialize();
     History::initialize();
     BloomFile::initialize_bloom_file();
     let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this
 
 
-    let start = Instant::now();
-    Block::valicreate(&Scalar::from(1u8),&leader,&txvec,&0,&bloom);
-    println!("time clean block: {:?} ms",start.elapsed().as_millis());
-    let sigs = (0..(NUMBER_OF_VALIDATORS as u64)).into_par_iter().map(|x: u64| Block::valicreate(&Scalar::from(x),&leader,&txvec,&0,&bloom)).collect::<Vec<Block>>();
-    let start = Instant::now();
-    let block = Block::finish(&lkey, &sigs, &val_pool, &0);
-    println!("time to complete block: {:?} ms",start.elapsed().as_millis());
-    // let start = Instant::now();
-    // block.verify(&val_pool).unwrap();
-    // println!("time to verify block: {:?} ms",start.elapsed().as_millis());
-    println!("tx: {:?}",block.txs.len());
-    println!("validators per any shard: {:?}",NUMBER_OF_VALIDATORS);
-    println!("shard validators: {:?}",block.shards.len());
-    println!("full block: {} bytes",bincode::serialize(&block).unwrap().len());
-    println!("block 0 done (unverified and unchecked transactions inside)!");
-    println!("-------------------------------->");
 
 
-    let info = block.scan_as_noone();
+    let (stkin,txout): (Vec<Vec<(CompressedRistretto,u64)>>,Vec<Vec<OTAccount>>) = txvec.into_par_iter().map(|x| {
+        let a = x.outputs;
+        let s = a.par_iter().filter_map(|x|
+            if let Ok(x) = stakereader_acc().read_ot(x) {Some((x.pk.compress(),u64::from_le_bytes(x.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())))}
+            else {None}
+        ).collect::<Vec<(CompressedRistretto,u64)>>();
+        let t = a.into_par_iter().filter(|x| 
+            stakereader_acc().read_ot(x).is_err()
+        ).collect::<Vec<OTAccount>>();
+        (s,t)
+    }).unzip();
+    let stkin = stkin.into_par_iter().flatten().collect::<Vec<(CompressedRistretto,u64)>>();
+    let txout = txout.into_par_iter().flatten().collect::<Vec<OTAccount>>();
+    let fees = 0u64;
+    let stkout = vec![];
+    let info = Syncedtx{stkout,stkin,txout,fees};
     History::append(&info.txout);
-    let mut history = info.txout;
-    let mut stkinfo = info.stkin;
+    let mut history = info.txout.clone();
+    let mut stkinfo = info.stkin.clone();
     println!("stakers: {:?}",stkinfo.len());
-
-    
-    // println!("{:?}",comittee);
-    // println!("{:?}",queue);
-
-    // println!("stakers: {:?}",stkinfo);
-
-    // for i in 0..4 {
-    //     let mut mine = Vec::<(u64,OTAccount)>::new(); // read from file
-    //     let mut lastheight = 0u64;
-    //     let mut height = 0u64;
-    //     block.scan(&Account::new(&format!("{}",i)), &mut mine, &mut height);
-    //     println!("{}'s at {:?}",i,mine.par_iter().map(|x|x.0).collect::<Vec<_>>());
-    // }
-    let mut mine = Vec::<(u64,OTAccount)>::new(); // read from file
     let mut lastheight = 0u64;
-    let mut height = 0u64;
-    block.scan(&ryan, &mut mine, &mut height);
-    println!("I'm at {:?}",mine.par_iter().map(|x|x.0).collect::<Vec<_>>());
+    let mut height = info.txout.len() as u64;
+    let mut sheight = info.stkout.len() as u64;
+    let mut mine = Vec::<(u64,OTAccount)>::new(); // read from file
+    mine.par_extend(info.txout.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = ryan.receive_ot(x) {Some((i as u64+height,y))} else {None}).collect::<Vec<(u64,OTAccount)>>());
     let mut smine = Vec::<[u64;2]>::new(); // read from file
-    let mut sheight = 0u64;
-    block.stkscan(&ryan, &mut smine, &mut sheight);
-    println!("my stk accs: {:?}",smine.len());
+    smine.par_extend(info.stkin.par_iter().enumerate().filter_map(|(i,x)| if x.0 == ryan.derive_stk_ot(&Scalar::from(x.1)).pk.compress() {Some([i as u64+sheight,x.1])} else {None}).collect::<Vec<[u64;2]>>());
 
-
-    // println!("I exit being a staker");
-    // let mut txvec = random_polytx_set(&tx_processed, &history, &lastheight);
-    // let txsleave = Transaction::spend_ring(&vec![smine[0].1.to_owned()], &vec![]).polyform(&smine[0].0.to_le_bytes().to_vec());
-    // txsleave.verifystk(&stkinfo).unwrap();// all to fee so shouldn't mess up my ordering with the randblock (but mught with comittee)
-    // txvec.push(txsleave);
-
-
-
-    
-
-    // println!("{:?}",bincode::serialize(&mine[0].1.eek).unwrap().len());
-    // println!("{:?}",bincode::serialize(&mine[0].1.eck).unwrap().len());
-    // println!("{:?}",bincode::serialize(&mine[0].1).unwrap().len());
-    // println!("{:?}",bincode::serialize(&block.txs[0].outputs[0]).unwrap().len());
-    // println!("{:?}",bincode::serialize(&block.txs[0].outputs[0].eek).unwrap().len());
-    // println!("{:?}",bincode::serialize(&block.txs[0].outputs[0].eck).unwrap().len());
+    println!("history: {}",history.len());
+    println!("stkinfo: {}",stkinfo.len());
+    println!("-------------------------------->");
 
     // let rname = generate_ring(&mine.par_iter().map(|(x,_)|*x as usize).collect::<Vec<usize>>(), &15, &height);
     // let ring = recieve_ring(&rname);
