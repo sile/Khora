@@ -97,6 +97,7 @@ fn main() -> Result<(),std::io::Error> {
 
     println!("history: {}",history.len());
     println!("stkinfo: {}",stkinfo.len());
+    println!("initial conditions loaded");
     println!("-------------------------------->");
 
     // let rname = generate_ring(&mine.par_iter().map(|(x,_)|*x as usize).collect::<Vec<usize>>(), &15, &height);
