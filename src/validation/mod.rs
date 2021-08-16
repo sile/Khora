@@ -102,7 +102,7 @@ pub struct NextBlock {
     pub forker: Option<([Signature;2],[Vec<u8>;2],u64)>,
 }
 impl NextBlock { // need to sign the staker inputs too
-    pub fn valicreate(key: &Scalar, location: &u64, leader: &CompressedRistretto, txs: &Vec<PolynomialTransaction>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, bloom: &BloomFile, _history: &Vec<OTAccount>, stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock {
+    pub fn valicreate(key: &Scalar, location: &u64, leader: &CompressedRistretto, txs: &Vec<PolynomialTransaction>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, bloom: &BloomFile,/* _history: &Vec<OTAccount>,*/ stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock {
         let mut stks = txs.par_iter().filter_map(|x| 
             if x.inputs.len() == 8 {if x.verifystk(&stkstate).is_ok() {Some(x.to_owned())} else {None}} else {None}
         ).collect::<Vec<PolynomialTransaction>>(); /* i would use drain_filter but its unstable */

@@ -56,8 +56,8 @@ fn main() -> Result<(), MainError> {
     // let addr: SocketAddr = track_any_err!(format!("127.0.0.1:{}", port).parse())?; // ip r | grep default <--- router ip, just go to settings
     // let addr: SocketAddr = track_any_err!(format!("172.20.10.14:{}", port).parse())?;
     // let addr: SocketAddr = track_any_err!(format!("172.16.0.8:{}", port).parse())?;
-    // let addr: SocketAddr = track_any_err!(format!("192.168.0.101:{}", port).parse())?;
-    let addr: SocketAddr = track_any_err!(format!("172.20.10.3:{}", port).parse())?;
+    let addr: SocketAddr = track_any_err!(format!("192.168.0.101:{}", port).parse())?; // wafstampede
+    // let addr: SocketAddr = track_any_err!(format!("172.20.10.3:{}", port).parse())?; // my iphone
     // let addr: SocketAddr = track_any_err!(format!("192.168.0.1:{}", port).parse())?;
     
 
@@ -80,25 +80,31 @@ fn main() -> Result<(), MainError> {
         node.join(NodeId::new(contact, LocalNodeId::new(0)));
     }
 
+    let leader = Account::new(&format!("{}",0)).stake_acc().derive_stk_ot(&Scalar::from(1u8)).pk.compress(); //make a new account
+
+
+    BloomFile::initialize_bloom_file();
+    let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this
+
+
+
     let l = Account::new(&format!("{}",0)).stake_acc();
-    let leader0 = l.receive_ot(&l.derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
-    let lkey = leader0.sk.unwrap();
+    let validator = l.receive_ot(&l.derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
+    let vkey = validator.sk.unwrap();
     let keylocation = 0;
-    let staker0 = leader0.pk.compress();
-    let node = LeaderNode {
+    let node = ValidatorNode {
         inner: node,
-        key: lkey,
+        key: vkey,
         keylocation: keylocation,
-        stkinfo: vec![(staker0,1u64)],
-        txses: vec![],
+        leader: leader,
+        stkinfo: vec![(leader,1u64)],
         lastblock: NextBlock::default(),
-        sigs: vec![],
         queue: (0..max_shards).map(|_|[0usize;NUMBER_OF_VALIDATORS as usize].into_par_iter().collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
         exitqueue: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
         comittee: (0..max_shards).map(|_|vec![0usize;NUMBER_OF_VALIDATORS as usize]).collect::<Vec<_>>(),
         lastname: vec![],
+        bloom: bloom,
         bnum: 0u64,
-        timekeeper: Instant::now(),
     };
     executor.spawn(service.map_err(|e| panic!("{}", e)));
     executor.spawn(node);
@@ -108,22 +114,21 @@ fn main() -> Result<(), MainError> {
     Ok(())
 }
 
-struct LeaderNode {
+struct ValidatorNode {
     inner: Node<Vec<u8>>,
     key: Scalar,
     keylocation: u64,
+    leader: CompressedRistretto,
     stkinfo: Vec<(CompressedRistretto,u64)>,
-    txses: Vec<Vec<u8>>,
     lastblock: NextBlock,
-    sigs: Vec<NextBlock>,
     queue: Vec<VecDeque<usize>>,
     exitqueue: Vec<VecDeque<usize>>,
     comittee: Vec<Vec<usize>>,
     lastname: Vec<u8>,
+    bloom: BloomFile,
     bnum: u64,
-    timekeeper: Instant,
 }
-impl Future for LeaderNode {
+impl Future for ValidatorNode {
     type Item = ();
     type Error = ();
 
@@ -136,11 +141,25 @@ impl Future for LeaderNode {
                 let mut m = m.payload().to_vec();
                 println!("# MESSAGE length: {:?}", m.len());
                 let mtype = m.pop().unwrap(); // dont do unwraps that could mess up a leader
-                if mtype == 0 {
-                    self.txses.push(m[..10_000].to_vec());
+                if mtype == 1 {
+                    let shard = 0;
+                    let m: Vec<Vec<u8>> = bincode::deserialize(&m).unwrap();
+                    let m = m.into_par_iter().map(|x| bincode::deserialize(&x).unwrap()).collect::<Vec<PolynomialTransaction>>();
+                    let m = NextBlock::valicreate(&self.key, &self.keylocation, &self.leader, &m, &(shard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
+                    let mut m = bincode::serialize(&m).unwrap();
+                    m.push(2);
+                    self.inner.broadcast(m);
                 }
-                else if mtype == 2 {
-                    self.sigs.push(bincode::deserialize(&m).unwrap());
+                if mtype == 3 {
+                    let mut hasher = Sha3_512::new();
+                    hasher.update(&m);
+                    self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                    self.lastblock = bincode::deserialize(&m).unwrap();
+
+                    self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>());
+                    for i in 0..self.comittee.len() {
+                        select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                    }
                 }
 
                 println!("pt id: {:?}",self.inner.plumtree_node().id());
@@ -149,33 +168,6 @@ impl Future for LeaderNode {
                 println!("hv id: {:?}",self.inner.hyparview_node().id());
                 println!("hv av: {:?}",self.inner.hyparview_node().active_view());
                 println!("hv pv: {:?}",self.inner.hyparview_node().passive_view());
-                did_something = true;
-            }
-            if (self.sigs.len() >= 86) & (self.timekeeper.elapsed().as_millis() > 500) {
-                let shard = 0;
-                let start = Instant::now();
-                self.lastblock = NextBlock::finish(&self.key, &self.keylocation, &self.sigs, &self.comittee[shard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(shard as u16), &self.bnum, &self.lastname, &self.stkinfo);
-                println!("time to complete shard: {:?} ms",start.elapsed().as_millis());
-                let mut m = bincode::serialize(&self.lastblock).unwrap();
-
-                let mut hasher = Sha3_512::new();
-                hasher.update(&m);
-                self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-
-                m.push(3u8);
-                self.inner.broadcast(m);
-                self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>());
-                for i in 0..self.comittee.len() {
-                    select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                }
-                did_something = true;
-            }
-            if (self.txses.len() >= 128) | (self.bnum == 0) {
-                let mut m = bincode::serialize(&self.txses).unwrap();
-                m.push(1u8);
-                self.inner.broadcast(m);
-                self.bnum += 1;
-                self.timekeeper = Instant::now();
                 did_something = true;
             }
         }

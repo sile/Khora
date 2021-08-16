@@ -206,9 +206,9 @@ fn main() -> Result<(),std::io::Error> {
         let mut shardblocks = Vec::<NextBlock>::new();
         for i in 0..shards {
             let start = Instant::now();
-            NextBlock::valicreate(&vals[i][0], &(comittee[i][0] as u64),&leader,&txvec[i].to_vec(),&(i as u16), &bnum,&last_name,&bloom,&history,&stkinfo);
+            NextBlock::valicreate(&vals[i][0], &(comittee[i][0] as u64),&leader,&txvec[i].to_vec(),&(i as u16), &bnum,&last_name,&bloom/*,&history*/,&stkinfo);
             println!("time clean shard {}: {:?} ms",i,start.elapsed().as_millis());
-            let sigs = vals[i].clone().into_par_iter().zip(comittee[i].clone()).map(|(x,l)| NextBlock::valicreate(&x,&(l as u64), &leader,&txvec[i].to_vec(),&(i as u16), &bnum,&last_name,&bloom,&history,&stkinfo)).collect::<Vec<NextBlock>>();
+            let sigs = vals[i].clone().into_par_iter().zip(comittee[i].clone()).map(|(x,l)| NextBlock::valicreate(&x,&(l as u64), &leader,&txvec[i].to_vec(),&(i as u16), &bnum,&last_name,&bloom/*,&history*/,&stkinfo)).collect::<Vec<NextBlock>>();
             let start = Instant::now();
             let block = NextBlock::finish(&lkey, &leader_loc, &sigs, &val_pool[i], &(i as u16), &bnum, &last_name, &stkinfo);
             println!("time to complete shard {}: {:?} ms",i,start.elapsed().as_millis());
