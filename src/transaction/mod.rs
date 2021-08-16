@@ -159,7 +159,7 @@ pub fn get_test_ring(n: usize) -> Vec<OTAccount> {
 
 
 
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+#[derive(Default, Clone, Serialize, Deserialize, Hash, Debug)]
 pub struct PolynomialTransaction{
     pub inputs: Vec<u8>,
     pub outputs: Vec<OTAccount>,

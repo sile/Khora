@@ -21,7 +21,7 @@ use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
 
 
-pub const NUMBER_OF_VALIDATORS: u16 = 8;
+pub const NUMBER_OF_VALIDATORS: u16 = 128;
 pub const REPLACERATE: usize = 4;
 const BLOCK_KEYWORD: [u8;7] = [107,141,142,162,151,145,154];
 pub const INFLATION_CONSTANT: u64 = 2u64.pow(30);
@@ -300,11 +300,11 @@ impl NextBlock { // need to sign the staker inputs too
         }
         return Ok(true)
     }
-    pub fn scan_as_noone(&self,history: &mut Vec<OTAccount>,valinfo: &mut Vec<(CompressedRistretto,u64)>,val_pools: &Vec<Vec<u64>>) {
+    pub fn scan_as_noone(&self,/*history: &mut Vec<OTAccount>,*/valinfo: &mut Vec<(CompressedRistretto,u64)>,val_pools: &Vec<Vec<u64>>) {
         let mut val_pools = val_pools.into_par_iter().enumerate().filter_map(|x|if !self.pools.par_iter().all(|y|*y!=(x.0 as u16)) {Some(x.1.clone())} else {None}).collect::<Vec<Vec<u64>>>();
         let mut info = Syncedtx::from(&self.txs);
         History::append(&info.txout);
-        history.append(&mut info.txout);
+        // history.append(&mut info.txout);
         let fees = self.txs.par_iter().map(|x|x.fee).sum::<u64>();
         let profits = fees/(self.validators.len() as u64);
         let inflation = INFLATION_CONSTANT/self.bnum;

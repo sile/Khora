@@ -38,13 +38,42 @@ fn main() -> Result<(),std::io::Error> {
     // let n = 2u64; // just checking ceil(2) = 2
     // println!("{:#?}",n.next_power_of_two());
 
-    let u = format!("{}",0);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    let u = format!("{}",-1);
     let _gabrial = Account::new(&u); //make a new account
-    let w = format!("{}",1);
+    let w = format!("{}",0);
     let ryan = Account::new(&w); //make a new account
-    let x = format!("{}",2);
-    let _constantine = Account::new(&x); //make a new account
-    let y = format!("{}",3);
+    let x = format!("{}",1);
+    let constantine = Account::new(&x); //make a new account
+    let y = format!("{}",2);
     let _kimberly = Account::new(&y); //make a new account
     
 
@@ -52,7 +81,7 @@ fn main() -> Result<(),std::io::Error> {
     /* lets not directly say hardware requirements, do suggestions that evolve over time */
     /* etherium has comittes of 128 or more */
     /* if the leader makes multiple blocks, they get slashed */
-    let tx_processed = 16usize;
+    let tx_processed = 64usize;
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
     
 
@@ -117,14 +146,16 @@ fn main() -> Result<(),std::io::Error> {
 
 
 
-    let mut queue = (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
+    // let mut queue = (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
+    let mut queue = (0..max_shards).map(|_|[0usize;NUMBER_OF_VALIDATORS as usize].into_par_iter().collect::<VecDeque<usize>>()).collect::<Vec<_>>();
     let mut exitqueue = (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
-    let mut comittee = (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<Vec<usize>>()).collect::<Vec<_>>();
+    // let mut comittee = (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<Vec<usize>>()).collect::<Vec<_>>();
+    let mut comittee = (0..max_shards).map(|_|vec![0usize;NUMBER_OF_VALIDATORS as usize]).collect::<Vec<_>>();
     let mut alltagsever = Vec::<CompressedRistretto>::new();
     let mut nextblock = NextBlock::default();
 
 
-    let iterations = 5;
+    let iterations = 4;
 
     let mut bnum = 0u64;
     let mut txvec = vec![];
@@ -154,7 +185,7 @@ fn main() -> Result<(),std::io::Error> {
         let leader = (vals[0][2]*PEDERSEN_H()).compress();
         let leader_loc = comittee[0][2] as u64; /* need to change all the signing to H not G */
 
-        if bnum < 3 {
+        if bnum < 2 {
             txvec = random_polytx_set(&tx_processed, &history, &lastheight);
         }
         
@@ -163,7 +194,7 @@ fn main() -> Result<(),std::io::Error> {
             println!("stk loc: {:?}",smine[0][0]);
             println!("stk amount: {:?}",smine[0][1]);
             println!("stk both: {:?}",stkinfo[smine[0][0] as usize]);
-            let txleave = Transaction::spend_ring(&vec![ryan.stake_acc().receive_ot(&ryan.stake_acc().derive_stk_ot(&Scalar::from(smine[0][1]))).unwrap()], &vec![]);
+            let txleave = Transaction::spend_ring(&vec![ryan.stake_acc().receive_ot(&ryan.stake_acc().derive_stk_ot(&Scalar::from(smine[0][1]))).unwrap()], &vec![(&constantine,&Scalar::from(smine[0][1]/10001));10000]);
             txleave.verify().unwrap();
             println!("passed test 1");
             let txleave = txleave.polyform(&smine[0][0].to_le_bytes().to_vec());
@@ -179,7 +210,7 @@ fn main() -> Result<(),std::io::Error> {
             println!("time clean shard {}: {:?} ms",i,start.elapsed().as_millis());
             let sigs = vals[i].clone().into_par_iter().zip(comittee[i].clone()).map(|(x,l)| NextBlock::valicreate(&x,&(l as u64), &leader,&txvec[i].to_vec(),&(i as u16), &bnum,&last_name,&bloom,&history,&stkinfo)).collect::<Vec<NextBlock>>();
             let start = Instant::now();
-            let block = NextBlock::finish(&lkey, &leader_loc, &sigs, &val_pool[i], &(i as u16), &bnum,&last_name,&stkinfo);
+            let block = NextBlock::finish(&lkey, &leader_loc, &sigs, &val_pool[i], &(i as u16), &bnum, &last_name, &stkinfo);
             println!("time to complete shard {}: {:?} ms",i,start.elapsed().as_millis());
             shardblocks.push(block);
         }
@@ -216,7 +247,7 @@ fn main() -> Result<(),std::io::Error> {
         lastheight = height;
         nextblock.scan(&ryan, &mut mine, &mut height, &mut alltagsever);
         nextblock.scanstk(&ryan, &mut smine, &mut sheight, &val_pool[0]);
-        nextblock.scan_as_noone(&mut history,&mut stkinfo,&val_pool);
+        nextblock.scan_as_noone(/*&mut history,*/&mut stkinfo,&val_pool);
         println!("history: {}",history.len());
         println!("stkinfo: {}",stkinfo.len());
         println!("-------------------------------->"); /* right now, bloom filter filters staker exits? */
@@ -277,8 +308,6 @@ fn main() -> Result<(),std::io::Error> {
     // f.write_all(&[74u8;32]);
     // println!("{:?}",f);
     // println!("{:?}",start.elapsed().as_millis());
-
-
 
 
 
