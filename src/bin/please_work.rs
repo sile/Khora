@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::time::Instant;
 use kora::transaction::*;
-use curve25519_dalek::ristretto::{CompressedRistretto};
+use curve25519_dalek::ristretto::CompressedRistretto;
 use sha3::{Digest, Sha3_512};
 use rayon::prelude::*;
 use kora::randblock::*;
@@ -194,7 +194,7 @@ fn main() -> Result<(),std::io::Error> {
             println!("stk loc: {:?}",smine[0][0]);
             println!("stk amount: {:?}",smine[0][1]);
             println!("stk both: {:?}",stkinfo[smine[0][0] as usize]);
-            let txleave = Transaction::spend_ring(&vec![ryan.stake_acc().receive_ot(&ryan.stake_acc().derive_stk_ot(&Scalar::from(smine[0][1]))).unwrap()], &vec![(&constantine,&Scalar::from(smine[0][1]/10001));10000]);
+            let txleave = Transaction::spend_ring(&vec![ryan.stake_acc().receive_ot(&ryan.stake_acc().derive_stk_ot(&Scalar::from(smine[0][1]))).unwrap()], &vec![(&constantine,&Scalar::from(smine[0][1]/1001));1000]);
             txleave.verify().unwrap();
             println!("passed test 1");
             let txleave = txleave.polyform(&smine[0][0].to_le_bytes().to_vec());
@@ -247,7 +247,7 @@ fn main() -> Result<(),std::io::Error> {
         lastheight = height;
         nextblock.scan(&ryan, &mut mine, &mut height, &mut alltagsever);
         nextblock.scanstk(&ryan, &mut smine, &mut sheight, &val_pool[0]);
-        nextblock.scan_as_noone(/*&mut history,*/&mut stkinfo,&val_pool);
+        nextblock.scan_as_noone(/*&mut history,*/&mut stkinfo,&val_pool,&mut queue, &mut exitqueue,&mut comittee);
         println!("history: {}",history.len());
         println!("stkinfo: {}",stkinfo.len());
         println!("-------------------------------->"); /* right now, bloom filter filters staker exits? */

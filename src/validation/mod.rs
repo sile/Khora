@@ -4,6 +4,7 @@ use crate::account::*;
 use rayon::prelude::*;
 use crate::transaction::*;
 use std::convert::TryInto;
+use std::iter::FromIterator;
 use crate::bloom::BloomFile;
 use rand::{thread_rng};
 use sha3::{Digest, Sha3_512};
@@ -15,13 +16,12 @@ use std::io::Read;
 use std::io::Write;
 use std::hash::Hasher;
 use serde::{Serialize, Deserialize};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque, vec_deque};
 use crate::constants::PEDERSEN_H;
 use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
 
-
-pub const NUMBER_OF_VALIDATORS: u16 = 128;
+pub const NUMBER_OF_VALIDATORS: u8 = 128;
 pub const REPLACERATE: usize = 4;
 const BLOCK_KEYWORD: [u8;7] = [107,141,142,162,151,145,154];
 pub const INFLATION_CONSTANT: u64 = 2u64.pow(30);
@@ -136,6 +136,9 @@ impl NextBlock { // need to sign the staker inputs too
 
 
         let m = vec![leader.to_bytes().to_vec(),Syncedtx::to_sign(&txs),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+        println!("\n\nval: {:?}\n\n",hash_to_scalar(&m));
+        // println!("\n\nval: {:?}\n\n",hash_to_scalar(&leader.to_bytes().to_vec()));
+        // println!("\n\nval: {:?}\n\n",bnum);
         let mut s = Sha3_512::new();
         s.update(&m);
         NextBlock {
@@ -153,34 +156,63 @@ impl NextBlock { // need to sign the staker inputs too
         let leader = (key*PEDERSEN_H()).compress().as_bytes().to_vec();
         let mut sigs = sigs.into_par_iter().filter(|x| !validator_pool.into_par_iter().all(|y| x.leader.pk != *y)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
         let mut txs = Vec::<PolynomialTransaction>::new();
-        let mut sigfinale = Vec::<NextBlock>::new();
-        for _ in 0..(sigs.len() as u16 - 2*NUMBER_OF_VALIDATORS/3) {
+        let mut sigfinale: Vec<NextBlock>;
+        for _ in 0..(sigs.len() as u8 - 2*(NUMBER_OF_VALIDATORS/3)) {
             let b = sigs.pop().unwrap();
             txs = b.txs;
             sigfinale = sigs.par_iter().filter(|x| if let (Ok(z),Ok(y)) = (bincode::serialize(&x.txs),bincode::serialize(&txs)) {z==y} else {false}).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
-            if sigfinale.len() as u16 > 2*NUMBER_OF_VALIDATORS/3 {
-                break; /* this fails if most sigs are repeats i think */
+            if sigfinale.len() as u8 > 2*(NUMBER_OF_VALIDATORS/3) {
+                let sigfinale = sigfinale.par_iter().enumerate().filter_map(|(i,x)| if sigs[..i].par_iter().all(|y| x.leader.pk != y.leader.pk) {Some(x.to_owned())} else {None}).collect::<Vec<NextBlock>>();
+                /* THIS IS WHERE THE ERROR IS */
+                let shortcut = Syncedtx::to_sign(&sigfinale[0].txs); /* moving this to after the for loop made this code 3x faster. this is just a reminder to optimize everything later. (i can use [0]) */
+                let m = vec![leader.clone(),shortcut.to_owned(),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+                println!("\n\nled: {:?}\n\n",hash_to_scalar(&m));
+                // println!("\n\nled: {:?}\n\n",hash_to_scalar(&leader));
+                // println!("\n\nled: {:?}\n\n",bnum);
+                // println!("{}",sigfinale.len()); // 1
+                let mut s = Sha3_512::new();
+                s.update(&m);
+                let sigfinale = sigfinale.into_par_iter().filter(|x| Signature::verify(&x.leader, &mut s.clone(),&stkstate)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
+                // println!("{}",sigfinale.len()); // 0
+                /* my txt file codes are hella optimized but also hella incomplete with respect to polynomials and also hella disorganized */
+                let sigs = sigfinale.par_iter().map(|x| x.leader.to_owned()).collect::<Vec<Signature>>();
+                // println!("{}",sigs.len());
+                /* do i need to add an empty block option that requires >1/3 signatures of you as leader? */
+                let mut s = Sha3_512::new();
+                s.update(&bincode::serialize(&sigs).unwrap().to_vec());
+                let c = s.finalize();
+                let m = vec![BLOCK_KEYWORD.to_vec(),bnum.to_le_bytes().to_vec(),last_name.clone(),c.to_vec(),bincode::serialize(&None::<([Signature;2],[Vec<u8>;2],u64)>).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
+                let mut s = Sha3_512::new();
+                s.update(&m);
+                let leader = Signature::sign(&key, &mut s,&location);
+                
+                return NextBlock{validators: sigs, shards: vec![], leader, txs, last_name: last_name.to_owned(), pools: vec![*pool], bnum: bnum.to_owned(), forker: None}
             }
         } /* based on th eline below, a validator could send a ton of requests with fake tx and eliminate block making */
-        let sigfinale = sigfinale.par_iter().enumerate().filter_map(|(i,x)| if sigs[..i].par_iter().all(|y| x.leader.pk != y.leader.pk) {Some(x.to_owned())} else {None}).collect::<Vec<NextBlock>>();
-        /* literally just ignore block content with less than 2/3 sigs */
-        let shortcut = Syncedtx::to_sign(&sigfinale[0].txs); /* moving this to after the for loop made this code 3x faster. this is just a reminder to optimize everything later. (i can use [0]) */
-        let m = vec![leader.clone(),shortcut.to_owned(),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-        let mut s = Sha3_512::new();
-        s.update(&m);
-        let sigfinale = sigfinale.into_par_iter().filter(|x| Signature::verify(&x.leader, &mut s.clone(),&stkstate)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
-        /* my txt file codes are hella optimized but also hella incomplete with respect to polynomials and also hella disorganized */
-        let sigs = sigfinale.par_iter().map(|x| x.leader.to_owned()).collect::<Vec<Signature>>();
-        /* do i need to add an empty block option that requires >1/3 signatures of you as leader? */
-        let mut s = Sha3_512::new();
-        s.update(&bincode::serialize(&sigs).unwrap().to_vec());
-        let c = s.finalize();
-        let m = vec![BLOCK_KEYWORD.to_vec(),bnum.to_le_bytes().to_vec(),last_name.clone(),c.to_vec(),bincode::serialize(&None::<([Signature;2],[Vec<u8>;2],u64)>).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
-        let mut s = Sha3_512::new();
-        s.update(&m);
-        let leader = Signature::sign(&key, &mut s,&location);
-        
-        NextBlock{validators: sigs, shards: vec![], leader, txs, last_name: last_name.to_owned(), pools: vec![*pool], bnum: bnum.to_owned(), forker: None}
+        sigfinale = sigs.par_iter().filter(|x| if let (Ok(z),Ok(y)) = (bincode::serialize(&x.txs),bincode::serialize(&Vec::<PolynomialTransaction>::new())) {z==y} else {false}).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
+        if sigfinale.len() as u8 > (NUMBER_OF_VALIDATORS/3) {
+            let sigfinale = sigfinale.par_iter().enumerate().filter_map(|(i,x)| if sigs[..i].par_iter().all(|y| x.leader.pk != y.leader.pk) {Some(x.to_owned())} else {None}).collect::<Vec<NextBlock>>();
+            /* literally just ignore block content with less than 2/3 sigs */
+            let shortcut = Syncedtx::to_sign(&sigfinale[0].txs); /* moving this to after the for loop made this code 3x faster. this is just a reminder to optimize everything later. (i can use [0]) */
+            let m = vec![leader.clone(),shortcut.to_owned(),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let mut s = Sha3_512::new();
+            s.update(&m);
+            let sigfinale = sigfinale.into_par_iter().filter(|x| Signature::verify(&x.leader, &mut s.clone(),&stkstate)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
+            /* my txt file codes are hella optimized but also hella incomplete with respect to polynomials and also hella disorganized */
+            let sigs = sigfinale.par_iter().map(|x| x.leader.to_owned()).collect::<Vec<Signature>>();
+            /* do i need to add an empty block option that requires >1/3 signatures of you as leader? */
+            let mut s = Sha3_512::new();
+            s.update(&bincode::serialize(&sigs).unwrap().to_vec());
+            let c = s.finalize();
+            let m = vec![BLOCK_KEYWORD.to_vec(),bnum.to_le_bytes().to_vec(),last_name.clone(),c.to_vec(),bincode::serialize(&None::<([Signature;2],[Vec<u8>;2],u64)>).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let mut s = Sha3_512::new();
+            s.update(&m);
+            let leader = Signature::sign(&key, &mut s,&location);
+            
+            return NextBlock{validators: sigs, shards: vec![], leader, txs, last_name: last_name.to_owned(), pools: vec![*pool], bnum: bnum.to_owned(), forker: None}
+        }
+
+        return NextBlock::default()
     }
     pub fn valimerge(key: &Scalar, location: &u64, leader: &CompressedRistretto, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, _pool_nums: &Vec<u16>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Signature {
         let mut blks: Vec<NextBlock> = blks.par_iter().zip(val_pools).filter_map(|(x,y)| if x.verify(&y,&stkstate).is_ok() {Some(x.to_owned())} else {None}).collect();
@@ -300,7 +332,7 @@ impl NextBlock { // need to sign the staker inputs too
         }
         return Ok(true)
     }
-    pub fn scan_as_noone(&self,/*history: &mut Vec<OTAccount>,*/valinfo: &mut Vec<(CompressedRistretto,u64)>,val_pools: &Vec<Vec<u64>>) {
+    pub fn scan_as_noone(&self,/*history: &mut Vec<OTAccount>,*/valinfo: &mut Vec<(CompressedRistretto,u64)>,val_pools: &Vec<Vec<u64>>, queue: &mut Vec<VecDeque<usize>>, exitqueue: &mut Vec<VecDeque<usize>>, comittee: &mut Vec<Vec<usize>>) {
         let mut val_pools = val_pools.into_par_iter().enumerate().filter_map(|x|if !self.pools.par_iter().all(|y|*y!=(x.0 as u16)) {Some(x.1.clone())} else {None}).collect::<Vec<Vec<u64>>>();
         let mut info = Syncedtx::from(&self.txs);
         History::append(&info.txout);
@@ -328,8 +360,91 @@ impl NextBlock { // need to sign the staker inputs too
         }
         for x in info.stkout.iter().rev() {
             valinfo.remove(*x as usize);
+            *queue = queue.into_par_iter().map(|y| {
+                let z = y.into_par_iter().filter_map(|z|
+                    if *z > *x as usize {Some(*z - 1)}
+                    else if *z == *x as usize {None}
+                    else {Some(*z)}
+                ).collect::<VecDeque<_>>();
+                if z.len() == 0 {
+                    VecDeque::from_iter([0usize])
+                }
+                else {
+                    z
+                }
+            }).collect::<Vec<_>>();
+            *exitqueue = exitqueue.into_par_iter().map(|y| {
+                let z = y.into_par_iter().filter_map(|z|
+                    if *z > *x as usize {Some(*z - 1)}
+                    else if *z == *x as usize {None}
+                    else {Some(*z)}
+                ).collect::<VecDeque<_>>();
+                if z.len() == 0 {
+                    VecDeque::from_iter([0usize])
+                }
+                else {
+                    z
+                }
+            }).collect::<Vec<_>>();
+            *comittee = comittee.into_par_iter().map(|y| {
+                let z = y.into_par_iter().filter_map(|z|
+                    if *z > *x as usize {Some(*z - 1)}
+                    else if *z == *x as usize {None}
+                    else {Some(*z)}
+                ).collect::<Vec<_>>();
+                if z.len() == 0 {
+                    vec![0usize]
+                }
+                else {
+                    z
+                }
+            }).collect::<Vec<_>>();
         }
+        queue.par_iter_mut().for_each(|x| {
+            let mut s = Sha3_512::new();
+            s.update(&bincode::serialize(&x).unwrap());
+            let mut v = Scalar::from_hash(s.clone()).as_bytes().to_vec();
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            x.append(&mut y);
+        });
+        exitqueue.par_iter_mut().for_each(|x| {
+            let mut s = Sha3_512::new();
+            s.update(&bincode::serialize(&x).unwrap());
+            let mut v = Scalar::from_hash(s.clone()).as_bytes().to_vec();
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            x.append(&mut y);
+        });
+        comittee.par_iter_mut().for_each(|x| {
+            let mut s = Sha3_512::new();
+            s.update(&bincode::serialize(&x).unwrap());
+            let mut v = Scalar::from_hash(s.clone()).as_bytes().to_vec();
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
+            x.append(&mut y);
+        });
+
+
         valinfo.append(&mut info.stkin);
+
+
+
         if let Some(evil) = self.forker.to_owned() {
             let x = valinfo.par_iter().enumerate().filter_map(|x|
                 if x.1.0 == valinfo[evil.0[0].pk as usize].0 {Some(x.0)} else {None}

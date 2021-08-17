@@ -1,6 +1,7 @@
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::ristretto::{RistrettoPoint, CompressedRistretto};
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use rayon::iter::{IntoParallelIterator, ParallelIterator, IntoParallelRefIterator};
 use std::hash::{Hash, Hasher};
 use sha3::{Digest, Sha3_512};
 use rand::{thread_rng, Rng};
@@ -27,6 +28,7 @@ pub struct Account{
     vsk: Scalar,
     pub vpk: RistrettoPoint,
 }
+
 
 pub type Tag = CompressedRistretto;
 
@@ -117,6 +119,24 @@ impl Account {
         }
     }
 
+    pub fn name(&self) -> String {
+        std::str::from_utf8(&[self.pk,self.apk,self.vpk].into_par_iter().map(|key| {
+            let key = key.compress();
+            key.as_bytes().par_iter().map(|x| (x%16) + 97)
+            .chain(key.as_bytes().par_iter().map(|x| (x/16) + 97).collect::<Vec<u8>>()).collect::<Vec<u8>>()
+        }).flatten().collect::<Vec<u8>>()).unwrap().to_string()
+    }
+
+    pub fn from_pks(pk: &CompressedRistretto,apk: &CompressedRistretto,vpk: &CompressedRistretto) -> Self {
+        Account{
+            sk: Scalar::zero(),
+            pk: pk.decompress().unwrap(),
+            ask: Scalar::zero(),
+            apk: apk.decompress().unwrap(),
+            vsk: Scalar::zero(),
+            vpk: vpk.decompress().unwrap(),
+        }        
+    }
 
     pub fn derive_ot(&self, amount: &Scalar) -> OTAccount{
         let mut csprng = thread_rng();

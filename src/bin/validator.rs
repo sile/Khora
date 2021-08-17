@@ -19,9 +19,9 @@ use kora::account::*;
 use curve25519_dalek::scalar::Scalar;
 use std::collections::VecDeque;
 use std::convert::TryInto;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use kora::transaction::*;
-use curve25519_dalek::ristretto::{CompressedRistretto};
+use curve25519_dalek::ristretto::CompressedRistretto;
 use sha3::{Digest, Sha3_512};
 use rayon::prelude::*;
 use kora::randblock::*;
@@ -54,7 +54,7 @@ fn main() -> Result<(), MainError> {
     let port = matches.value_of("PORT").unwrap();
     println!("port: {:?}",port);
     // let addr: SocketAddr = track_any_err!(format!("127.0.0.1:{}", port).parse())?; // ip r | grep default <--- router ip, just go to settings
-    // let addr: SocketAddr = track_any_err!(format!("172.20.10.14:{}", port).parse())?;
+    // let addr: SocketAddr = track_any_err!(format!("172.20.10.14:{}", port).parse())?; // wafnet
     // let addr: SocketAddr = track_any_err!(format!("172.16.0.8:{}", port).parse())?;
     let addr: SocketAddr = track_any_err!(format!("192.168.0.101:{}", port).parse())?; // wafstampede
     // let addr: SocketAddr = track_any_err!(format!("172.20.10.3:{}", port).parse())?; // my iphone
@@ -80,8 +80,11 @@ fn main() -> Result<(), MainError> {
         node.join(NodeId::new(contact, LocalNodeId::new(0)));
     }
 
-    let leader = Account::new(&format!("{}",0)).stake_acc().derive_stk_ot(&Scalar::from(1u8)).pk.compress(); //make a new account
+    let leader = Account::new(&format!("{}",0)).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress(); //make a new account
 
+
+
+    
 
     BloomFile::initialize_bloom_file();
     let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this
@@ -104,7 +107,7 @@ fn main() -> Result<(), MainError> {
         comittee: (0..max_shards).map(|_|vec![0usize;NUMBER_OF_VALIDATORS as usize]).collect::<Vec<_>>(),
         lastname: vec![],
         bloom: bloom,
-        bnum: 0u64,
+        bnum: 1u64,
     };
     executor.spawn(service.map_err(|e| panic!("{}", e)));
     executor.spawn(node);
@@ -139,16 +142,20 @@ impl Future for ValidatorNode {
 
             while let Async::Ready(Some(m)) = track_try_unwrap!(self.inner.poll()) {
                 let mut m = m.payload().to_vec();
-                println!("# MESSAGE length: {:?}", m.len());
                 let mtype = m.pop().unwrap(); // dont do unwraps that could mess up a leader
+                println!("# MESSAGE TYPE: {:?}", mtype);
                 if mtype == 1 {
                     let shard = 0;
-                    let m: Vec<Vec<u8>> = bincode::deserialize(&m).unwrap();
+
+                    let m: Vec<Vec<u8>> = bincode::deserialize(&m).unwrap(); // come up with something better
                     let m = m.into_par_iter().map(|x| bincode::deserialize(&x).unwrap()).collect::<Vec<PolynomialTransaction>>();
                     let m = NextBlock::valicreate(&self.key, &self.keylocation, &self.leader, &m, &(shard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
                     let mut m = bincode::serialize(&m).unwrap();
                     m.push(2);
-                    self.inner.broadcast(m);
+                    for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
+                        self.inner.broadcast(m.clone());
+                        std::thread::sleep(Duration::from_millis(10u64));
+                    }
                 }
                 if mtype == 3 {
                     let mut hasher = Sha3_512::new();
@@ -156,18 +163,18 @@ impl Future for ValidatorNode {
                     self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                     self.lastblock = bincode::deserialize(&m).unwrap();
 
-                    self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>());
+                    self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
                     for i in 0..self.comittee.len() {
                         select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                     }
                 }
 
-                println!("pt id: {:?}",self.inner.plumtree_node().id());
-                println!("pt epp: {:?}",self.inner.plumtree_node().eager_push_peers());
-                println!("pt lpp: {:?}",self.inner.plumtree_node().lazy_push_peers());
-                println!("hv id: {:?}",self.inner.hyparview_node().id());
-                println!("hv av: {:?}",self.inner.hyparview_node().active_view());
-                println!("hv pv: {:?}",self.inner.hyparview_node().passive_view());
+                // println!("pt id: {:?}",self.inner.plumtree_node().id());
+                // println!("pt epp: {:?}",self.inner.plumtree_node().eager_push_peers());
+                // println!("pt lpp: {:?}",self.inner.plumtree_node().lazy_push_peers());
+                // println!("hv id: {:?}",self.inner.hyparview_node().id());
+                // println!("hv av: {:?}",self.inner.hyparview_node().active_view());
+                // println!("hv pv: {:?}",self.inner.hyparview_node().passive_view());
                 did_something = true;
             }
         }
