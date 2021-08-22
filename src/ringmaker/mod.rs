@@ -19,7 +19,7 @@ pub fn key_hash(key: &u32, t: &u32) -> i128 {
 const P: i128 = 9223372036854775783;//a little below 2^63 so hash approximatly finds a rand num in this field
 pub fn generate_ring(s: &Vec<usize>, r: &u16, now: &u64) -> Vec<u8> {
     /*
-    IF YOU WANT TO MAKE SURE EVERY MEMBER OOF THE RING IS UNIQUE,
+    IF YOU WANT TO MAKE SURE EVERY MEMBER OF THE RING IS UNIQUE,
     YOU'D HAVE TO RUN THIS N TIMES
     */
 

@@ -23,7 +23,19 @@ use sha3::{Digest, Sha3_512};
 use rayon::prelude::*;
 use kora::validation::*;
 
- // cargo run --bin chat --release 6060 
+
+
+
+use serde::Serialize;
+pub fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
+    let message = bincode::serialize(message).unwrap();
+    let mut hasher = Sha3_512::new();
+    hasher.update(&message);
+    Scalar::from_hash(hasher)
+} /* this is for testing purposes. it is used to check if 2 long messages are identicle */
+
+
+
 fn main() -> Result<(), MainError> {
     let matches = app_from_crate!()
         .arg(Arg::with_name("PORT").index(1).required(true))
@@ -50,10 +62,9 @@ fn main() -> Result<(), MainError> {
     // let addr: SocketAddr = track_any_err!(format!("127.0.0.1:{}", port).parse())?; // ip r | grep default <--- router ip, just go to settings
     // let addr: SocketAddr = track_any_err!(format!("172.20.10.14:{}", port).parse())?;
     // let addr: SocketAddr = track_any_err!(format!("172.16.0.8:{}", port).parse())?;
-    let addr: SocketAddr = track_any_err!(format!("192.168.0.101:{}", port).parse())?;
+    // let addr: SocketAddr = track_any_err!(format!("192.168.0.101:{}", port).parse())?;
 
-    // let addr: SocketAddr = track_any_err!(format!("172.20.10.3:{}", port).parse())?;
-    // let addr: SocketAddr = track_any_err!(format!("192.168.0.100:{}", port).parse())?;
+    let addr: SocketAddr = track_any_err!(format!("128.61.4.96:{}", port).parse())?; // gatech
     
 
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
@@ -129,15 +140,16 @@ impl Future for LeaderNode {
 
             while let Async::Ready(Some(m)) = track_try_unwrap!(self.inner.poll()) {
                 let mut m = m.payload().to_vec();
-                let mtype = m.pop().unwrap(); // dont do unwraps that could mess up a leader
-                println!("# MESSAGE TYPE: {:?}", mtype);
-                if mtype == 0 {
-                    self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
+                if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a leader
+                    if mtype == 2 {print!("#{:?}", mtype);}
+                    else {println!("# MESSAGE TYPE: {:?}", mtype);}
+                    if mtype == 0 {
+                        self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
+                    }
+                    else if mtype == 2 {
+                        self.sigs.push(bincode::deserialize(&m).unwrap());
+                    }
                 }
-                else if mtype == 2 {
-                    self.sigs.push(bincode::deserialize(&m).unwrap());
-                }
-
                 // println!("pt id: {:?}",self.inner.plumtree_node().id());
                 // println!("pt epp: {:?}",self.inner.plumtree_node().eager_push_peers());
                 // println!("pt lpp: {:?}",self.inner.plumtree_node().lazy_push_peers());
@@ -146,12 +158,10 @@ impl Future for LeaderNode {
                 // println!("hv pv: {:?}",self.inner.hyparview_node().passive_view());
                 did_something = true;
             }
-            if ((self.sigs.len() >= (2*(NUMBER_OF_VALIDATORS/3)).into()) | (self.sigs.len() > 0)) & (self.timekeeper.elapsed().as_millis() > 500) {
+            if (self.sigs.len() >= (2*(NUMBER_OF_VALIDATORS/3)).into()) | ( (self.sigs.len() >= (NUMBER_OF_VALIDATORS/3).into()) & (self.timekeeper.elapsed().as_secs() > 30) ) {
                 let shard = 0;
-                let start = Instant::now();
+                // println!("time:::{:?}",self.timekeeper.elapsed().as_secs()); // that's not it
                 let lastblock = NextBlock::finish(&self.key, &self.keylocation, &self.sigs.drain(..).collect::<Vec<_>>(), &self.comittee[shard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(shard as u16), &self.bnum, &self.lastname, &self.stkinfo);
-                println!("\n\n\n\n\n\n\n\n\n\n\ntime to complete shard: {:?} ms\n\n\n\n\n\n\n\n\n\n\n",start.elapsed().as_millis());
-                self.timekeeper = Instant::now();
 
                 if lastblock.validators.len() != 0 {
                     self.lastblock = lastblock;
@@ -162,7 +172,9 @@ impl Future for LeaderNode {
                     let mut hasher = Sha3_512::new();
                     hasher.update(&m);
                     self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-    
+                    // println!("{:?}",hash_to_scalar(&self.lastblock));
+
+
                     m.push(3u8);
                     self.inner.broadcast(m);
                     self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
@@ -182,8 +194,11 @@ impl Future for LeaderNode {
                     println!("failed to make a block :(");
                     did_something = false;
                 }
+
+                self.timekeeper = Instant::now();
             }
-            if (self.txses.len() >= 128) | ((self.bnum == 1) & (self.txses.len() > 0)) {
+            if /*(self.txses.len() > 0) |*/ (self.timekeeper.elapsed().as_secs() > 10) /*(self.txses.len() >= 512) | (self.timekeeper.elapsed().as_secs() > 60/self.bnum + 1)*/ { // make this floating point too for time
+                self.sigs = vec![];
                 let mut m = bincode::serialize(&self.txses).unwrap();
                 m.push(1u8);
                 self.inner.broadcast(m);

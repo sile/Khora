@@ -39,8 +39,8 @@ modinverse = "0.1.1"
 polynomial-over-finite-prime-field = "0.3.1"
 ahash = "0.7.4"
 
-# plumcast = { path = "plumcast" }
-plumcast = "0.1.5"
+plumcast = { path = "plumcast" }
+# plumcast = "0.1.5"
 fibers = "0.1"
 fibers_rpc = "0.3"
 futures = "0.1"

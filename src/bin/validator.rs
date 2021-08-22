@@ -29,7 +29,17 @@ use kora::bloom::*;
 use kora::validation::*;
 use kora::constants::PEDERSEN_H;
 
- // cargo run --bin chat --release 6060 
+
+use serde::Serialize;
+pub fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
+    let message = bincode::serialize(message).unwrap();
+    let mut hasher = Sha3_512::new();
+    hasher.update(&message);
+    Scalar::from_hash(hasher)
+} /* this is for testing purposes. it is used to check if 2 long messages are identicle */
+
+
+
 fn main() -> Result<(), MainError> {
     let matches = app_from_crate!()
         .arg(Arg::with_name("PORT").index(1).required(true))
@@ -56,10 +66,12 @@ fn main() -> Result<(), MainError> {
     // let addr: SocketAddr = track_any_err!(format!("127.0.0.1:{}", port).parse())?; // ip r | grep default <--- router ip, just go to settings
     // let addr: SocketAddr = track_any_err!(format!("172.20.10.14:{}", port).parse())?; // wafnet
     // let addr: SocketAddr = track_any_err!(format!("172.16.0.8:{}", port).parse())?;
-    let addr: SocketAddr = track_any_err!(format!("192.168.0.101:{}", port).parse())?; // wafstampede
-    // let addr: SocketAddr = track_any_err!(format!("172.20.10.3:{}", port).parse())?; // my iphone
-    // let addr: SocketAddr = track_any_err!(format!("192.168.0.1:{}", port).parse())?;
+    // let addr: SocketAddr = track_any_err!(format!("192.168.0.101:{}", port).parse())?; // wafstampede
     
+    
+
+    let addr: SocketAddr = track_any_err!(format!("128.61.4.96:{}", port).parse())?; // gatech
+
 
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
     
@@ -85,7 +97,7 @@ fn main() -> Result<(), MainError> {
 
 
     
-
+    History::initialize();
     BloomFile::initialize_bloom_file();
     let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this
 
@@ -140,41 +152,70 @@ impl Future for ValidatorNode {
         while did_something {
             did_something = false;
 
-            while let Async::Ready(Some(m)) = track_try_unwrap!(self.inner.poll()) {
-                let mut m = m.payload().to_vec();
-                let mtype = m.pop().unwrap(); // dont do unwraps that could mess up a leader
-                println!("# MESSAGE TYPE: {:?}", mtype);
-                if mtype == 1 {
-                    let shard = 0;
+            while let Async::Ready(Some(msg)) = track_try_unwrap!(self.inner.poll()) {
+                let mut m = msg.payload().to_vec();
+                if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
+                    if mtype == 2 {print!("#{:?}", mtype);}
+                    else {println!("# MESSAGE TYPE: {:?}", mtype);}
+                    if mtype == 1 {
+                        let shard = 0;
 
-                    let m: Vec<Vec<u8>> = bincode::deserialize(&m).unwrap(); // come up with something better
-                    let m = m.into_par_iter().map(|x| bincode::deserialize(&x).unwrap()).collect::<Vec<PolynomialTransaction>>();
-                    let m = NextBlock::valicreate(&self.key, &self.keylocation, &self.leader, &m, &(shard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
-                    let mut m = bincode::serialize(&m).unwrap();
-                    m.push(2);
-                    for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
-                        self.inner.broadcast(m.clone());
-                        std::thread::sleep(Duration::from_millis(10u64));
+                        let m: Vec<Vec<u8>> = bincode::deserialize(&m).unwrap(); // come up with something better
+                        let m = m.into_par_iter().map(|x| bincode::deserialize(&x).unwrap()).collect::<Vec<PolynomialTransaction>>();
+                        let m = NextBlock::valicreate(&self.key, &self.keylocation, &self.leader, &m, &(shard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
+                        let mut m = bincode::serialize(&m).unwrap();
+                        m.push(2);
+                        for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
+                            self.inner.broadcast(m.clone());
+                            std::thread::sleep(Duration::from_millis(10u64));
+                        }
+                        // println!("{:?}",hash_to_scalar(&self.lastblock));
+                    } else if mtype == 3 {
+                        let mut hasher = Sha3_512::new();
+                        hasher.update(&m);
+                        self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                        self.lastblock = bincode::deserialize(&m).unwrap();
+
+                        self.bnum += 1;
+
+
+
+
+                        self.lastblock.scan_as_noone_but_dont_save_history_because_im_pretending_to_be_multiple_people_sharing_1_file(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
+                        for i in 0..self.comittee.len() {
+                            select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                        }
+                        // println!("{:?}",hash_to_scalar(&self.lastblock));
+                    } else if mtype == u8::MAX {
+                        println!("address:              {:?}",self.inner.plumtree_node().id());
+                        println!("eager push pears:     {:?}",self.inner.plumtree_node().eager_push_peers());
+                        println!("lazy push pears:      {:?}",self.inner.plumtree_node().lazy_push_peers());
+                        println!("active view:          {:?}",self.inner.hyparview_node().active_view());
+                        println!("passive view:         {:?}",self.inner.hyparview_node().passive_view());
+                        
+                        
+                        let mut s = Sha3_512::new();
+                        s.update(&bincode::serialize(&self.inner.plumtree_node().id()).unwrap());
+                        s.update(&bincode::serialize(&self.bnum).unwrap());
+                        let s = bincode::serialize( // is bincode ok for things phones have to read???
+                            &(Signature::sign(&self.key, &mut s,&self.keylocation),
+                            self.inner.hyparview_node().id().address(),
+                            self.bnum,)
+                        ).unwrap();
+                        let (a,b,c): (Signature, SocketAddr, u64) = bincode::deserialize(&s).unwrap();
+
+
+
+
+
+                        let mut y = m[..8].to_vec();
+                        let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
+                        x.append(&mut y);
+                        x.push(254);
+                        self.inner.dm(x,&vec![msg.id().node()],false);
+                    
                     }
                 }
-                if mtype == 3 {
-                    let mut hasher = Sha3_512::new();
-                    hasher.update(&m);
-                    self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                    self.lastblock = bincode::deserialize(&m).unwrap();
-
-                    self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
-                    for i in 0..self.comittee.len() {
-                        select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                    }
-                }
-
-                // println!("pt id: {:?}",self.inner.plumtree_node().id());
-                // println!("pt epp: {:?}",self.inner.plumtree_node().eager_push_peers());
-                // println!("pt lpp: {:?}",self.inner.plumtree_node().lazy_push_peers());
-                // println!("hv id: {:?}",self.inner.hyparview_node().id());
-                // println!("hv av: {:?}",self.inner.hyparview_node().active_view());
-                // println!("hv pv: {:?}",self.inner.hyparview_node().passive_view());
                 did_something = true;
             }
         }

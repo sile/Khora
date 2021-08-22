@@ -20,7 +20,7 @@ pub fn random_tx_set(n: &usize) -> Vec<Transaction> {
         let amnt: u64 = rng.gen::<u64>()%(2u64.pow(BETA as u32)); // beta for monero is 64
         // let become_stkr: u8 = rng.gen();
         let mut stk = 0u64;
-        let condition = x<n/2;//(become_stkr > 64) & (amnt > 0);
+        let condition = x<*n;//(become_stkr > 64) & (amnt > 0);
         if condition {stk = rng.gen::<u64>()%amnt;}
         let out: u64 = rng.gen(); let out = if amnt-stk > 0 {out%(amnt-stk)} else {0u64};
         let fee: u64 = amnt-stk-out;
@@ -50,7 +50,7 @@ pub fn random_polytx_set(n: &usize, y: &Vec<OTAccount>, oldheight: &u64) -> Vec<
         let mut rng = rand::thread_rng();
         let amnt = u64::from_le_bytes(otas_creators[0].com.amount.unwrap().as_bytes()[..8].try_into().unwrap());
         let mut stk = 0u64;
-        let condition = x<n/8;//(become_stkr > 64) & (amnt > 0);
+        let condition = x<*n;//(become_stkr > 64) & (amnt > 0);
         if condition {stk = rng.gen::<u64>()%amnt;}
         let out: u64 = rng.gen(); let out = if amnt-stk > 0 {out%(amnt-stk)} else {0u64};
 
@@ -58,7 +58,7 @@ pub fn random_polytx_set(n: &usize, y: &Vec<OTAccount>, oldheight: &u64) -> Vec<
         if condition {outs.push((whofrom.stake_acc(), Scalar::from(stk)));}
         outs.push((whoto, Scalar::from(out)));
 
-        let ringsize = 11;
+        let ringsize = 5;
         let rname = generate_ring(&vec![((x+n-1)%n)+*oldheight as usize], &ringsize, &height);
         let ring = recieve_ring(&rname);
         /* vvv this is where people send you the ring members  vvv */ 

@@ -22,10 +22,10 @@ use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
 
 pub const NUMBER_OF_VALIDATORS: u8 = 128;
-pub const REPLACERATE: usize = 4;
-const BLOCK_KEYWORD: [u8;7] = [107,141,142,162,151,145,154];
+pub const REPLACERATE: usize = 2;
+const BLOCK_KEYWORD: [u8;6] = [107,105,109,98,101,114]; // todo: make this something else (a obvious version of her name)
 pub const INFLATION_CONSTANT: u64 = 2u64.pow(30);
-
+pub const INFLATION_EXPONENT: u32 = 100;
 
 pub fn hash_to_scalar(message: &Vec<u8>) -> Scalar {
     let mut hasher = Sha3_512::new();
@@ -136,7 +136,7 @@ impl NextBlock { // need to sign the staker inputs too
 
 
         let m = vec![leader.to_bytes().to_vec(),Syncedtx::to_sign(&txs),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-        println!("\n\nval: {:?}\n\n",hash_to_scalar(&m));
+        // println!("\n\nval: {:?}\n\n",hash_to_scalar(&m));
         // println!("\n\nval: {:?}\n\n",hash_to_scalar(&leader.to_bytes().to_vec()));
         // println!("\n\nval: {:?}\n\n",bnum);
         let mut s = Sha3_512::new();
@@ -166,7 +166,7 @@ impl NextBlock { // need to sign the staker inputs too
                 /* THIS IS WHERE THE ERROR IS */
                 let shortcut = Syncedtx::to_sign(&sigfinale[0].txs); /* moving this to after the for loop made this code 3x faster. this is just a reminder to optimize everything later. (i can use [0]) */
                 let m = vec![leader.clone(),shortcut.to_owned(),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-                println!("\n\nled: {:?}\n\n",hash_to_scalar(&m));
+                // println!("\n\nled: {:?}\n\n",hash_to_scalar(&m));
                 // println!("\n\nled: {:?}\n\n",hash_to_scalar(&leader));
                 // println!("\n\nled: {:?}\n\n",bnum);
                 // println!("{}",sigfinale.len()); // 1
@@ -339,7 +339,127 @@ impl NextBlock { // need to sign the staker inputs too
         // history.append(&mut info.txout);
         let fees = self.txs.par_iter().map(|x|x.fee).sum::<u64>();
         let profits = fees/(self.validators.len() as u64);
-        let inflation = INFLATION_CONSTANT/self.bnum;
+        let inflation = INFLATION_CONSTANT/2u64.pow(self.bnum as u32/INFLATION_EXPONENT);
+        for v in val_pools.remove(0) {
+            if self.validators.par_iter().all(|x|x.pk!=v) {
+                valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
+            }
+            else {
+                valinfo[v as usize].1 += profits+inflation;
+            }
+        }
+        for vv in val_pools {
+            for v in vv {
+                if self.shards.par_iter().all(|x|*x!=v) {
+                    valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
+                }
+                else {
+                    valinfo[v as usize].1 += profits+inflation;
+                }
+            }
+        }
+        for x in info.stkout.iter().rev() {
+            valinfo.remove(*x as usize);
+            *queue = queue.into_par_iter().map(|y| {
+                let z = y.into_par_iter().filter_map(|z|
+                    if *z > *x as usize {Some(*z - 1)}
+                    else if *z == *x as usize {None}
+                    else {Some(*z)}
+                ).collect::<VecDeque<_>>();
+                if z.len() == 0 {
+                    VecDeque::from_iter([0usize])
+                }
+                else {
+                    z
+                }
+            }).collect::<Vec<_>>();
+            *exitqueue = exitqueue.into_par_iter().map(|y| {
+                let z = y.into_par_iter().filter_map(|z|
+                    if *z > *x as usize {Some(*z - 1)}
+                    else if *z == *x as usize {None}
+                    else {Some(*z)}
+                ).collect::<VecDeque<_>>();
+                if z.len() == 0 {
+                    VecDeque::from_iter([0usize])
+                }
+                else {
+                    z
+                }
+            }).collect::<Vec<_>>();
+            *comittee = comittee.into_par_iter().map(|y| {
+                let z = y.into_par_iter().filter_map(|z|
+                    if *z > *x as usize {Some(*z - 1)}
+                    else if *z == *x as usize {None}
+                    else {Some(*z)}
+                ).collect::<Vec<_>>();
+                if z.len() == 0 {
+                    vec![0usize]
+                }
+                else {
+                    z
+                }
+            }).collect::<Vec<_>>();
+        }
+        queue.par_iter_mut().for_each(|x| {
+            let mut s = Sha3_512::new();
+            s.update(&bincode::serialize(&x).unwrap());
+            let mut v = Scalar::from_hash(s.clone()).as_bytes().to_vec();
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            x.append(&mut y);
+        });
+        exitqueue.par_iter_mut().for_each(|x| {
+            let mut s = Sha3_512::new();
+            s.update(&bincode::serialize(&x).unwrap());
+            let mut v = Scalar::from_hash(s.clone()).as_bytes().to_vec();
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            x.append(&mut y);
+        });
+        comittee.par_iter_mut().for_each(|x| {
+            let mut s = Sha3_512::new();
+            s.update(&bincode::serialize(&x).unwrap());
+            let mut v = Scalar::from_hash(s.clone()).as_bytes().to_vec();
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            s.update(&bincode::serialize(&x).unwrap());
+            v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
+            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
+            x.append(&mut y);
+        });
+
+
+        valinfo.append(&mut info.stkin);
+
+
+
+        if let Some(evil) = self.forker.to_owned() {
+            let x = valinfo.par_iter().enumerate().filter_map(|x|
+                if x.1.0 == valinfo[evil.0[0].pk as usize].0 {Some(x.0)} else {None}
+            ).collect::<Vec<usize>>();
+            for x in x.iter().rev() {
+                valinfo.remove(*x as usize);
+            }
+        }
+    }
+    pub fn scan_as_noone_but_dont_save_history_because_im_pretending_to_be_multiple_people_sharing_1_file(&self, valinfo: &mut Vec<(CompressedRistretto,u64)>,val_pools: &Vec<Vec<u64>>, queue: &mut Vec<VecDeque<usize>>, exitqueue: &mut Vec<VecDeque<usize>>, comittee: &mut Vec<Vec<usize>>) {
+        let mut val_pools = val_pools.into_par_iter().enumerate().filter_map(|x|if !self.pools.par_iter().all(|y|*y!=(x.0 as u16)) {Some(x.1.clone())} else {None}).collect::<Vec<Vec<u64>>>();
+        let mut info = Syncedtx::from(&self.txs);
+        let fees = self.txs.par_iter().map(|x|x.fee).sum::<u64>();
+        let profits = fees/(self.validators.len() as u64);
+        let inflation = INFLATION_CONSTANT/2u64.pow(self.bnum as u32/INFLATION_EXPONENT);
         for v in val_pools.remove(0) {
             if self.validators.par_iter().all(|x|x.pk!=v) {
                 valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
@@ -459,13 +579,13 @@ impl NextBlock { // need to sign the staker inputs too
         let newmine = x.txout.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.receive_ot(x) {Some((i as u64+*height,y))} else {None}).collect::<Vec<(u64,OTAccount)>>();
         let newtags = newmine.par_iter().map(|x|x.1.tag.unwrap()).collect::<Vec<CompressedRistretto>>();
         if !newtags.par_iter().all(|x| alltagsever.par_iter().all(|y|y!=x)) {
-            println!("you got burnt (someone sent you faerie gold!)");
+            println!("you got burnt (someone sent you faerie gold!)"); // i want this in a seperate function
         }
         alltagsever.par_extend(&newtags);
-        mine.par_extend(newmine);
 
         *mine = mine.into_par_iter().filter_map(|(j,a)| if !x.txout.par_iter().all(|x| x.tag != a.tag) {Some((*j,a.clone()))} else {None} ).collect::<Vec<(u64,OTAccount)>>();
         *height += x.txout.len() as u64;
+        mine.par_extend(newmine);
 
         x
     }
@@ -477,19 +597,14 @@ impl NextBlock { // need to sign the staker inputs too
         ).flatten().collect::<Vec<OTAccount>>();
         mine.par_extend(stkin.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.stake_acc().receive_ot(x) {Some([i as u64+*height,u64::from_le_bytes(y.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())])} else {None}).collect::<Vec<[u64;2]>>());
 
-        
-        let x = Syncedtx::from(&self.txs.to_owned()).stkout;
-        for (i,m) in mine.clone().iter().enumerate().rev() {
-            for v in &x {
-                if m[0] == *v {
-                    mine.remove(i as usize);
-                }
-            }
-        }
+        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:#?}",stkin);
+        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:#?}",stkin.len());
+        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
 
         let fees = self.txs.par_iter().map(|x|x.fee).sum::<u64>();
         let profits = fees/(self.validators.len() as u64);
-        let inflation = INFLATION_CONSTANT/self.bnum;
+        let inflation = INFLATION_CONSTANT/2u64.pow(self.bnum as u32/INFLATION_EXPONENT); // todo: MAKE FLOATING POINT TO AVOID HARD CUTOFFS
+        // println!("{:?}",val_pools);
         for &v in val_pools {
             for (i,m) in mine.clone().iter().enumerate() {
                 if m[0] == v {
@@ -503,17 +618,36 @@ impl NextBlock { // need to sign the staker inputs too
                         mine[i][1] += delta;
                     }
                 }
-                for n in x.iter() {
-                    if *n < m[0] {
-                        mine[i][0] -= 1;
-                    }
-                    else {
-                        break;
-                    }
+            }
+        }
+        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
+
+
+        let stkout = self.txs.par_iter().filter_map(|x|
+            if x.inputs.len() == 8 {Some(u64::from_le_bytes(x.inputs.to_owned().try_into().unwrap()))} else {None}
+        ).collect::<Vec<u64>>();
+
+
+
+
+        for (i,m) in mine.clone().iter().enumerate().rev() {
+            for v in &stkout {
+                if m[0] == *v {
+                    mine.remove(i as usize);
+                }
+            }
+            for n in stkout.iter() {
+                if *n < m[0] {
+                    mine[i][0] -= 1;
+                }
+                else {
+                    break;
                 }
             }
         }
+        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
         *height += stkin.len() as u64;
+        *height -= stkout.len() as u64;
     }
     pub fn update_bloom(&self,bloom:&BloomFile) {
         self.txs.par_iter().map(|x| x.tags.par_iter().map(|y| bloom.insert(y.as_bytes())).collect::<Vec<_>>()).collect::<Vec<_>>();
@@ -610,7 +744,7 @@ impl LightningSyncBlock {
         let mut info =self.info.clone();
         let fees = info.fees;
         let profits = fees/(self.validators.len() as u64);
-        let inflation = INFLATION_CONSTANT/self.bnum;
+        let inflation = INFLATION_CONSTANT/2u64.pow(self.bnum as u32/INFLATION_EXPONENT);
         for v in val_pools.remove(0) {
             if self.validators.par_iter().all(|x|x.pk!=v) {
                 valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
@@ -716,6 +850,16 @@ impl History {
         r.seek(SeekFrom::Start(location*64)).expect("Seek failed");
         r.read(&mut byte).unwrap();
         [CompressedRistretto::from_slice(&byte[..32]),CompressedRistretto::from_slice(&byte[32..])] // OTAccount::summon_ota() from there
+    }
+    pub fn get_raw(location: &u64) -> [u8; 64] {
+        let mut bytes = [0u8;64];
+        let mut r = BufReader::new(File::open(FILE_NAME).unwrap());
+        r.seek(SeekFrom::Start(location*64)).expect("Seek failed");
+        r.read(&mut bytes).unwrap();
+        bytes
+    }
+    pub fn read_raw(bytes: &Vec<u8>) -> OTAccount { // assumes the bytes start at the beginning
+        OTAccount::summon_ota(&[CompressedRistretto::from_slice(&bytes[..32]),CompressedRistretto::from_slice(&bytes[32..64])]) // OTAccount::summon_ota() from there
     }
     pub fn append(accs: &Vec<OTAccount>) {
         let buf = accs.into_par_iter().map(|x| [x.pk.compress().as_bytes().to_owned(),x.com.com.compress().as_bytes().to_owned()].to_owned()).flatten().flatten().collect::<Vec<u8>>();
