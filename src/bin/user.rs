@@ -193,7 +193,7 @@ impl Future for UserNode {
                         if self.lastblock.last_name == self.lastname {
                             println!("===============================\nyay!");
                             self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                            self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
+                            self.lastblock.scan_as_noone_but_dont_save_history_because_im_pretending_to_be_multiple_people_sharing_1_file(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
                             for i in 0..self.comittee.len() {
                                 select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                             }
@@ -309,12 +309,16 @@ gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnk
 
                     let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.par_iter().map(|x|(x.0 as u64,x.1.clone())).unzip();
 
-                    // println!("loc: {:?}",loc);
+                    println!("loc: {:?}",loc);
                     // println!("acc: {:?}",acc);
-                    // println!("height: {}",self.height);
+                    println!("height: {}",self.height);
+                    for i in 0..(self.height as u64) {
+                        println!("pk: {:?}",OTAccount::summon_ota(&History::get(&i)).pk.compress());
+                    }
                     for (i,j) in loc.iter().zip(acc) {
-                        assert!(OTAccount::summon_ota(&History::get(&i)).pk == j.pk); // would not actually be able to make these tests on a real user
-                        assert!(OTAccount::summon_ota(&History::get(&i)).com.com == j.com.com); // would not actually be able to make these tests on a real user
+                        println!("i: {}, j.pk: {:?}",i,j.pk.compress());
+                        assert!(OTAccount::summon_ota(&History::get(&i)).pk.compress() == j.pk.compress()); // would not actually be able to make these tests on a real user
+                        assert!(OTAccount::summon_ota(&History::get(&i)).com.com.compress() == j.com.com.compress()); // would not actually be able to make these tests on a real user
                         self.rmems.insert(*i,j);
                     }
                     // maybe have bigger rings than 5? it's a choice i dont forbid anything

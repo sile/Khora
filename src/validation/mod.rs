@@ -38,6 +38,7 @@ pub struct Syncedtx{
     pub stkout: Vec<u64>,
     pub stkin: Vec<(CompressedRistretto,u64)>,
     pub txout: Vec<OTAccount>, // they delete this part individually after they realize it's not for them
+    pub tags: Vec<CompressedRistretto>,
     pub fees: u64,
 }
 
@@ -54,8 +55,11 @@ impl Syncedtx {
         let txout = txs.into_par_iter().map(|x|
             x.outputs.to_owned().into_par_iter().filter(|x| stakereader_acc().read_ot(x).is_err()).collect::<Vec<_>>()
         ).flatten().collect::<Vec<OTAccount>>();
+        let tags = txs.par_iter().map(|x|
+            x.tags.clone()
+        ).flatten().collect::<Vec<CompressedRistretto>>();
         let fees = txs.par_iter().map(|x|x.fee).sum::<u64>();
-        Syncedtx{stkout,stkin,txout,fees}
+        Syncedtx{stkout,stkin,txout,tags,fees}
     }
     pub fn to_sign(txs: &Vec<PolynomialTransaction>)->Vec<u8> {
         bincode::serialize(&Syncedtx::from(txs)).unwrap()
@@ -583,7 +587,7 @@ impl NextBlock { // need to sign the staker inputs too
         }
         alltagsever.par_extend(&newtags);
 
-        *mine = mine.into_par_iter().filter_map(|(j,a)| if !x.txout.par_iter().all(|x| x.tag != a.tag) {Some((*j,a.clone()))} else {None} ).collect::<Vec<(u64,OTAccount)>>();
+        *mine = mine.into_par_iter().filter_map(|(j,a)| if x.tags.par_iter().all(|x| x != &a.tag.unwrap()) {Some((*j,a.clone()))} else {None} ).collect::<Vec<(u64,OTAccount)>>();
         *height += x.txout.len() as u64;
         mine.par_extend(newmine);
 

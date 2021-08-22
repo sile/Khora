@@ -96,7 +96,7 @@ fn main() -> Result<(),std::io::Error> {
 
 
 
-    let (stkin,txout): (Vec<Vec<(CompressedRistretto,u64)>>,Vec<Vec<OTAccount>>) = txvec.into_par_iter().map(|x| {
+    let (stkin,txout): (Vec<Vec<(CompressedRistretto,u64)>>,Vec<Vec<OTAccount>>) = txvec.clone().into_par_iter().map(|x| {
         let a = x.outputs;
         let s = a.par_iter().filter_map(|x|
             if let Ok(x) = stakereader_acc().read_ot(x) {Some((x.pk.compress(),u64::from_le_bytes(x.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())))}
@@ -109,9 +109,10 @@ fn main() -> Result<(),std::io::Error> {
     }).unzip();
     let stkin = stkin.into_par_iter().flatten().collect::<Vec<(CompressedRistretto,u64)>>();
     let txout = txout.into_par_iter().flatten().collect::<Vec<OTAccount>>();
+    let tags = txvec.into_par_iter().map(|x|x.tags).flatten().collect::<Vec<_>>();
     let fees = 0u64;
     let stkout = vec![];
-    let info = Syncedtx{stkout,stkin,txout,fees};
+    let info = Syncedtx{stkout,stkin,txout,tags,fees};
     History::append(&info.txout);
     let mut history = info.txout.clone();
     let mut stkinfo = info.stkin.clone();

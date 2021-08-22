@@ -298,6 +298,8 @@ impl OTAccount {
         OTAccount{
             pk:x[0].decompress().unwrap(),
             com: Commitment{com: x[1].decompress().unwrap(),..Default::default()},
+            eek: Some(Ciphertext::default()),
+            eck: Some(Ciphertext::default()),
             ..Default::default()
         }
     }

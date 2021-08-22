@@ -20,7 +20,7 @@ pub enum LpkeError{
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Ciphertext { //used to be pub(crate)
     pub R: RistrettoPoint, //used to be not put
     pub e: Vec<u8>,
