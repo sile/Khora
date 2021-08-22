@@ -732,13 +732,13 @@ impl LightningSyncBlock {
         let newmine = x.txout.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.receive_ot(x) {Some((i as u64+*height,y))} else {None}).collect::<Vec<(u64,OTAccount)>>();
         let newtags = newmine.par_iter().map(|x|x.1.tag.unwrap()).collect::<Vec<CompressedRistretto>>();
         if !newtags.par_iter().all(|x| alltagsever.par_iter().all(|y|y!=x)) {
-            println!("you got burnt (someone sent you faerie gold!) {:?}",newtags);
+            println!("you got burnt (someone sent you faerie gold!)"); // i want this in a seperate function
         }
         alltagsever.par_extend(&newtags);
-        mine.par_extend(newmine);
-        
-        *mine = mine.into_par_iter().filter_map(|(j,a)| if !x.txout.par_iter().all(|x| x.tag != a.tag) {Some((*j,a.clone()))} else {None} ).collect::<Vec<(u64,OTAccount)>>();
+
+        *mine = mine.into_par_iter().filter_map(|(j,a)| if x.tags.par_iter().all(|x| x != &a.tag.unwrap()) {Some((*j,a.clone()))} else {None} ).collect::<Vec<(u64,OTAccount)>>();
         *height += x.txout.len() as u64;
+        mine.par_extend(newmine);
 
         x
     }

@@ -304,6 +304,15 @@ impl OTAccount {
         }
     }
 
+    pub fn track_ot(&self, ask: &Scalar) -> bool {
+        let mut label = self.pk.compress().as_bytes().to_vec();
+        label.extend( self.com.com.compress().as_bytes().to_vec());
+        match self.eek.as_ref().unwrap().decrypt(ask, &label) {
+            Ok(_) => return true, // tracking secret key (can scan for tx)
+            Err(_) => return false
+        };
+    }
+
     // pub fn add_money(&mut self, acc: &Account, add_amount: &Scalar) -> Result<(), AccountError> {
     //     let mut label = self.pk.compress().as_bytes().to_vec();
     //     self.com.com = self.com.com + add_amount*RISTRETTO_BASEPOINT_POINT;
