@@ -252,6 +252,14 @@ impl Future for LeaderNode {
                 self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                 self.points = vec![];
                 self.scalars = vec![];
+                self.sigs = vec![];
+
+                let m = bincode::serialize(&self.lastblock).unwrap();
+                let mut hasher = Sha3_512::new();
+                hasher.update(&m);
+                self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                self.bnum += 1;
+
                 self.timekeeper = Instant::now();
                 did_something = true;
 

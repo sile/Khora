@@ -188,7 +188,7 @@ impl Future for ValidatorNode {
                         self.lastblock = bincode::deserialize(&m).unwrap();
 
                         self.bnum += 1;
-
+                        
 
 
 
@@ -206,7 +206,7 @@ impl Future for ValidatorNode {
                         m.push(6);
                         for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
                             self.inner.broadcast(m.clone());
-                            std::thread::sleep(Duration::from_millis(30u64));
+                            std::thread::sleep(Duration::from_millis(10u64));
                         }
                     } else if mtype == u8::MAX {
                         println!("address:              {:?}",self.inner.plumtree_node().id());
