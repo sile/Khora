@@ -202,11 +202,11 @@ impl Future for ValidatorNode {
                         let xt = CompressedRistretto(m.try_into().unwrap());
                         let mut m = self.leader.as_bytes().to_vec();
                         m.extend(&self.lastname);
-                        MultiSignature::try_get_y(&self.key, &self.bnum, &m, &xt);
+                        let mut m = MultiSignature::try_get_y(&self.key, &self.bnum, &m, &xt).as_bytes().to_vec();
                         m.push(6);
                         for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
                             self.inner.broadcast(m.clone());
-                            std::thread::sleep(Duration::from_millis(10u64));
+                            std::thread::sleep(Duration::from_millis(30u64));
                         }
                     } else if mtype == u8::MAX {
                         println!("address:              {:?}",self.inner.plumtree_node().id());

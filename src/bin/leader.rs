@@ -239,7 +239,6 @@ impl Future for LeaderNode {
                 s.update(&m);
                 let leader = Signature::sign(&self.key, &mut s,&self.keylocation);
                 lastblock.leader = leader;
-                self.timekeeper = Instant::now();
 
 
                 let mut m = bincode::serialize(&lastblock).unwrap();
@@ -249,8 +248,11 @@ impl Future for LeaderNode {
                 hasher.update(&m);
                 m.push(3u8);
                 self.inner.broadcast(m);
-                self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
 
+                self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                self.points = vec![];
+                self.scalars = vec![];
+                self.timekeeper = Instant::now();
                 did_something = true;
 
             }
