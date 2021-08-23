@@ -70,7 +70,7 @@ fn main() -> Result<(), MainError> {
     
     
 
-    let addr: SocketAddr = track_any_err!(format!("128.61.4.96:{}", port).parse())?; // gatech
+    let addr: SocketAddr = track_any_err!(format!("128.61.8.55:{}", port).parse())?; // gatech
 
 
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
@@ -163,7 +163,7 @@ impl Future for ValidatorNode {
                         let m: Vec<Vec<u8>> = bincode::deserialize(&m).unwrap(); // come up with something better
                         let m = m.into_par_iter().map(|x| bincode::deserialize(&x).unwrap()).collect::<Vec<PolynomialTransaction>>();
                         let m = NextBlock::valicreate(&self.key, &self.keylocation, &self.leader, &m, &(shard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
-                        if (m.txs.len() > 0) {
+                        if m.txs.len() > 0 {
                             println!("{:?}",m.txs.len());
                             let mut m = bincode::serialize(&m).unwrap();
                             m.push(2);

@@ -24,6 +24,7 @@ use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use sha3::{Digest, Sha3_512};
 use rayon::prelude::*;
 use kora::validation::*;
+use kora::validation::BLOCK_KEYWORD;
 // use bimap::BiHashMap;
 
 
@@ -66,7 +67,7 @@ fn main() -> Result<(), MainError> {
     // let addr: SocketAddr = track_any_err!(format!("172.16.0.8:{}", port).parse())?;
     // let addr: SocketAddr = track_any_err!(format!("192.168.0.101:{}", port).parse())?;
 
-    let addr: SocketAddr = track_any_err!(format!("128.61.4.96:{}", port).parse())?; // gatech
+    let addr: SocketAddr = track_any_err!(format!("128.61.8.55:{}", port).parse())?; // gatech
     
 
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
@@ -172,7 +173,7 @@ impl Future for LeaderNode {
                 // println!("hv pv: {:?}",self.inner.hyparview_node().passive_view());
                 did_something = true;
             }
-            if (self.sigs.len() >= (2*(NUMBER_OF_VALIDATORS/3)).into()) | ( (self.sigs.len() >= (NUMBER_OF_VALIDATORS/3).into()) & (self.timekeeper.elapsed().as_secs() > 30) ) {
+            if (self.sigs.len() > (2*(NUMBER_OF_VALIDATORS/3)).into()) | ( (self.sigs.len() > (NUMBER_OF_VALIDATORS/2).into()) & (self.timekeeper.elapsed().as_secs() > 30) ) {
                 let shard = 0;
                 // println!("time:::{:?}",self.timekeeper.elapsed().as_secs()); // that's not it
                 let lastblock = NextBlock::finish(&self.key, &self.keylocation, &self.sigs.drain(..).collect::<Vec<_>>(), &self.comittee[shard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(shard as u16), &self.bnum, &self.lastname, &self.stkinfo);
@@ -220,7 +221,7 @@ impl Future for LeaderNode {
                 did_something = true;
 
             }
-            if (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2) & (self.points.get(0) == Some(&RISTRETTO_BASEPOINT_POINT)) {
+            if (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2) & (self.points.get(0) == Some(&RISTRETTO_BASEPOINT_POINT)) & (self.scalars.len() > NUMBER_OF_VALIDATORS as usize/2) {
                 self.multisig = false; // should definitely check that validators are accurate here
 
                 // this is for if everyone signed... really > 0.5 or whatever... 
@@ -231,6 +232,13 @@ impl Future for LeaderNode {
                 lastblock.emptyness = MultiSignature{x: self.points[1].compress(), y: MultiSignature::sum_group_y(&self.scalars), pk: failed_validators};
                 lastblock.last_name = self.lastname.clone();
                 lastblock.pools = vec![0u16];
+
+                
+                let m = vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(),self.lastname.clone(),bincode::serialize(&lastblock.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+                let mut s = Sha3_512::new();
+                s.update(&m);
+                let leader = Signature::sign(&self.key, &mut s,&self.keylocation);
+                lastblock.leader = leader;
                 self.timekeeper = Instant::now();
 
 

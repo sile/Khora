@@ -70,7 +70,7 @@ fn main() -> Result<(), MainError> {
     // let addr: SocketAddr = track_any_err!(format!("172.20.10.3:{}", port).parse())?; // my iphone
     // let addr: SocketAddr = track_any_err!(format!("192.168.0.1:{}", port).parse())?;
     
-    let addr: SocketAddr = track_any_err!(format!("128.61.4.96:{}", port).parse())?; // gatech
+    let addr: SocketAddr = track_any_err!(format!("128.61.8.55:{}", port).parse())?; // gatech
 
 
 
@@ -373,7 +373,7 @@ gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnk
                     //     x.parse().unwrap()
                     // }).collect::<Vec<SocketAddr>>();
                     // let m = "128.061.004.096:09876 128.061.004.096:09875".to_string();
-                    let addrs = vec!["128.61.4.96:9876".parse::<SocketAddr>().unwrap(),"128.61.4.96:9875".parse::<SocketAddr>().unwrap()];
+                    let addrs = vec!["128.61.8.55:9876".parse::<SocketAddr>().unwrap(),"128.61.8.55:9875".parse::<SocketAddr>().unwrap()];
                     println!("{:?}",addrs);
                     for a in addrs.into_iter() {
                         let ip = NodeId::new(a, LocalNodeId::new(0));

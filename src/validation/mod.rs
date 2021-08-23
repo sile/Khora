@@ -25,7 +25,7 @@ use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
 pub const NUMBER_OF_VALIDATORS: u8 = 128;
 pub const REPLACERATE: usize = 2;
-const BLOCK_KEYWORD: [u8;6] = [107,105,109,98,101,114]; // todo: make this something else (a obvious version of her name)
+pub const BLOCK_KEYWORD: [u8;6] = [107,105,109,98,101,114]; // todo: make this something else (a obvious version of her name)
 const NOT_BLOCK_KEYWORD: [u8;7] = [103,97,98,114,105,101,108]; // todo: make this something else (a obvious version of her name)
 pub const INFLATION_CONSTANT: u64 = 2u64.pow(30);
 pub const INFLATION_EXPONENT: u32 = 100;
@@ -372,7 +372,7 @@ impl NextBlock { // need to sign the staker inputs too
         let leader = Signature::sign(&key, &mut s, &location);
         NextBlock{emptyness: MultiSignature::default(), validators: sigs, shards: blk.shards, leader, txs: blk.txs, last_name: last_name.clone(), pools, bnum: bnum.to_owned(), forker: None}
     }
-    pub fn verify(&self, validator_pools: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
+    pub fn verify(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
         if let Some((s,v,b)) = &self.forker {
             if s[0].pk != s[1].pk { /* leader could cause a fork by messing with fork section or which members sign */
                 return Err("forker is not 1 person")
@@ -390,30 +390,57 @@ impl NextBlock { // need to sign the staker inputs too
                 return Err("the forker was framed")
             }
         }
-        let mut s = Sha3_512::new();
-        s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
-        let c = s.finalize();
-        let m = vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec(),bincode::serialize(&self.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
-        let mut h = Sha3_512::new();
-        h.update(&m);
-        if !self.leader.verify(&mut h, &stkstate) {
-            return Err("leader is fake")
-        }
-        let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(),Syncedtx::to_sign(&self.txs),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-        let mut h = Sha3_512::new();
-        h.update(&m);
-        if !self.validators.par_iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
-            return Err("at least 1 validator is fake")
-        }
-        if !self.validators.par_iter().all(|x| !validator_pools.clone().into_par_iter().all(|y| x.pk != y)) {
-            return Err("at least 1 validator is not in the pool")
-        }
-        if validator_pools.par_iter().filter(|x| !self.validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < (2*NUMBER_OF_VALIDATORS as usize/3) {
-            return Err("there aren't enough validators")
-        }
-        let x = self.validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>();
-        if !x.clone().par_iter().enumerate().all(|(i,y)| x.clone()[..i].into_par_iter().all(|z| y != z)) {
-            return Err("there's multiple signatures from the same validator")
+        if self.validators.len() > 0 {
+            let mut s = Sha3_512::new();
+            s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
+            let c = s.finalize();
+            let m = vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec(),bincode::serialize(&self.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let mut h = Sha3_512::new();
+            h.update(&m);
+            if !self.leader.verify(&mut h, &stkstate) {
+                return Err("leader is fake")
+            }
+            let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(),Syncedtx::to_sign(&self.txs),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let mut h = Sha3_512::new();
+            h.update(&m);
+            if !self.validators.par_iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
+                return Err("at least 1 validator is fake")
+            }
+            if !self.validators.par_iter().all(|x| !validator_pool.clone().into_par_iter().all(|y| x.pk != y)) {
+                return Err("at least 1 validator is not in the pool")
+            }
+            if validator_pool.par_iter().filter(|x| !self.validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < (2*NUMBER_OF_VALIDATORS as usize/3) {
+                return Err("there aren't enough validators")
+            }
+            let x = self.validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>();
+            if !x.clone().par_iter().enumerate().all(|(i,y)| x.clone()[..i].into_par_iter().all(|z| y != z)) {
+                return Err("there's multiple signatures from the same validator")
+            }
+        } else {
+            if self.txs.len() > 0 {
+                return Err("the block isn't empty!")
+            }
+            let who = validator_pool.into_par_iter().filter_map(|x|
+                if self.emptyness.pk.par_iter().all(|y| y!=x) {
+                    Some(stkstate[*x as usize].0)
+                } else { // may need to add more checks here
+                    None
+                }
+            ).collect::<Vec<_>>();
+            if who.len() <= NUMBER_OF_VALIDATORS as usize/2 {
+                return Err("there's not enough validators for the empty block")
+            }
+            let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
+            m.extend(&self.last_name);
+            if !MultiSignature::verify_group(&self.emptyness.y,&self.emptyness.x,&m,&who) {
+                return Err("there's a problem with the multisignature")
+            }
+            let m = vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let mut s = Sha3_512::new();
+            s.update(&m);
+            if !self.leader.verify(&mut s,&stkstate) {
+                return Err("there's a problem with the leader's multisignature group signature")
+            }
         }
         return Ok(true)
     }
@@ -566,53 +593,73 @@ impl NextBlock { // need to sign the staker inputs too
         // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:#?}",stkin.len());
         // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
 
-        let fees = self.txs.par_iter().map(|x|x.fee).sum::<u64>();
-        let profits = fees/(self.validators.len() as u64);
-        let inflation = INFLATION_CONSTANT/2u64.pow(self.bnum as u32/INFLATION_EXPONENT); // todo: MAKE FLOATING POINT TO AVOID HARD CUTOFFS
-        // println!("{:?}",val_pools);
-        for &v in val_pools {
-            for (i,m) in mine.clone().iter().enumerate() {
-                if m[0] == v {
-                    if self.validators.par_iter().all(|x|x.pk!=v) { // NEEED TO SUBTRACT LOCATION WHEN STAKERS LEAVE
-                        let delta = m[1]/1000;
-                        mine[i][1] -= delta;
+        if self.emptyness.y == Scalar::from(0u8) {
+            let fees = self.txs.par_iter().map(|x|x.fee).sum::<u64>();
+            let profits = fees/(self.validators.len() as u64);
+            let inflation = INFLATION_CONSTANT/2u64.pow(self.bnum as u32/INFLATION_EXPONENT); // todo: MAKE FLOATING POINT TO AVOID HARD CUTOFFS
+            // println!("{:?}",val_pools);
+            for &v in val_pools {
+                for (i,m) in mine.clone().iter().enumerate() {
+                    if m[0] == v {
+                        if self.validators.par_iter().all(|x|x.pk!=v) { // NEEED TO SUBTRACT LOCATION WHEN STAKERS LEAVE
+                            let delta = m[1]/1000;
+                            mine[i][1] -= delta;
+                        }
+                        else {
+                            // println!("{:?}",mine[i].1.com.amount);
+                            let delta = profits+inflation;
+                            mine[i][1] += delta;
+                        }
+                    }
+                }
+            }
+            // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
+    
+    
+            let stkout = self.txs.par_iter().filter_map(|x|
+                if x.inputs.len() == 8 {Some(u64::from_le_bytes(x.inputs.to_owned().try_into().unwrap()))} else {None}
+            ).collect::<Vec<u64>>();
+    
+    
+    
+    
+            for (i,m) in mine.clone().iter().enumerate().rev() {
+                for v in &stkout {
+                    if m[0] == *v {
+                        mine.remove(i as usize);
+                    }
+                }
+                for n in stkout.iter() {
+                    if *n < m[0] {
+                        mine[i][0] -= 1;
                     }
                     else {
-                        // println!("{:?}",mine[i].1.com.amount);
-                        let delta = profits+inflation;
-                        mine[i][1] += delta;
+                        break;
                     }
                 }
             }
-        }
-        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
-
-
-        let stkout = self.txs.par_iter().filter_map(|x|
-            if x.inputs.len() == 8 {Some(u64::from_le_bytes(x.inputs.to_owned().try_into().unwrap()))} else {None}
-        ).collect::<Vec<u64>>();
-
-
-
-
-        for (i,m) in mine.clone().iter().enumerate().rev() {
-            for v in &stkout {
-                if m[0] == *v {
-                    mine.remove(i as usize);
+            // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
+            *height += stkin.len() as u64;
+            *height -= stkout.len() as u64;
+        } else {
+            let inflation = INFLATION_CONSTANT/2u64.pow(self.bnum as u32/INFLATION_EXPONENT); // todo: MAKE FLOATING POINT TO AVOID HARD CUTOFFS
+            // println!("{:?}",val_pools);
+            for &v in val_pools {
+                for (i,m) in mine.clone().iter().enumerate() {
+                    if m[0] == v {
+                        if !self.emptyness.pk.par_iter().all(|x|*x!=v) { // NEEED TO SUBTRACT LOCATION WHEN STAKERS LEAVE
+                            let delta = m[1]/1000;
+                            mine[i][1] -= delta;
+                        }
+                        else {
+                            let delta = inflation;
+                            mine[i][1] += delta;
+                        }
+                    }
                 }
             }
-            for n in stkout.iter() {
-                if *n < m[0] {
-                    mine[i][0] -= 1;
-                }
-                else {
-                    break;
-                }
-            }
+
         }
-        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
-        *height += stkin.len() as u64;
-        *height -= stkout.len() as u64;
     }
     pub fn update_bloom(&self,bloom:&BloomFile) {
         self.txs.par_iter().map(|x| x.tags.par_iter().map(|y| bloom.insert(y.as_bytes())).collect::<Vec<_>>()).collect::<Vec<_>>();
