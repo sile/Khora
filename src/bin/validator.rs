@@ -155,7 +155,7 @@ impl Future for ValidatorNode {
             while let Async::Ready(Some(msg)) = track_try_unwrap!(self.inner.poll()) {
                 let mut m = msg.payload().to_vec();
                 if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
-                    if mtype == 2 {print!("#{:?}", mtype);}
+                    if (mtype == 2) | (mtype == 4) | (mtype == 6) {print!("#{:?}", mtype);}
                     else {println!("# MESSAGE TYPE: {:?}", mtype);}
                     if mtype == 1 {
                         let shard = 0;
@@ -163,18 +163,19 @@ impl Future for ValidatorNode {
                         let m: Vec<Vec<u8>> = bincode::deserialize(&m).unwrap(); // come up with something better
                         let m = m.into_par_iter().map(|x| bincode::deserialize(&x).unwrap()).collect::<Vec<PolynomialTransaction>>();
                         let m = NextBlock::valicreate(&self.key, &self.keylocation, &self.leader, &m, &(shard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
-                        if m.txs.len() == 0 {
+                        if (m.txs.len() > 0) {
+                            println!("{:?}",m.txs.len());
                             let mut m = bincode::serialize(&m).unwrap();
                             m.push(2);
                             for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
                                 self.inner.broadcast(m.clone());
                                 std::thread::sleep(Duration::from_millis(10u64));
                             }
-                        } else {
+                        } else if (m.txs.len() == 0) & (m.emptyness.y == Scalar::default()){
                             let m = MultiSignature::gen_group_x(&self.key, &self.bnum);
                             let mut m = bincode::serialize(&m).unwrap();
                             m.push(4);
-                            for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
+                            for _ in self.comittee[0].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
                                 self.inner.broadcast(m.clone());
                                 std::thread::sleep(Duration::from_millis(10u64));
                             }
@@ -191,7 +192,7 @@ impl Future for ValidatorNode {
 
 
 
-                        self.lastblock.scan_as_noone_but_dont_save_history_because_im_pretending_to_be_multiple_people_sharing_1_file(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
+                        self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee, false);
                         for i in 0..self.comittee.len() {
                             select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                         }

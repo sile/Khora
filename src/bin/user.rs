@@ -182,7 +182,7 @@ impl Future for UserNode {
             while let Async::Ready(Some(msg)) = track_try_unwrap!(self.inner.poll()) {
                 let mut m = msg.payload().to_vec();
                 if let Some(mtype) = m.pop() {
-                    if mtype == 2 {print!("#{:?}", mtype);}
+                    if (mtype == 2) | (mtype == 4) | (mtype == 6) {print!("#{:?}", mtype);}
                     else {println!("# MESSAGE TYPE: {:?}", mtype);}
                     
                     if mtype == 3 {
@@ -193,7 +193,7 @@ impl Future for UserNode {
                         if self.lastblock.last_name == self.lastname {
                             println!("===============================\nyay!");
                             self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                            self.lastblock.scan_as_noone_but_dont_save_history_because_im_pretending_to_be_multiple_people_sharing_1_file(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
+                            self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee, false);
                             for i in 0..self.comittee.len() {
                                 select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                             }

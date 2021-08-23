@@ -17,13 +17,14 @@ use trackable::error::MainError;
 
 use kora::account::*;
 use curve25519_dalek::scalar::Scalar;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use sha3::{Digest, Sha3_512};
 use rayon::prelude::*;
 use kora::validation::*;
-
+// use bimap::BiHashMap;
 
 
 
@@ -97,6 +98,7 @@ fn main() -> Result<(), MainError> {
         key: lkey,
         keylocation: keylocation,
         stkinfo: vec![(staker0,1u64)],
+        // iptable: BiHashMap::new(),
         txses: vec![],
         lastblock: NextBlock::default(),
         sigs: vec![],
@@ -122,7 +124,8 @@ struct LeaderNode {
     inner: Node<Vec<u8>>,
     key: Scalar,
     keylocation: u64,
-    stkinfo: Vec<(CompressedRistretto,u64)>,
+    stkinfo: Vec<(CompressedRistretto,u64)>, //  pk, $
+    // iptable: BiHashMap<NodeId,CompressedRistretto>, // ip, pk // this could be useful for later but not significantly different communication for this stuff
     txses: Vec<Vec<u8>>,
     lastblock: NextBlock,
     sigs: Vec<NextBlock>,
@@ -148,8 +151,9 @@ impl Future for LeaderNode {
             while let Async::Ready(Some(m)) = track_try_unwrap!(self.inner.poll()) {
                 let mut m = m.payload().to_vec();
                 if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a leader
-                    if mtype == 2 {print!("#{:?}", mtype);}
+                    if (mtype == 2) | (mtype == 4) | (mtype == 6) {print!("#{:?}", mtype);}
                     else {println!("# MESSAGE TYPE: {:?}", mtype);}
+
                     if mtype == 0 {
                         self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
                     } else if mtype == 2 {
@@ -187,7 +191,7 @@ impl Future for LeaderNode {
 
                     m.push(3u8);
                     self.inner.broadcast(m);
-                    self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
+                    self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee, true);
                     
                     
                     println!("{:?}",self.stkinfo);
@@ -207,24 +211,38 @@ impl Future for LeaderNode {
 
                 self.timekeeper = Instant::now();
             }
-            if (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 1) & (self.points.len() > NUMBER_OF_VALIDATORS as usize/3*2) {
+            if (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 1) & (self.points.len() > (2*NUMBER_OF_VALIDATORS as usize)/3) {
                 // should prob check that validators are accurate here?
                 let mut m = MultiSignature::sum_group_x(&self.points).as_bytes().to_vec();
                 m.push(5u8);
                 self.inner.broadcast(m);
-                self.points[0] = MultiSignature::sum_group_x(&self.points).decompress().unwrap();
+                self.points = vec![RISTRETTO_BASEPOINT_POINT,MultiSignature::sum_group_x(&self.points).decompress().unwrap()];
                 did_something = true;
 
             }
-            if (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2) & (self.points.len() > NUMBER_OF_VALIDATORS as usize/3*2) {
+            if (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2) & (self.points.get(0) == Some(&RISTRETTO_BASEPOINT_POINT)) {
                 self.multisig = false; // should definitely check that validators are accurate here
-                MultiSignature{x: self.points[0].compress(), y: MultiSignature::sum_group_y(&self.scalars), pk: };
+
+                // this is for if everyone signed... really > 0.5 or whatever... 
                 
-                // IMPORTANT: FINISH THIS FUNCTION WHICH INVOLVES CHANGING THE BLOCK TO ACCEPT SignatureType ENUM!!!!
-                let mut m = bincode::serialize(...).unwrap();
+                let failed_validators = vec![]; // need an extra round to weed out liers
+                let mut lastblock = NextBlock::default();
+                lastblock.bnum = self.bnum;
+                lastblock.emptyness = MultiSignature{x: self.points[1].compress(), y: MultiSignature::sum_group_y(&self.scalars), pk: failed_validators};
+                lastblock.last_name = self.lastname.clone();
+                lastblock.pools = vec![0u16];
+                self.timekeeper = Instant::now();
+
+
+                let mut m = bincode::serialize(&lastblock).unwrap();
                 
+                self.lastblock = lastblock;
+                let mut hasher = Sha3_512::new();
+                hasher.update(&m);
                 m.push(3u8);
                 self.inner.broadcast(m);
+                self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+
                 did_something = true;
 
             }
@@ -237,7 +255,7 @@ impl Future for LeaderNode {
                 self.inner.broadcast(m);
                 self.txses = vec![];
                 self.timekeeper = Instant::now();
-                if self.txses.len() == 0 {self.multisig = false;}
+                if self.txses.len() == 0 {self.multisig = true;}
                 did_something = true;
             }
         }

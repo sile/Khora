@@ -252,7 +252,7 @@ fn main() -> Result<(),std::io::Error> {
         lastheight = height;
         nextblock.scan(&ryan, &mut mine, &mut height, &mut alltagsever);
         nextblock.scanstk(&ryan, &mut smine, &mut sheight, &val_pool[0]);
-        nextblock.scan_as_noone(/*&mut history,*/&mut stkinfo,&val_pool,&mut queue, &mut exitqueue,&mut comittee);
+        nextblock.scan_as_noone(&mut stkinfo,&val_pool,&mut queue, &mut exitqueue,&mut comittee, true);
         println!("history: {}",history.len());
         println!("stkinfo: {}",stkinfo.len());
         println!("-------------------------------->"); /* right now, bloom filter filters staker exits? */

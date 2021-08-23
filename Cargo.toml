@@ -38,6 +38,7 @@ bit-vec = "0.6.3"
 modinverse = "0.1.1"
 polynomial-over-finite-prime-field = "0.3.1"
 ahash = "0.7.4"
+bimap = "0.6.1"
 
 plumcast = { path = "plumcast" }
 # plumcast = "0.1.5"
