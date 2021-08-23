@@ -163,11 +163,21 @@ impl Future for ValidatorNode {
                         let m: Vec<Vec<u8>> = bincode::deserialize(&m).unwrap(); // come up with something better
                         let m = m.into_par_iter().map(|x| bincode::deserialize(&x).unwrap()).collect::<Vec<PolynomialTransaction>>();
                         let m = NextBlock::valicreate(&self.key, &self.keylocation, &self.leader, &m, &(shard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
-                        let mut m = bincode::serialize(&m).unwrap();
-                        m.push(2);
-                        for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
-                            self.inner.broadcast(m.clone());
-                            std::thread::sleep(Duration::from_millis(10u64));
+                        if m.txs.len() == 0 {
+                            let mut m = bincode::serialize(&m).unwrap();
+                            m.push(2);
+                            for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
+                                self.inner.broadcast(m.clone());
+                                std::thread::sleep(Duration::from_millis(10u64));
+                            }
+                        } else {
+                            let m = MultiSignature::gen_group_x(&self.key, &self.bnum);
+                            let mut m = bincode::serialize(&m).unwrap();
+                            m.push(4);
+                            for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
+                                self.inner.broadcast(m.clone());
+                                std::thread::sleep(Duration::from_millis(10u64));
+                            }
                         }
                         // println!("{:?}",hash_to_scalar(&self.lastblock));
                     } else if mtype == 3 {
@@ -186,6 +196,17 @@ impl Future for ValidatorNode {
                             select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                         }
                         // println!("{:?}",hash_to_scalar(&self.lastblock));
+                    } else if mtype == 5 {
+                        let shard = 0;
+                        let xt = CompressedRistretto(m.try_into().unwrap());
+                        let mut m = self.leader.as_bytes().to_vec();
+                        m.extend(&self.lastname);
+                        MultiSignature::try_get_y(&self.key, &self.bnum, &m, &xt);
+                        m.push(6);
+                        for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
+                            self.inner.broadcast(m.clone());
+                            std::thread::sleep(Duration::from_millis(10u64));
+                        }
                     } else if mtype == u8::MAX {
                         println!("address:              {:?}",self.inner.plumtree_node().id());
                         println!("eager push pears:     {:?}",self.inner.plumtree_node().eager_push_peers());

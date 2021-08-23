@@ -10,6 +10,7 @@ use plumcast::node::{LocalNodeId, Node, NodeBuilder, NodeId, SerialLocalNodeIdGe
 use plumcast::service::ServiceBuilder;
 use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::Build;
+use std::convert::TryInto;
 use std::net::SocketAddr;
 use trackable::error::MainError;
 
@@ -18,7 +19,7 @@ use kora::account::*;
 use curve25519_dalek::scalar::Scalar;
 use std::collections::VecDeque;
 use std::time::Instant;
-use curve25519_dalek::ristretto::{CompressedRistretto};
+use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use sha3::{Digest, Sha3_512};
 use rayon::prelude::*;
 use kora::validation::*;
@@ -104,6 +105,9 @@ fn main() -> Result<(), MainError> {
         comittee: (0..max_shards).map(|_|vec![0usize;NUMBER_OF_VALIDATORS as usize]).collect::<Vec<_>>(),
         lastname: vec![],
         bnum: 1u64,
+        multisig: false,
+        scalars: vec![],
+        points: vec![],
         timekeeper: Instant::now(),
     };
     executor.spawn(service.map_err(|e| panic!("{}", e)));
@@ -127,6 +131,9 @@ struct LeaderNode {
     comittee: Vec<Vec<usize>>,
     lastname: Vec<u8>,
     bnum: u64,
+    multisig: bool,
+    scalars: Vec<Scalar>,
+    points: Vec<RistrettoPoint>,
     timekeeper: Instant,
 }
 impl Future for LeaderNode {
@@ -145,9 +152,12 @@ impl Future for LeaderNode {
                     else {println!("# MESSAGE TYPE: {:?}", mtype);}
                     if mtype == 0 {
                         self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
-                    }
-                    else if mtype == 2 {
+                    } else if mtype == 2 {
                         self.sigs.push(bincode::deserialize(&m).unwrap());
+                    } else if mtype == 4 {
+                        self.points.push(CompressedRistretto(m.try_into().unwrap()).decompress().unwrap());
+                    } else if mtype == 6 {
+                        self.scalars.push(Scalar::from_bits(m.try_into().unwrap()));
                     }
                 }
                 // println!("pt id: {:?}",self.inner.plumtree_node().id());
@@ -197,13 +207,37 @@ impl Future for LeaderNode {
 
                 self.timekeeper = Instant::now();
             }
+            if (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 1) & (self.points.len() > NUMBER_OF_VALIDATORS as usize/3*2) {
+                // should prob check that validators are accurate here?
+                let mut m = MultiSignature::sum_group_x(&self.points).as_bytes().to_vec();
+                m.push(5u8);
+                self.inner.broadcast(m);
+                self.points[0] = MultiSignature::sum_group_x(&self.points).decompress().unwrap();
+                did_something = true;
+
+            }
+            if (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2) & (self.points.len() > NUMBER_OF_VALIDATORS as usize/3*2) {
+                self.multisig = false; // should definitely check that validators are accurate here
+                MultiSignature{x: self.points[0].compress(), y: MultiSignature::sum_group_y(&self.scalars), pk: };
+                
+                // IMPORTANT: FINISH THIS FUNCTION WHICH INVOLVES CHANGING THE BLOCK TO ACCEPT SignatureType ENUM!!!!
+                let mut m = bincode::serialize(...).unwrap();
+                
+                m.push(3u8);
+                self.inner.broadcast(m);
+                did_something = true;
+
+            }
             if /*(self.txses.len() > 0) |*/ (self.timekeeper.elapsed().as_secs() > 10) /*(self.txses.len() >= 512) | (self.timekeeper.elapsed().as_secs() > 60/self.bnum + 1)*/ { // make this floating point too for time
                 self.sigs = vec![];
+                self.points = vec![];
+                self.scalars = vec![];
                 let mut m = bincode::serialize(&self.txses).unwrap();
                 m.push(1u8);
                 self.inner.broadcast(m);
                 self.txses = vec![];
                 self.timekeeper = Instant::now();
+                if self.txses.len() == 0 {self.multisig = false;}
                 did_something = true;
             }
         }

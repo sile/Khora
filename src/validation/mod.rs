@@ -1,10 +1,12 @@
-use curve25519_dalek::ristretto::{CompressedRistretto};
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use crate::account::*;
 use rayon::prelude::*;
 use crate::transaction::*;
 use std::convert::TryInto;
 use std::iter::FromIterator;
+use std::ops::MulAssign;
 use crate::bloom::BloomFile;
 use rand::{thread_rng};
 use sha3::{Digest, Sha3_512};
@@ -24,6 +26,7 @@ use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 pub const NUMBER_OF_VALIDATORS: u8 = 128;
 pub const REPLACERATE: usize = 2;
 const BLOCK_KEYWORD: [u8;6] = [107,105,109,98,101,114]; // todo: make this something else (a obvious version of her name)
+const NOT_BLOCK_KEYWORD: [u8;7] = [103,97,98,114,105,101,108]; // todo: make this something else (a obvious version of her name)
 pub const INFLATION_CONSTANT: u64 = 2u64.pow(30);
 pub const INFLATION_EXPONENT: u32 = 100;
 
@@ -68,6 +71,58 @@ impl Syncedtx {
 
 
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum SignatureType {
+    Singature,
+    Multisignature,
+}
+
+#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+pub struct MultiSignature{
+    pub x: CompressedRistretto,
+    pub y: Scalar,
+    pub pk: Vec<u8>, // whose not in it
+}
+impl MultiSignature {
+    pub fn gen_group_x(key: &Scalar, bnum: &u64) -> CompressedRistretto { // WARNING: make a function to sign arbitrary messages when sending them for validators
+        let bnum = bnum.to_le_bytes();
+        let mut s = Sha3_512::new();
+        s.update(&bnum);
+        s.update(&key.as_bytes()[..]);
+        let m = ((Scalar::from_hash(s))*RISTRETTO_BASEPOINT_POINT).compress();
+        m
+    }
+    pub fn sum_group_x(x: &Vec<RistrettoPoint>) -> CompressedRistretto {
+        x.into_par_iter().sum::<RistrettoPoint>().compress()
+    }
+    pub fn try_get_y(key: &Scalar, bnum: &u64, message: &Vec<u8>, xt: &CompressedRistretto) -> Scalar {
+        let bnum = bnum.to_le_bytes();
+        let mut s = Sha3_512::new();
+        s.update(&bnum);
+        s.update(&key.as_bytes());
+        let r = Scalar::from_hash(s);
+
+        let mut s = Sha3_512::new();
+        s.update(&message);
+        s.update(&xt.as_bytes());
+        let e = Scalar::from_hash(s);
+        let y = e*key+r;
+        y
+    }
+    pub fn sum_group_y(y:& Vec<Scalar>) -> Scalar {
+        y.into_par_iter().sum()
+    }
+    pub fn verify_group(yt: &Scalar, xt: &CompressedRistretto, message: &Vec<u8>, who: &Vec<CompressedRistretto>) -> bool {
+        let mut s = Sha3_512::new();
+        s.update(&message);
+        s.update(&xt.as_bytes());
+        let e = Scalar::from_hash(s);
+        (yt*RISTRETTO_BASEPOINT_POINT).compress() == (xt.decompress().unwrap() + e*who.into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>()).compress()
+    }
+}
+
+
+
 #[derive(Default, Clone, Serialize, Deserialize, Debug)]
 pub struct Signature{
     pub c: Scalar,
@@ -91,6 +146,37 @@ impl Signature { // the inputs are the hashed messages you are checking for sign
         message.update((self.r*PEDERSEN_H() + self.c*stkstate[self.pk as usize].0.decompress().unwrap()).compress().to_bytes());
         self.c == Scalar::from_hash(message.to_owned())
     }
+
+    pub fn sign_message(key: &Scalar, message: &Vec<u8>, location: &u64) -> Vec<u8> {
+        let mut s = Sha3_512::new();
+        s.update(&message); // impliment non block check stuff for signatures
+        let mut csprng = thread_rng();
+        let a = Scalar::random(&mut csprng);
+        s.update((a*PEDERSEN_H()).compress().to_bytes());
+        let c = Scalar::from_hash(s.to_owned());
+        let mut out = c.as_bytes().to_vec();
+        out.par_extend((a - c*key).as_bytes());
+        out.par_extend(location.to_le_bytes());
+        out.par_extend(message);
+        out
+    }
+    pub fn recieve_signed_message(signed_message: &mut Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Vec<u8> {
+        let message = signed_message.par_drain(72..).collect::<Vec<_>>();
+        let s = Signature{c: Scalar::from_bits(message[..32].try_into().unwrap()),
+            r: Scalar::from_bits(message[32..64].try_into().unwrap()),
+            pk: u64::from_le_bytes(message[64..72].try_into().unwrap())};
+        
+        let mut h = Sha3_512::new();
+        h.update(&message);
+        if s.verify(&mut h, stkstate) {
+            message
+        } else {
+            vec![]
+        }
+    }
+
+
+
 }
 
 
@@ -905,3 +991,31 @@ impl StakerState {
 
 
 
+
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn multisignature_test() {
+        use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+        use curve25519_dalek::scalar::Scalar;
+        use crate::validation::MultiSignature;
+
+        let message = "hi!!!".as_bytes().to_vec();
+        let sk = (0..100).into_iter().map(|_| Scalar::from(rand::random::<u64>())).collect::<Vec<_>>();
+        let pk = sk.iter().map(|x| x*RISTRETTO_BASEPOINT_POINT).collect::<Vec<_>>();
+
+        let x = sk.iter().map(|k| MultiSignature::gen_group_x(&k,&0u64).decompress().unwrap()).collect::<Vec<_>>();
+        let xt = MultiSignature::sum_group_x(&x);
+        let y = sk.iter().map(|k| MultiSignature::try_get_y(&k, &0u64, &message, &xt)).collect::<Vec<_>>();
+        let yt = MultiSignature::sum_group_y(&y);
+
+
+
+        assert!(MultiSignature::verify_group(&yt, &xt, &message, &pk.iter().map(|x| x.compress()).collect::<Vec<_>>()));
+        assert!(MultiSignature::verify_group(&yt, &xt, &message, &pk.iter().rev().map(|x| x.compress()).collect::<Vec<_>>()));
+        assert!(!MultiSignature::verify_group(&yt, &xt, &message, &pk[..99].iter().map(|x| x.compress()).collect::<Vec<_>>()));
+        assert!(!MultiSignature::verify_group(&yt, &xt, &"bye!!!".as_bytes().to_vec(), &pk.iter().map(|x| x.compress()).collect::<Vec<_>>()));
+    }
+}
