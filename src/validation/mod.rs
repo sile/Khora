@@ -434,10 +434,10 @@ impl NextBlock { // need to sign the staker inputs too
             }
             let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
             m.extend(&self.last_name);
-            println!("emptyness: {:?}",self.emptyness);
-            println!("who: {:?}",who);
-            println!("who sum: {:?}",who.par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>().compress());
-            println!("leader pk: {:?}",self.leader);
+            // println!("emptyness: {:?}",self.emptyness);
+            // println!("who: {:?}",who);
+            // println!("who sum: {:?}",who.par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>().compress());
+            // println!("leader pk: {:?}",self.leader);
             if !MultiSignature::verify_group(&self.emptyness.y,&self.emptyness.x,&m,&who) {
                 return Err("there's a problem with the multisignature")
             }

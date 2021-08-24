@@ -208,9 +208,9 @@ impl Future for StakerNode {
                 if !self.bannedlist.contains(&msg.id().node()) {
                     let mut m = msg.payload().to_vec();
                     if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
-                        if (mtype == 2) | (mtype == 4) | (mtype == 6) {print!("#{:?}", mtype);}
-                        else {println!("# MESSAGE TYPE: {:?}", mtype);}
-    
+                        // if (mtype == 2) | (mtype == 4) | (mtype == 6) {print!("#{:?}", mtype);}
+                        // else {println!("# MESSAGE TYPE: {:?}", mtype);}
+                        println!("# MESSAGE TYPE: {:?}", mtype); // i dont do anything with lightning blocks because im a staker
     
     
                         if mtype == 0 {
@@ -243,16 +243,16 @@ impl Future for StakerNode {
                             self.sigs.push(bincode::deserialize(&m).unwrap());
                         } else if mtype == 3 {
                             self.lastblock = bincode::deserialize(&m).unwrap();
-                            let mut hasher = Sha3_512::new();
-                            hasher.update(&m);
-                            self.lastblock = bincode::deserialize(&m).unwrap();
+                            // let mut hasher = Sha3_512::new();
+                            // hasher.update(&m);
+                            // self.lastblock = bincode::deserialize(&m).unwrap();
     
                             let com = self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
                             // println!("names match up: {}",self.lastblock.last_name == self.lastname);
                             self.lastblock.verify(&com[0], &self.stkinfo).unwrap();
                             if (self.lastblock.last_name == self.lastname) & self.lastblock.verify(&com[0], &self.stkinfo).is_ok() {
                                 println!("=========================================================\nyay!");
-                                self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                                // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                                 self.lastblock.scan_as_noone(&mut self.stkinfo,&com, &mut self.queue, &mut self.exitqueue, &mut self.comittee, false);
                                 for i in 0..self.comittee.len() {
                                     select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
@@ -265,12 +265,9 @@ impl Future for StakerNode {
                                 hasher.update(lightning);
                                 self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                                 self.bnum += 1;
-    
-    
-                                self.lastblock.scan_as_noone(&mut self.stkinfo,&com, &mut self.queue, &mut self.exitqueue, &mut self.comittee, false);
-                                for i in 0..self.comittee.len() {
-                                    select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                                }
+                                
+
+                                
     
                                 if self.keylocation.contains(&(self.exitqueue[0][0] as u64)) | self.keylocation.contains(&(self.exitqueue[0][1] as u64)) {
                                     /* broadcast the block to the outside world */
@@ -441,6 +438,10 @@ USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER 
                             let b = self.me.derive_stk_ot(&Scalar::from(amnt[i]));
                             let tx = Transaction::spend_ring(&vec![self.me.receive_ot(&b).unwrap()], &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
                             tx.verify().unwrap();
+                            println!("stkinfo: {:?}",self.stkinfo);
+                            println!("me pk: {:?}",self.me.receive_ot(&b).unwrap().pk.compress());
+                            println!("loc: {:?}",loc);
+                            println!("amnt: {:?}",amnt);
                             let tx = tx.polyform(&loc[i].to_le_bytes().to_vec());
                             tx.verifystk(&self.stkinfo).unwrap();
                             txbin = bincode::serialize(&tx).unwrap();
@@ -520,28 +521,28 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
 
                 if lastblock.validators.len() != 0 {
                     self.lastblock = lastblock;
+
                     let mut m = bincode::serialize(&self.lastblock).unwrap();
+                    let mut l = bincode::serialize(&self.lastblock.tolightning()).unwrap();
     
                     self.sigs = vec![];
 
                     let mut hasher = Sha3_512::new();
-                    hasher.update(&m);
+                    hasher.update(&l);
                     self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                     // println!("{:?}",hash_to_scalar(&self.lastblock));
 
 
+    
+
+                    l.push(7u8);
+                    self.inner.broadcast(l);
                     m.push(3u8);
                     self.inner.broadcast(m);
-                    self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee, true);
-                    
-                    
-                    println!("{:?}",self.stkinfo);
 
 
-                    for i in 0..self.comittee.len() {
-                        select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                    }
-                    self.bnum += 1;
+                    
+
                     println!("made a block with {} transactions!",self.lastblock.txs.len());
                     did_something = true;
                 } else {
@@ -582,7 +583,7 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
                 s.update(&m);
                 s.update(sumpt.compress().as_bytes());
                 let e = Scalar::from_hash(s);
-                println!("keys: {:?}",keys);
+                // println!("keys: {:?}",keys);
                 let k = keys.len();
                 keys.retain(|&x| (self.points[x] + e*self.stkinfo[*x].0.decompress().unwrap() == self.scalars[x]*PEDERSEN_H()) & self.comittee[0].contains(x));
                 if k == keys.len() {
@@ -608,7 +609,7 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
                     // self.lastblock = lastblock;
                     // let mut hasher = Sha3_512::new();
                     // hasher.update(&l);
-                    println!("{:?}",self.leader);
+                    // println!("{:?}",self.leader);
                     m.push(3u8);
                     self.inner.broadcast(m);
     
