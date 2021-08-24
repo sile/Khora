@@ -70,7 +70,7 @@ fn main() -> Result<(), MainError> {
     
     
 
-    let addr: SocketAddr = track_any_err!(format!("128.61.8.55:{}", port).parse())?; // gatech
+    let addr: SocketAddr = track_any_err!(format!("128.61.3.173:{}", port).parse())?; // gatech
 
 
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
@@ -182,10 +182,12 @@ impl Future for ValidatorNode {
                         }
                         // println!("{:?}",hash_to_scalar(&self.lastblock));
                     } else if mtype == 3 {
-                        let mut hasher = Sha3_512::new();
-                        hasher.update(&m);
-                        self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                         self.lastblock = bincode::deserialize(&m).unwrap();
+                        let l = bincode::serialize(&self.lastblock.tolightning()).unwrap();
+
+                        let mut hasher = Sha3_512::new();
+                        hasher.update(l);
+                        self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
 
                         self.bnum += 1;
                         

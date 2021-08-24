@@ -70,7 +70,7 @@ fn main() -> Result<(), MainError> {
     // let addr: SocketAddr = track_any_err!(format!("172.20.10.3:{}", port).parse())?; // my iphone
     // let addr: SocketAddr = track_any_err!(format!("192.168.0.1:{}", port).parse())?;
     
-    let addr: SocketAddr = track_any_err!(format!("128.61.8.55:{}", port).parse())?; // gatech
+    let addr: SocketAddr = track_any_err!(format!("128.61.3.173:{}", port).parse())?; // gatech
 
 
 
@@ -115,7 +115,8 @@ fn main() -> Result<(), MainError> {
         smine: vec![],
         alltagsever: vec![],
         stkinfo: vec![(leader,1u64)],
-        lastblock: NextBlock::default(),
+        lastblock: LightningSyncBlock::default(),
+        // lastblock: NextBlock::default(),
         queue: (0..max_shards).map(|_|[0usize;NUMBER_OF_VALIDATORS as usize].into_par_iter().collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
         exitqueue: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
         comittee: (0..max_shards).map(|_|vec![0usize;NUMBER_OF_VALIDATORS as usize]).collect::<Vec<_>>(),
@@ -162,7 +163,8 @@ struct UserNode {
     smine: Vec<[u64; 2]>, // [location, amount]
     alltagsever: Vec<CompressedRistretto>,
     stkinfo: Vec<(CompressedRistretto,u64)>,
-    lastblock: NextBlock,
+    // lastblock: NextBlock,
+    lastblock: LightningSyncBlock,
     queue: Vec<VecDeque<usize>>,
     exitqueue: Vec<VecDeque<usize>>,
     comittee: Vec<Vec<usize>>,
@@ -185,7 +187,23 @@ impl Future for UserNode {
                     if (mtype == 2) | (mtype == 4) | (mtype == 6) {print!("#{:?}", mtype);}
                     else {println!("# MESSAGE TYPE: {:?}", mtype);}
                     
-                    if mtype == 3 {
+                    // if mtype == 3 {
+                    //     println!("----------------------{}",m.len());
+                    //     let mut hasher = Sha3_512::new();
+                    //     hasher.update(&m);
+                    //     self.lastblock = bincode::deserialize(&m).unwrap();
+                    //     if self.lastblock.last_name == self.lastname {
+                    //         println!("===============================\nyay!");
+                    //         self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                    //         self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee, false);
+                    //         for i in 0..self.comittee.len() {
+                    //             select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                    //         }
+                    //         self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
+                    //         self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee[0].par_iter().map(|x|*x as u64).collect::<Vec<_>>());
+                    //     }
+                    // }
+                    if mtype == 7 {
                         println!("----------------------{}",m.len());
                         let mut hasher = Sha3_512::new();
                         hasher.update(&m);
@@ -193,12 +211,11 @@ impl Future for UserNode {
                         if self.lastblock.last_name == self.lastname {
                             println!("===============================\nyay!");
                             self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                            self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee, false);
+                            self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
                             for i in 0..self.comittee.len() {
                                 select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                             }
-                            self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
-                            self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee[0].par_iter().map(|x|*x as u64).collect::<Vec<_>>());
+                            self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.sheight, &mut self.alltagsever);
                         }
                     }
                     if mtype == 254 {
@@ -259,7 +276,7 @@ gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofccokkmobiejbfabp
 gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000a!
 
 
-128.61.4.96:9876 128.61.4.96:9875?
+128.61.3.173:9876 128.61.3.173:9875?
 
 send from non stake (!) to non stake (gf...ob) VVVVVVVVVVVVVVV
 gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000!!
@@ -373,7 +390,7 @@ gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnk
                     //     x.parse().unwrap()
                     // }).collect::<Vec<SocketAddr>>();
                     // let m = "128.061.004.096:09876 128.061.004.096:09875".to_string();
-                    let addrs = vec!["128.61.8.55:9876".parse::<SocketAddr>().unwrap(),"128.61.8.55:9875".parse::<SocketAddr>().unwrap()];
+                    let addrs = vec!["128.61.3.173:9876".parse::<SocketAddr>().unwrap(),"128.61.3.173:9875".parse::<SocketAddr>().unwrap()];
                     println!("{:?}",addrs);
                     for a in addrs.into_iter() {
                         let ip = NodeId::new(a, LocalNodeId::new(0));

@@ -67,7 +67,7 @@ fn main() -> Result<(), MainError> {
     // let addr: SocketAddr = track_any_err!(format!("172.16.0.8:{}", port).parse())?;
     // let addr: SocketAddr = track_any_err!(format!("192.168.0.101:{}", port).parse())?;
 
-    let addr: SocketAddr = track_any_err!(format!("128.61.8.55:{}", port).parse())?; // gatech
+    let addr: SocketAddr = track_any_err!(format!("128.61.3.173:{}", port).parse())?; // gatech
     
 
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
@@ -223,7 +223,7 @@ impl Future for LeaderNode {
             }
             if (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2) & (self.points.get(0) == Some(&RISTRETTO_BASEPOINT_POINT)) & (self.scalars.len() > NUMBER_OF_VALIDATORS as usize/2) {
                 self.multisig = false; // should definitely check that validators are accurate here
-
+                let shard = 0u16;
                 // this is for if everyone signed... really > 0.5 or whatever... 
                 
                 let failed_validators = vec![]; // need an extra round to weed out liers
@@ -231,7 +231,7 @@ impl Future for LeaderNode {
                 lastblock.bnum = self.bnum;
                 lastblock.emptyness = MultiSignature{x: self.points[1].compress(), y: MultiSignature::sum_group_y(&self.scalars), pk: failed_validators};
                 lastblock.last_name = self.lastname.clone();
-                lastblock.pools = vec![0u16];
+                lastblock.pools = vec![shard];
 
                 
                 let m = vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(),self.lastname.clone(),bincode::serialize(&lastblock.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
@@ -242,12 +242,26 @@ impl Future for LeaderNode {
 
 
                 let mut m = bincode::serialize(&lastblock).unwrap();
+                let mut l = bincode::serialize(&lastblock.tolightning()).unwrap();
                 
                 self.lastblock = lastblock;
                 let mut hasher = Sha3_512::new();
-                hasher.update(&m);
+                hasher.update(&l);
                 m.push(3u8);
                 self.inner.broadcast(m);
+
+                l.push(7);
+                self.inner.broadcast(l);
+
+
+
+
+
+
+
+
+
+
 
                 self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                 self.points = vec![];
