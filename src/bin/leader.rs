@@ -255,14 +255,6 @@ impl Future for LeaderNode {
 
 
 
-
-
-
-
-
-
-
-
                 self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                 self.points = vec![];
                 self.scalars = vec![];

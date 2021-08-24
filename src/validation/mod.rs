@@ -18,7 +18,7 @@ use std::io::Read;
 use std::io::Write;
 use std::hash::Hasher;
 use serde::{Serialize, Deserialize};
-use std::collections::{HashSet, VecDeque, vec_deque};
+use std::collections::{HashSet, VecDeque};
 use crate::constants::PEDERSEN_H;
 use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
@@ -82,11 +82,11 @@ impl MultiSignature {
         let mut s = Sha3_512::new();
         s.update(&bnum);
         s.update(&key.as_bytes()[..]);
-        let m = ((Scalar::from_hash(s))*RISTRETTO_BASEPOINT_POINT).compress();
+        let m = ((Scalar::from_hash(s))*PEDERSEN_H()).compress();
         m
     }
-    pub fn sum_group_x(x: &Vec<RistrettoPoint>) -> CompressedRistretto {
-        x.into_par_iter().sum::<RistrettoPoint>().compress()
+    pub fn sum_group_x<'a, I: IntoParallelRefIterator<'a, Item = &'a RistrettoPoint>>(x: &'a I) -> CompressedRistretto {
+        x.par_iter().sum::<RistrettoPoint>().compress()
     }
     pub fn try_get_y(key: &Scalar, bnum: &u64, message: &Vec<u8>, xt: &CompressedRistretto) -> Scalar {
         let bnum = bnum.to_le_bytes();
@@ -102,16 +102,16 @@ impl MultiSignature {
         let y = e*key+r;
         y
     }
-    pub fn sum_group_y(y:& Vec<Scalar>) -> Scalar {
-        y.into_par_iter().sum()
+    pub fn sum_group_y<'a, I: IntoParallelRefIterator<'a, Item = &'a Scalar>>(y: &'a I) -> Scalar {
+        y.par_iter().sum()
     }
     pub fn verify_group(yt: &Scalar, xt: &CompressedRistretto, message: &Vec<u8>, who: &Vec<CompressedRistretto>) -> bool {
         let mut s = Sha3_512::new();
         s.update(&message);
         s.update(&xt.as_bytes());
         let e = Scalar::from_hash(s);
-        (yt*RISTRETTO_BASEPOINT_POINT).compress() == (xt.decompress().unwrap() + e*who.into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>()).compress()
-    }
+        (yt*PEDERSEN_H()).compress() == (xt.decompress().unwrap() + e*who.into_par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>()).compress()
+    } // -------------this should fail on user validator leader codes because of this ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ which i added for full_staker.rs
 }
 
 
@@ -153,18 +153,20 @@ impl Signature { // the inputs are the hashed messages you are checking for sign
         out.par_extend(message);
         out
     }
-    pub fn recieve_signed_message(signed_message: &mut Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Vec<u8> {
-        let message = signed_message.par_drain(72..).collect::<Vec<_>>();
-        let s = Signature{c: Scalar::from_bits(message[..32].try_into().unwrap()),
-            r: Scalar::from_bits(message[32..64].try_into().unwrap()),
-            pk: u64::from_le_bytes(message[64..72].try_into().unwrap())};
+    pub fn recieve_signed_message(signed_message: &mut Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Option<u64> {
+        let sig = signed_message.par_drain(..72).collect::<Vec<_>>();
+        let s = Signature{
+            c: Scalar::from_bits(sig[..32].try_into().unwrap()),
+            r: Scalar::from_bits(sig[32..64].try_into().unwrap()),
+            pk: u64::from_le_bytes(sig[64..72].try_into().unwrap())
+        };
         
         let mut h = Sha3_512::new();
-        h.update(&message);
+        h.update(&signed_message);
         if s.verify(&mut h, stkstate) {
-            message
+            Some(s.pk)
         } else {
-            vec![]
+            None
         }
     }
 
@@ -427,11 +429,15 @@ impl NextBlock { // need to sign the staker inputs too
                     None
                 }
             ).collect::<Vec<_>>();
-            if who.len() <= NUMBER_OF_VALIDATORS as usize/2 {
+            if who.len() <= 2*NUMBER_OF_VALIDATORS as usize/3 {
                 return Err("there's not enough validators for the empty block")
             }
             let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
             m.extend(&self.last_name);
+            println!("emptyness: {:?}",self.emptyness);
+            println!("who: {:?}",who);
+            println!("who sum: {:?}",who.par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>().compress());
+            println!("leader pk: {:?}",self.leader);
             if !MultiSignature::verify_group(&self.emptyness.y,&self.emptyness.x,&m,&who) {
                 return Err("there's a problem with the multisignature")
             }
