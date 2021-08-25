@@ -93,8 +93,8 @@ fn main() -> Result<(), MainError> {
     let initial_history = vec![(leader,1u64)];
 
     
-    let me = Account::new(&format!("{}",pswrd)).stake_acc();
-    let validator = me.receive_ot(&me.derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
+    let me = Account::new(&format!("{}",pswrd));
+    let validator = me.stake_acc().receive_ot(&me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
     let key = validator.sk.unwrap();
     let mut keylocation = HashSet::new();
 
@@ -248,12 +248,12 @@ impl Future for StakerNode {
                             // self.lastblock = bincode::deserialize(&m).unwrap();
     
                             let com = self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
-                            // println!("names match up: {}",self.lastblock.last_name == self.lastname);
-                            self.lastblock.verify(&com[0], &self.stkinfo).unwrap();
+                            println!("names match up: {}",self.lastblock.last_name == self.lastname);
+                            println!("block verified: {}",self.lastblock.verify(&com[0], &self.stkinfo).unwrap());
                             if (self.lastblock.last_name == self.lastname) & self.lastblock.verify(&com[0], &self.stkinfo).is_ok() {
                                 println!("=========================================================\nyay!");
                                 // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                                self.lastblock.scan_as_noone(&mut self.stkinfo,&com, &mut self.queue, &mut self.exitqueue, &mut self.comittee, false);
+                                self.lastblock.scan_as_noone(&mut self.stkinfo,&com, &mut self.queue, &mut self.exitqueue, &mut self.comittee, true);
                                 for i in 0..self.comittee.len() {
                                     select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                                 }
@@ -352,20 +352,20 @@ impl Future for StakerNode {
 
 /*
 send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- 
-gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000a!
-gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000b!
+ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000a!
+ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000b!
   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   ------- 
-gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000a!
+ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000a!
 
                VVVVVVVVVVVVVVVVVV split stake VVVVVVVVVVVVVVVVVV
-gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000a!
+ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000a!
 
                   VVVVVVVVVVV pump up the height VVVVVVVVVVV
-gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000a!
+ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigmnjimdgmpelmdoehiemiefmhinffkcnbmkjofflhfcpbcamfhheknjkibbcooeccgfemcpbnfommaiefmllkeekmghjokbhjepfgnfeilgjkipokjmfffggckekhpbef10000000ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigmnjimdgmpelmdoehiemiefmhinffkcnbmkjofflhfcpbcamfhheknjkibbcooeccgfemcpbnfommaiefmllkeekmghjokbhjepfgnfeilgjkipokjmfffggckekhpbef10000000ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigmnjimdgmpelmdoehiemiefmhinffkcnbmkjofflhfcpbcamfhheknjkibbcooeccgfemcpbnfommaiefmllkeekmghjokbhjepfgnfeilgjkipokjmfffggckekhpbef10000000a!
 
 
    VVVVVVVVVVVVVVV send from non stake (!) to non stake (gf...ob) VVVVVVVVVVVVVVV
-gfjmlieehekfdigbggapelbbhmneojphaaohaoikfihgghdkjmkicijcmjgpmaofkccgngcfmlfhjdnklngecejjpepepdnplemnilakijgddackcniigmnpnpdcgmnboidgodekoloapleeenjhchfmghbfcbfnagiclaljfeobinadhofcclghemfnlkob10000000!!
+ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000!!
 
 */
 
@@ -415,16 +415,20 @@ USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER 
 
                             let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &15, &self.height);
                             let ring = recieve_ring(&rname);
-
-                            let mut rlring = ring.into_par_iter().map(|x| {
+                            println!("ring: {:?}",ring);
+                            println!("mine: {:?}",acc.iter().map(|x|x.pk.compress()).collect::<Vec<_>>());
+                            println!("ring: {:?}",ring.iter().map(|x|OTAccount::summon_ota(&History::get(&x)).pk.compress()).collect::<Vec<_>>());
+                            let mut rlring = ring.into_iter().map(|x| {
                                 let x = OTAccount::summon_ota(&History::get(&x));
                                 if acc.par_iter().all(|a| a.pk != x.pk) {
+                                    println!("not mine!");
                                     x
                                 } else {
+                                    println!("mine!");
                                     acc.par_iter().filter(|a| a.pk == x.pk).collect::<Vec<_>>()[0].to_owned()
                                 }
                             }).collect::<Vec<OTAccount>>();
-
+                            println!("ring len: {:?}",rlring.len());
                             let me = self.me;
                             rlring.par_iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x.clone()) {*x = y;});
                             let tx = Transaction::spend_ring(&rlring, &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
@@ -529,7 +533,7 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
 
                     let mut hasher = Sha3_512::new();
                     hasher.update(&l);
-                    self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                    // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                     // println!("{:?}",hash_to_scalar(&self.lastblock));
 
 
