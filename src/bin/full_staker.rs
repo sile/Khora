@@ -90,7 +90,10 @@ fn main() -> Result<(), MainError> {
 
 
     let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-    let initial_history = vec![(leader,1u64)];
+    let mut initial_history = vec![(leader,1u64)];
+
+    let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+    initial_history.push((otheruser,1u64));
 
     
     let me = Account::new(&format!("{}",pswrd));
@@ -103,10 +106,13 @@ fn main() -> Result<(), MainError> {
     let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this
 
     let mut smine = vec![];
-    if initial_history[0].0 == me.stake_acc().derive_stk_ot(&Scalar::from(initial_history[0].1)).pk.compress() {
-        smine = vec![[0u64,1u64]];
-        keylocation.insert(0u64);
-        println!("\n\nhey i guess i founded this crypto!\n\n");
+    for i in 0..initial_history.len() {
+        if initial_history[i].0 == me.stake_acc().derive_stk_ot(&Scalar::from(initial_history[i].1)).pk.compress() {
+            smine.push([i as u64,initial_history[i].1]);
+            keylocation.insert(i as u64);
+            println!("\n\nhey i guess i founded this crypto!\n\n");
+        }
+
     }
 
 
@@ -120,11 +126,13 @@ fn main() -> Result<(), MainError> {
         key: key,
         keylocation: keylocation,
         leader: leader,
-        stkinfo: initial_history,
+        overthrown: HashSet::new(),
+        votes: vec![0;128],
+        stkinfo: initial_history.clone(),
         lastblock: NextBlock::default(),
-        queue: (0..max_shards).map(|_|[0usize;NUMBER_OF_VALIDATORS as usize].into_par_iter().collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
-        exitqueue: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS as usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
-        comittee: (0..max_shards).map(|_|vec![0usize;NUMBER_OF_VALIDATORS as usize]).collect::<Vec<_>>(),
+        queue: (0..max_shards).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
+        exitqueue: (0..max_shards).map(|_|(0..128usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
+        comittee: (0..max_shards).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>(),
         lastname: vec![],
         bloom: bloom,
         bnum: 1u64,
@@ -138,6 +146,8 @@ fn main() -> Result<(), MainError> {
         points: HashMap::new(),
         scalars: HashMap::new(),
         timekeeper: Instant::now(),
+        waitingforleader: Instant::now(),
+        timeframedone: false,
         stepeven: false,
     };
     executor.spawn(service.map_err(|e| panic!("{}", e)));
@@ -174,6 +184,8 @@ struct StakerNode {
     key: Scalar,
     keylocation: HashSet<u64>,
     leader: CompressedRistretto,
+    overthrown: HashSet<CompressedRistretto>,
+    votes: Vec<i32>,
     stkinfo: Vec<(CompressedRistretto,u64)>,
     lastblock: NextBlock,
     queue: Vec<VecDeque<usize>>,
@@ -192,6 +204,8 @@ struct StakerNode {
     points: HashMap<usize,RistrettoPoint>, // point, supplier
     scalars: HashMap<usize,Scalar>,
     timekeeper: Instant,
+    waitingforleader: Instant,
+    timeframedone: bool,
     stepeven: bool,
 }
 impl Future for StakerNode {
@@ -238,6 +252,7 @@ impl Future for StakerNode {
                                     }
                                 }
                             }
+                            self.waitingforleader = Instant::now();
                             // println!("{:?}",hash_to_scalar(&self.lastblock));
                         } else if mtype == 2 {
                             self.sigs.push(bincode::deserialize(&m).unwrap());
@@ -246,6 +261,7 @@ impl Future for StakerNode {
                             // let mut hasher = Sha3_512::new();
                             // hasher.update(&m);
                             // self.lastblock = bincode::deserialize(&m).unwrap();
+
     
                             let com = self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
                             println!("names match up: {}",self.lastblock.last_name == self.lastname);
@@ -253,7 +269,9 @@ impl Future for StakerNode {
                             if (self.lastblock.last_name == self.lastname) & self.lastblock.verify(&com[0], &self.stkinfo).is_ok() {
                                 println!("=========================================================\nyay!");
                                 // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+
                                 self.lastblock.scan_as_noone(&mut self.stkinfo,&com, &mut self.queue, &mut self.exitqueue, &mut self.comittee, true);
+                                self.votes[self.exitqueue[0][0]] = 0; self.votes[self.exitqueue[0][1]] = 0;
                                 for i in 0..self.comittee.len() {
                                     select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                                 }
@@ -270,13 +288,24 @@ impl Future for StakerNode {
                                 
     
                                 if self.keylocation.contains(&(self.exitqueue[0][0] as u64)) | self.keylocation.contains(&(self.exitqueue[0][1] as u64)) {
-                                    /* broadcast the block to the outside world */
+                                    /* broadcast the block to the outside world*/
                                 }
     
-                                /* RIGHT NOW, THE LEADER IS JUST THE MAX STAKER, THIS WILL CHANGE */
-                                self.leader = self.stkinfo[*self.comittee[0].iter().max_by_key(|&&x| self.stkinfo[x].1).unwrap()].0;
-                                /* RIGHT NOW, THE LEADER IS JUST THE MAX STAKER, THIS WILL CHANGE */
-    
+
+                                if self.lastblock.validators.len() == 0 {
+                                    self.votes = self.votes.iter().zip(self.comittee[0].iter()).map(|(z,&x)| z - self.lastblock.emptyness.pk.iter().filter(|&&y| y == x as u64).count() as i32).collect::<Vec<_>>();
+                                } else {
+                                    self.votes = self.votes.iter().zip(self.comittee[0].iter()).map(|(z,&x)| z + self.lastblock.validators.iter().filter(|y| y.pk == x as u64).count() as i32).collect::<Vec<_>>();
+                                }
+                                
+                                /* LEADER CHOSEN BY VOTES */
+                                self.leader = self.stkinfo[*self.comittee[0].iter().zip(self.votes.iter()).max_by_key(|(_,&y)| y).unwrap().0].0;
+                                /* LEADER CHOSEN BY VOTES */
+                                
+
+                                self.timeframedone = true;
+                                self.waitingforleader = Instant::now();
+                                self.timekeeper = Instant::now();
                             }
                             // println!("{:?}",hash_to_scalar(&self.lastblock));
                         } else if mtype == 4 {
@@ -298,6 +327,7 @@ impl Future for StakerNode {
                                     self.inner.broadcast(m.clone());
                                 }
                             }
+                            self.waitingforleader = Instant::now();
                         } else if mtype == 6 {
                             println!("someone's trying to send you a scalar!");
                             if let Some(pk) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
@@ -334,7 +364,6 @@ impl Future for StakerNode {
                             x.append(&mut y);
                             x.push(254);
                             self.inner.dm(x,&vec![msg.id().node()],false);
-                        
                         }
                     }
                 }
@@ -518,9 +547,22 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
 LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
 ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF
 */
-            if !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & ( (self.sigs.len() > (2*(NUMBER_OF_VALIDATORS/3)).into()) | ( (self.sigs.len() > (NUMBER_OF_VALIDATORS/2).into()) & (self.timekeeper.elapsed().as_secs() > 30) ) ) {
+            if (self.waitingforleader.elapsed().as_secs() > 5) & !self.timeframedone {
+                self.waitingforleader = Instant::now();
+                /* change the leader, also add something about only changing the leader if block is free */
+
+                self.overthrown.insert(self.leader);
+                self.leader = self.stkinfo[*self.comittee[0].iter().zip(self.votes.iter()).max_by_key(|(&x,&y)| {
+                    let candidate = self.stkinfo[x];
+                    if self.overthrown.contains(&candidate.0) {
+                        i32::MIN
+                    } else {
+                        y
+                    }
+                }).unwrap().0].0;
+            }
+            if !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & ( (self.sigs.len() > 85) | ( (self.sigs.len() > 64) & (self.timekeeper.elapsed().as_secs() > 30) ) ) {
                 let shard = 0;
-                // println!("time:::{:?}",self.timekeeper.elapsed().as_secs()); // that's not it
                 let lastblock = NextBlock::finish(&self.key, &self.keylocation.iter().next().unwrap(), &self.sigs.drain(..).collect::<Vec<_>>(), &self.comittee[shard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(shard as u16), &self.bnum, &self.lastname, &self.stkinfo);
 
                 if lastblock.validators.len() != 0 {
@@ -556,7 +598,7 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
 
                 self.timekeeper = Instant::now();
             }
-            if !self.stepeven & !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 1) & (self.comittee[0].iter().filter(|&x|self.points.contains_key(x)).count() > (2*NUMBER_OF_VALIDATORS as usize)/3) {
+            if !self.stepeven & !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 1) & (self.comittee[0].iter().filter(|&x|self.points.contains_key(x)).count() > (2*128 as usize)/3) {
                 // should prob check that validators are accurate here?
                 let points = self.points.par_iter().map(|x| *x.1).collect::<Vec<_>>();
                 let mut m = MultiSignature::sum_group_x(&points).as_bytes().to_vec();
@@ -572,7 +614,7 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
             // println!("{:?}",self.stepeven & self.points.get(&usize::MAX).is_some() & !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2));
             // println!("but also {:?}", self.comittee[0].iter().filter(|x| k.contains(x)).count());
             // println!("but also {:?}", k);
-            if self.stepeven & self.points.get(&usize::MAX).is_some() & !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2) & (self.comittee[0].iter().filter(|x| k.contains(x)).count() > (2*NUMBER_OF_VALIDATORS as usize)/3) {
+            if self.stepeven & self.points.get(&usize::MAX).is_some() & !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2) & (self.comittee[0].iter().filter(|x| k.contains(x)).count() > (2*128 as usize)/3) {
                 self.multisig = false; // should definitely check that validators are accurate here
                 let shard = 0u16;
                 // this is for if everyone signed... really > 0.5 or whatever... 

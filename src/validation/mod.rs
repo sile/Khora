@@ -74,7 +74,7 @@ impl Syncedtx {
 pub struct MultiSignature{
     pub x: CompressedRistretto,
     pub y: Scalar,
-    pub pk: Vec<u64>, // whose not in it
+    pub pk: Vec<u64>, // whose not in it... maybe this should be comitte index not stake index to save space? -7 bytes per sig not in -> 42 - 0 sigs -> 0 to 294 bytes saved per block
 }
 impl MultiSignature {
     pub fn gen_group_x(key: &Scalar, bnum: &u64) -> CompressedRistretto { // WARNING: make a function to sign arbitrary messages when sending them for validators
@@ -120,7 +120,7 @@ impl MultiSignature {
 pub struct Signature{
     pub c: Scalar,
     pub r: Scalar,
-    pub pk: u64,
+    pub pk: u64, // should i switch this to u8 and only validation squad is involved?
 }
 
 impl Signature { // the inputs are the hashed messages you are checking for signatures on because it's faster for many messages.
