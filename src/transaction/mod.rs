@@ -85,7 +85,7 @@ impl Transaction {
     pub fn spend_ring(inring: &Vec<OTAccount>, recipients: &Vec<(&Account, &Scalar)>) -> Transaction{
         let (poss,inamnt): (Vec<usize>,Vec<Scalar>) = inring.par_iter().enumerate().filter_map(|(i,a)|if let Some(x) = a.com.amount {Some((i,x))} else {None}).unzip();
 
-        println!("in amount: {:?}",inamnt);
+        // println!("in amount: {:?}",inamnt);
 
         let ring = inring.to_owned();
         let fee_amount = inamnt.into_par_iter().sum::<Scalar>() - recipients.par_iter().map(|(_,y)| y.to_owned()).sum::<Scalar>();
@@ -95,7 +95,7 @@ impl Transaction {
         ).collect::<Vec<OTAccount>>();
         outputs.push(fee_ota(&fee_amount));
 
-        println!("fee: {:?}",fee_amount);
+        // println!("fee: {:?}",fee_amount);
 
         let inputs:Vec<OTAccount> = ring.iter().map(|acct|(acct.clone())).collect();
         let sigin:Vec<&OTAccount> = ring.iter().map(|acct|acct).collect();

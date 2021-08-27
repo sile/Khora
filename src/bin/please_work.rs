@@ -81,7 +81,7 @@ fn main() -> Result<(),std::io::Error> {
     /* lets not directly say hardware requirements, do suggestions that evolve over time */
     /* etherium has comittes of 128 or more */
     /* if the leader makes multiple blocks, they get slashed */
-    let tx_processed = 50usize;
+    let tx_processed = 20usize;
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
     
 
@@ -218,9 +218,9 @@ fn main() -> Result<(),std::io::Error> {
         if shards > 1 {
             let pool_nums = (0..shards).map(|x| x as u16).collect::<Vec<u16>>();
             let start = Instant::now();
-            NextBlock::valimerge(&vals[0][0], &(comittee[0][0] as u64),&leader,&shardblocks,&val_pool,&pool_nums, &bnum,&last_name,&stkinfo);
+            NextBlock::valimerge(&vals[0][0], &(comittee[0][0] as u64),&leader,&shardblocks,&val_pool,&pool_nums, &bnum,&last_name,&stkinfo, &0);
             println!("time merge next block: {:?} ms",start.elapsed().as_millis());
-            let sigs = vals[0].clone().into_par_iter().zip(val_pool[0].clone()).map(|(x,l)| NextBlock::valimerge(&x, &(l as u64),&leader,&shardblocks,&val_pool,&pool_nums,&bnum,&last_name,&stkinfo)).collect::<Vec<Signature>>();
+            let sigs = vals[0].clone().into_par_iter().zip(val_pool[0].clone()).map(|(x,l)| NextBlock::valimerge(&x, &(l as u64),&leader,&shardblocks,&val_pool,&pool_nums,&bnum,&last_name,&stkinfo, &0)).collect::<Vec<Signature>>();
             let start = Instant::now();
             nextblock = NextBlock::finishmerge(&lkey, &leader_loc, &sigs, &shardblocks, &val_pool, &val_pool[0], &pool_nums, &bnum,&last_name,&stkinfo);
             println!("time to complete next block: {:?} ms (runs concurrently to time to merge block because leader merges independantly)",start.elapsed().as_millis());
