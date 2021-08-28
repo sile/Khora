@@ -1,6 +1,6 @@
 # Kora
 
-fast AND anonymous??!!!?! yeah...
+eventually fast AND anonymous??!!!?! yeah...
 AND ECO FRIENDLY?!!!! Yeah
 AND IT ACTUALLY HAS A WHITEPAPER?!!!!!!!!! YEAH!!!!!!!!!
 
