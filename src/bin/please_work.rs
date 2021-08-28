@@ -171,7 +171,7 @@ fn main() -> Result<(),std::io::Error> {
         let last_name = Scalar::from_hash(hasher.clone()).as_bytes().to_vec();
         println!("time to hash last block: {:?} ms",start.elapsed().as_millis());
         for i in 0..max_shards {
-            select_stakers(&last_name,&(i as u128),&mut queue[i], &mut exitqueue[i],&mut comittee[i],&stkinfo);
+            select_stakers(&last_name,&bnum,&(i as u128),&mut queue[i], &mut exitqueue[i],&mut comittee[i],&stkinfo);
         }
         println!("comittee 0: {:?}",comittee[0]);
         println!("queue 0: {:?}",queue[0]);
@@ -254,10 +254,10 @@ fn main() -> Result<(),std::io::Error> {
         nextblock.save_history_to_ram(&mut history);
         println!("history: {}",history.len());
         println!("stkinfo: {}",stkinfo.len());
+        println!("shards: {:?}        pools: {:?}",nextblock.shards,nextblock.pools);
         println!("-------------------------------->"); /* right now, bloom filter filters staker exits? */
         nextblock.update_bloom(&bloom);
 
-        println!("shards: {:?}        pools: {:?}",nextblock.shards,nextblock.pools);
     }
 
     // /* these next 2 lines are for if you dont want to store all the otaccounts. save a in a txt file and read location ___ */

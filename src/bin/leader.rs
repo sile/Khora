@@ -199,7 +199,7 @@ impl Future for LeaderNode {
 
 
                     for i in 0..self.comittee.len() {
-                        select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                        select_stakers(&self.lastname, &0u64,&(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                     }
                     self.bnum += 1;
                     println!("made a block with {} transactions!",self.lastblock.txs.len());

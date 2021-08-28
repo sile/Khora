@@ -11,7 +11,7 @@ use plumcast::node::{LocalNodeId, Node, NodeBuilder, NodeId, SerialLocalNodeIdGe
 use plumcast::service::ServiceBuilder;
 use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::Build;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use trackable::error::MainError;
@@ -24,7 +24,6 @@ use std::convert::TryInto;
 use std::time::{Duration, Instant};
 use kora::transaction::*;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use kora::constants::PEDERSEN_H;
 use sha3::{Digest, Sha3_512};
 use rayon::prelude::*;
@@ -71,7 +70,8 @@ fn main() -> Result<(), MainError> {
 
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
     
-
+    // fs::remove_dir_all("blocks").unwrap(); // this would obviously not be used in the final version
+    // fs::create_dir_all("blocks").unwrap();
 
 
     let executor = track_any_err!(ThreadPoolExecutor::new())?;
@@ -138,6 +138,7 @@ fn main() -> Result<(), MainError> {
         lastname: vec![],
         bloom: bloom,
         bnum: 1u64,
+        lastbnum: 0u64,
         height: 0u64,
         sheight: 1u64,
         alltagsever: vec![],
@@ -146,6 +147,7 @@ fn main() -> Result<(), MainError> {
         multisig: false,
         bannedlist: HashSet::new(),
         points: HashMap::new(),
+        groupxnonce: 0,
         scalars: HashMap::new(),
         timekeeper: Instant::now(),
         waitingforleader: Instant::now(),
@@ -201,6 +203,7 @@ struct StakerNode {
     lastname: Vec<u8>,
     bloom: BloomFile,
     bnum: u64,
+    lastbnum: u64,
     height: u64,
     sheight: u64,
     alltagsever: Vec<CompressedRistretto>,
@@ -209,6 +212,7 @@ struct StakerNode {
     multisig: bool,
     bannedlist: HashSet<NodeId>,
     points: HashMap<usize,RistrettoPoint>, // point, supplier
+    groupxnonce: u64,
     scalars: HashMap<usize,Scalar>,
     timekeeper: Instant,
     waitingforleader: Instant,
@@ -257,7 +261,8 @@ impl Future for StakerNode {
                                         std::thread::sleep(Duration::from_millis(10u64));
                                     }
                                 } else if (m.txs.len() == 0) & (m.emptyness.y == Scalar::default()){
-                                    let m = MultiSignature::gen_group_x(&self.key, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
+                                    self.groupxnonce += 1;
+                                    let m = MultiSignature::gen_group_x(&self.key, &self.groupxnonce, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
                                     let mut m = Signature::sign_message(&self.key, &m, keylocation);
                                     m.push(4);
                                     if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
@@ -270,31 +275,35 @@ impl Future for StakerNode {
                         } else if mtype == 2 {
                             self.sigs.push(bincode::deserialize(&m).unwrap());
                         } else if mtype == 3 {
-                            self.lastblock = bincode::deserialize(&m).unwrap();
+                            let lastblock: NextBlock = bincode::deserialize(&m).unwrap();
                             // let mut hasher = Sha3_512::new();
                             // hasher.update(&m);
                             // self.lastblock = bincode::deserialize(&m).unwrap();
 
     
                             let com = self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
-                            println!("names match up: {}",self.lastblock.last_name == self.lastname);
-                            println!("block verified: {}",self.lastblock.verify(&com[self.headshard], &self.stkinfo).unwrap());
-                            if (self.lastblock.last_name == self.lastname) & self.lastblock.verify(&com[self.lastblock.pools[0] as usize], &self.stkinfo).is_ok() {
+                            println!("names match up: {}",lastblock.last_name == self.lastname);
+                            println!("block verified: {}",lastblock.verify(&com[self.headshard], &self.stkinfo).unwrap());
+                            if (lastblock.last_name == self.lastname) & lastblock.verify(&com[lastblock.pools[0] as usize], &self.stkinfo).is_ok() {
+                                self.lastblock = lastblock;
                                 println!("=========================================================\nyay!");
                                 // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-
-                                let mut f = File::create(format!("blocks/{}",self.lastblock.bnum)).unwrap();
-                                f.write_all(&m).unwrap();
 
                                 self.lastblock.scan_as_noone(&mut self.stkinfo,&com, &mut self.queue, &mut self.exitqueue, &mut self.comittee, true);
                                 self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
                                 for i in 0..self.comittee.len() {
-                                    select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                                 }
                                 self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
                                 self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &com[self.headshard]);
     
                                 let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
+                                if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
+                                    println!("saving block...");
+                                    let mut f = File::create(format!("blocks/b{}",self.lastblock.bnum)).unwrap();
+                                    f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
+                                    self.lastbnum = self.bnum;
+                                }
                                 let mut hasher = Sha3_512::new();
                                 hasher.update(lightning);
                                 self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
@@ -340,7 +349,7 @@ impl Future for StakerNode {
                             // println!("from the me: {:?}",mess);
                             println!("you're trying to send a scalar!");
                             for keylocation in self.keylocation.iter() {
-                                let mut m = Signature::sign_message(&self.key, &MultiSignature::try_get_y(&self.key, &self.bnum, &mess, &xt).as_bytes().to_vec(), keylocation);
+                                let mut m = Signature::sign_message(&self.key, &MultiSignature::try_get_y(&self.key, &self.groupxnonce, &self.bnum, &mess, &xt).as_bytes().to_vec(), keylocation);
                                 m.push(6u8);
                                 if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
                                     self.inner.broadcast(m.clone());
@@ -676,7 +685,7 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
                     // self.lastblock = lastblock;
                     // let mut hasher = Sha3_512::new();
                     // hasher.update(&l);
-                    // println!("{:?}",self.leader);
+                    println!("sending off block {}!!!",lastblock.bnum);
                     m.push(3u8);
                     self.inner.broadcast(m);
     

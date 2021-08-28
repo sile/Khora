@@ -79,20 +79,24 @@ pub struct MultiSignature{
     pub pk: Vec<u64>, // whose not in it... maybe this should be comitte index not stake index to save space? -7 bytes per sig not in -> 42 - 0 sigs -> 0 to 294 bytes saved per block
 }
 impl MultiSignature {
-    pub fn gen_group_x(key: &Scalar, bnum: &u64) -> CompressedRistretto { // WARNING: make a function to sign arbitrary messages when sending them for validators
+    pub fn gen_group_x(key: &Scalar, nonce: &u64, bnum: &u64) -> CompressedRistretto { // WARNING: make a function to sign arbitrary messages when sending them for validators
+        let nonce = nonce.to_le_bytes();
         let bnum = bnum.to_le_bytes();
         let mut s = Sha3_512::new();
-        s.update(&bnum); // DOUBLE THINK ------------ DOUBLE THINK ------------ DOUBLE THINK ------------ DOUBLE THINK ------------ DOUBLE THINK ------------
-        s.update(&key.as_bytes()[..]); // double think that this is secure because the x is known after sent for if it needs to be resent
+        s.update(&nonce);
+        s.update(&bnum);
+        s.update(&key.as_bytes()); // double think that this is secure because the x is known after sent for if it needs to be resent
         let m = ((Scalar::from_hash(s))*PEDERSEN_H()).compress();
         m
     }
     pub fn sum_group_x<'a, I: IntoParallelRefIterator<'a, Item = &'a RistrettoPoint>>(x: &'a I) -> CompressedRistretto {
         x.par_iter().sum::<RistrettoPoint>().compress()
     }
-    pub fn try_get_y(key: &Scalar, bnum: &u64, message: &Vec<u8>, xt: &CompressedRistretto) -> Scalar {
+    pub fn try_get_y(key: &Scalar, nonce: &u64, bnum: &u64, message: &Vec<u8>, xt: &CompressedRistretto) -> Scalar {
+        let nonce = nonce.to_le_bytes();
         let bnum = bnum.to_le_bytes();
         let mut s = Sha3_512::new();
+        s.update(&nonce);
         s.update(&bnum);
         s.update(&key.as_bytes());
         let r = Scalar::from_hash(s);
@@ -973,9 +977,11 @@ impl LightningSyncBlock {
 
 
 
-pub fn select_stakers(block: &Vec<u8>, shard: &u128, queue: &mut VecDeque<usize>, exitqueue: &mut VecDeque<usize>, comittee: &mut Vec<usize>, stkstate: &Vec<(CompressedRistretto,u64)>) {
+pub fn select_stakers(block: &Vec<u8>, bnum: &u64, shard: &u128, queue: &mut VecDeque<usize>, exitqueue: &mut VecDeque<usize>, comittee: &mut Vec<usize>, stkstate: &Vec<(CompressedRistretto,u64)>) {
     let (_pool,y): (Vec<CompressedRistretto>,Vec<u128>) = stkstate.into_par_iter().map(|(x,y)| (x.to_owned(),*y as u128)).unzip();
     let tot_stk: u128 = y.par_iter().sum(); /* initial queue will be 0 for all non0 shards... */
+
+    let bnum = bnum.to_le_bytes();
     // println!("average stake:     {}",tot_stk/(y.len() as u128));
     // println!("number of stakers: {}",y.len());
     // println!("new money:         {}",y[8..].par_iter().sum::<u128>());
@@ -983,6 +989,7 @@ pub fn select_stakers(block: &Vec<u8>, shard: &u128, queue: &mut VecDeque<usize>
     // println!("random drawn from: {}",u64::MAX);
     let mut s = AHasher::new_with_keys(0, *shard);
     s.write(&block);
+    s.write(&bnum);
     let mut winner = (0..REPLACERATE).collect::<Vec<usize>>().par_iter().map(|x| {
         let mut s = s.clone();
         s.write(&x.to_le_bytes()[..]);
@@ -1005,6 +1012,7 @@ pub fn select_stakers(block: &Vec<u8>, shard: &u128, queue: &mut VecDeque<usize>
 
     let mut s = AHasher::new_with_keys(1, *shard);
     s.write(&block);
+    s.write(&bnum);
     let mut loser = (0..REPLACERATE).collect::<Vec<usize>>().par_iter().map(|x| {
         let mut s = s.clone();
         s.write(&x.to_le_bytes()[..]);
@@ -1096,20 +1104,21 @@ impl StakerState {
 
 #[cfg(test)]
 mod tests {
+    use crate::constants::PEDERSEN_H;
+
 
     #[test]
     fn multisignature_test() {
-        use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
         use curve25519_dalek::scalar::Scalar;
         use crate::validation::MultiSignature;
 
         let message = "hi!!!".as_bytes().to_vec();
         let sk = (0..100).into_iter().map(|_| Scalar::from(rand::random::<u64>())).collect::<Vec<_>>();
-        let pk = sk.iter().map(|x| x*RISTRETTO_BASEPOINT_POINT).collect::<Vec<_>>();
+        let pk = sk.iter().map(|x| x*PEDERSEN_H()).collect::<Vec<_>>();
 
-        let x = sk.iter().map(|k| MultiSignature::gen_group_x(&k,&0u64).decompress().unwrap()).collect::<Vec<_>>();
+        let x = sk.iter().map(|k| MultiSignature::gen_group_x(&k,&1234u64,&0u64).decompress().unwrap()).collect::<Vec<_>>();
         let xt = MultiSignature::sum_group_x(&x);
-        let y = sk.iter().map(|k| MultiSignature::try_get_y(&k, &0u64, &message, &xt)).collect::<Vec<_>>();
+        let y = sk.iter().map(|k| MultiSignature::try_get_y(&k,&1234u64,&0u64, &message, &xt)).collect::<Vec<_>>();
         let yt = MultiSignature::sum_group_y(&y);
 
 

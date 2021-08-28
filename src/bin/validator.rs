@@ -172,7 +172,7 @@ impl Future for ValidatorNode {
                                 std::thread::sleep(Duration::from_millis(10u64));
                             }
                         } else if (m.txs.len() == 0) & (m.emptyness.y == Scalar::default()){
-                            let m = MultiSignature::gen_group_x(&self.key, &self.bnum);
+                            let m = MultiSignature::gen_group_x(&self.key, &0, &self.bnum);
                             let mut m = bincode::serialize(&m).unwrap();
                             m.push(4);
                             for _ in self.comittee[0].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
@@ -196,7 +196,7 @@ impl Future for ValidatorNode {
 
                         self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee, false);
                         for i in 0..self.comittee.len() {
-                            select_stakers(&self.lastname, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                            select_stakers(&self.lastname, &0u64,&(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                         }
                         // println!("{:?}",hash_to_scalar(&self.lastblock));
                     } else if mtype == 5 {
@@ -204,7 +204,7 @@ impl Future for ValidatorNode {
                         let xt = CompressedRistretto(m.try_into().unwrap());
                         let mut m = self.leader.as_bytes().to_vec();
                         m.extend(&self.lastname);
-                        let mut m = MultiSignature::try_get_y(&self.key, &self.bnum, &m, &xt).as_bytes().to_vec();
+                        let mut m = MultiSignature::try_get_y(&self.key, &0, &self.bnum, &m, &xt).as_bytes().to_vec();
                         m.push(6);
                         for _ in self.comittee[shard].iter().filter(|&x|*x as u64 == self.keylocation).collect::<Vec<_>>() {
                             self.inner.broadcast(m.clone());
