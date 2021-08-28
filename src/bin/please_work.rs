@@ -72,7 +72,7 @@ fn main() -> Result<(),std::io::Error> {
     let w = format!("{}",0);
     let ryan = Account::new(&w); //make a new account
     let x = format!("{}",1);
-    let constantine = Account::new(&x); //make a new account
+    let _constantine = Account::new(&x); //make a new account
     let y = format!("{}",2);
     let _kimberly = Account::new(&y); //make a new account
     
@@ -81,7 +81,7 @@ fn main() -> Result<(),std::io::Error> {
     /* lets not directly say hardware requirements, do suggestions that evolve over time */
     /* etherium has comittes of 128 or more */
     /* if the leader makes multiple blocks, they get slashed */
-    let tx_processed = 20usize;
+    let tx_processed = 256usize;
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
     
 
@@ -156,7 +156,7 @@ fn main() -> Result<(),std::io::Error> {
     let mut nextblock = NextBlock::default();
 
 
-    let iterations = 4;
+    let iterations = 3;
 
     let mut bnum = 0u64;
     let mut txvec = vec![];
@@ -186,22 +186,21 @@ fn main() -> Result<(),std::io::Error> {
         let leader = (vals[0][2]*PEDERSEN_H()).compress();
         let leader_loc = comittee[0][2] as u64; /* need to change all the signing to H not G */
 
-        if bnum < 2 {
-            txvec = random_polytx_set(&tx_processed, &history, &lastheight);
-        }
+        txvec = random_polytx_set(&tx_processed, &history, &lastheight);
         
-        if bnum == iterations {
-            println!("I exit being a staker on this final turn");
-            println!("stk loc: {:?}",smine[0][0]);
-            println!("stk amount: {:?}",smine[0][1]);
-            println!("stk both: {:?}",stkinfo[smine[0][0] as usize]);
-            let txleave = Transaction::spend_ring(&vec![ryan.stake_acc().receive_ot(&ryan.stake_acc().derive_stk_ot(&Scalar::from(smine[0][1]))).unwrap()], &vec![(&constantine,&Scalar::from(smine[0][1]/1001));1000]);
-            txleave.verify().unwrap();
-            println!("passed test 1");
-            let txleave = txleave.polyform(&smine[0][0].to_le_bytes().to_vec());
-            txleave.verifystk(&stkinfo).unwrap();// all to fee so shouldn't mess up my ordering with the randblock (but mught with comittee)
-            txvec[0] = txleave;
-        }
+        
+        // if bnum == iterations {
+        //     println!("I exit being a staker on this final turn");
+        //     println!("stk loc: {:?}",smine[0][0]);
+        //     println!("stk amount: {:?}",smine[0][1]);
+        //     println!("stk both: {:?}",stkinfo[smine[0][0] as usize]);
+        //     let txleave = Transaction::spend_ring(&vec![ryan.stake_acc().receive_ot(&ryan.stake_acc().derive_stk_ot(&Scalar::from(smine[0][1]))).unwrap()], &vec![(&constantine,&Scalar::from(smine[0][1]/1001));1000]);
+        //     txleave.verify().unwrap();
+        //     println!("passed test 1");
+        //     let txleave = txleave.polyform(&smine[0][0].to_le_bytes().to_vec());
+        //     txleave.verifystk(&stkinfo).unwrap();// all to fee so shouldn't mess up my ordering with the randblock (but mught with comittee)
+        //     txvec[0] = txleave;
+        // }
 
         let txvec = txvec.par_chunks(tx_per_shard).collect::<Vec<&[PolynomialTransaction]>>();
         let mut shardblocks = Vec::<NextBlock>::new();
@@ -216,13 +215,12 @@ fn main() -> Result<(),std::io::Error> {
             shardblocks.push(block);
         }
         if shards > 1 {
-            let pool_nums = (0..shards).map(|x| x as u16).collect::<Vec<u16>>();
             let start = Instant::now();
-            NextBlock::valimerge(&vals[0][0], &(comittee[0][0] as u64),&leader,&shardblocks,&val_pool,&pool_nums, &bnum,&last_name,&stkinfo, &0);
+            NextBlock::valimerge(&vals[0][0], &(comittee[0][0] as u64),&leader,&shardblocks,&val_pool, &bnum,&last_name,&stkinfo, &0);
             println!("time merge next block: {:?} ms",start.elapsed().as_millis());
-            let sigs = vals[0].clone().into_par_iter().zip(val_pool[0].clone()).map(|(x,l)| NextBlock::valimerge(&x, &(l as u64),&leader,&shardblocks,&val_pool,&pool_nums,&bnum,&last_name,&stkinfo, &0)).collect::<Vec<Signature>>();
+            let sigs = vals[0].clone().into_par_iter().zip(val_pool[0].clone()).map(|(x,l)| NextBlock::valimerge(&x, &(l as u64),&leader,&shardblocks,&val_pool,&bnum,&last_name,&stkinfo, &0)).collect::<Vec<Signature>>();
             let start = Instant::now();
-            nextblock = NextBlock::finishmerge(&lkey, &leader_loc, &sigs, &shardblocks, &val_pool, &val_pool[0], &pool_nums, &bnum,&last_name,&stkinfo);
+            nextblock = NextBlock::finishmerge(&lkey, &leader_loc, &sigs, &shardblocks, &val_pool, &val_pool[0], &bnum,&last_name,&stkinfo, &0u16);
             println!("time to complete next block: {:?} ms (runs concurrently to time to merge block because leader merges independantly)",start.elapsed().as_millis());
         }
         else {
@@ -253,10 +251,13 @@ fn main() -> Result<(),std::io::Error> {
         nextblock.scan(&ryan, &mut mine, &mut height, &mut alltagsever);
         nextblock.scanstk(&ryan, &mut smine, &mut sheight, &val_pool[0]);
         nextblock.scan_as_noone(&mut stkinfo,&val_pool,&mut queue, &mut exitqueue,&mut comittee, true);
+        nextblock.save_history_to_ram(&mut history);
         println!("history: {}",history.len());
         println!("stkinfo: {}",stkinfo.len());
         println!("-------------------------------->"); /* right now, bloom filter filters staker exits? */
         nextblock.update_bloom(&bloom);
+
+        println!("shards: {:?}        pools: {:?}",nextblock.shards,nextblock.pools);
     }
 
     // /* these next 2 lines are for if you dont want to store all the otaccounts. save a in a txt file and read location ___ */

@@ -283,7 +283,7 @@ impl Future for StakerNode {
                                 println!("=========================================================\nyay!");
                                 // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
 
-                                let mut f = File::create(format!("block{}",self.lastblock.bnum)).unwrap();
+                                let mut f = File::create(format!("blocks/{}",self.lastblock.bnum)).unwrap();
                                 f.write_all(&m).unwrap();
 
                                 self.lastblock.scan_as_noone(&mut self.stkinfo,&com, &mut self.queue, &mut self.exitqueue, &mut self.comittee, true);
