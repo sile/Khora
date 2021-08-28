@@ -1,0 +1,56 @@
+[package]
+name = "plumcast"
+version = "0.1.5"
+authors = ["Takeru Ohta <phjgt308@gmail.com>"]
+description = "A message broadcasting library based on the Plumtree/HyParView algorithms"
+homepage = "https://github.com/sile/plumcast"
+repository = "https://github.com/sile/plumcast"
+readme = "README.md"
+license = "MIT"
+edition = "2018"
+
+[[bin]]
+name = "chat"
+path = "examples/chat.rs"
+
+[badges]
+travis-ci = {repository = "sile/plumcast"}
+codecov = {repository = "sile/plumcast"}
+
+# [features]
+# serialize = ["serde", "serde_derive"]
+
+[dependencies]
+atomic_immut = "0.1"
+bytecodec = "0.4"
+fibers = "0.1"
+# fibers_rpc = "0.3"
+fibers_rpc = { path = "fibers_rpc" }
+futures = "0.1"
+# hyparview = "0.1"
+hyparview = { path = "hyparview" }
+slog = "2"
+plumtree = { path = "plumtree" }
+prometrics = "0.1"
+rand = "0.6"
+# serde = { version = "1", optional = true }
+# serde_derive = { version = "1", optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_derive = "1"
+trackable = "0.2"
+
+clap = "2"
+fibers_global = "0.1"
+sloggers = "0.3"
+
+bincode = "1"
+# serde = "1.0"
+
+
+# [dev-dependencies]
+# clap = "2"
+# fibers_global = "0.1"
+# sloggers = "0.3"
+
+[package.metadata.docs.rs]
+all-features = true

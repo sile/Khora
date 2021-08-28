@@ -46,7 +46,7 @@ bimap = "0.6.1"
 
 local_ipaddress = "0.1.3"
 
-plumcast = { path = "plumcast" }
+plumcast = { path = "plumcast_used" }
 # plumcast = "0.1.5"
 fibers = "0.1"
 fibers_rpc = "0.3"
