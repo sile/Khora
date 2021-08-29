@@ -171,7 +171,7 @@ impl Future for ValidatorNode {
                                 self.inner.broadcast(m.clone());
                                 std::thread::sleep(Duration::from_millis(10u64));
                             }
-                        } else if (m.txs.len() == 0) & (m.emptyness.y == Scalar::default()){
+                        } else if (m.txs.len() == 0) & (m.emptyness.unwrap().y == Scalar::default()){
                             let m = MultiSignature::gen_group_x(&self.key, &0, &self.bnum);
                             let mut m = bincode::serialize(&m).unwrap();
                             m.push(4);

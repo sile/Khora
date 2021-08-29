@@ -81,7 +81,7 @@ fn main() -> Result<(),std::io::Error> {
     /* lets not directly say hardware requirements, do suggestions that evolve over time */
     /* etherium has comittes of 128 or more */
     /* if the leader makes multiple blocks, they get slashed */
-    let tx_processed = 256usize;
+    let tx_processed = 128usize;
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
     
 
@@ -156,7 +156,7 @@ fn main() -> Result<(),std::io::Error> {
     let mut nextblock = NextBlock::default();
 
 
-    let iterations = 3;
+    let iterations = 2;
 
     let mut bnum = 0u64;
     let mut txvec = vec![];
@@ -235,7 +235,6 @@ fn main() -> Result<(),std::io::Error> {
         println!("time to verify lightning: {:?} ms",start.elapsed().as_millis());
         println!("tx: {:?}",nextblock.txs.len());
         println!("validators per any shard: {:?}",NUMBER_OF_VALIDATORS);
-        println!("shard validators: {:?}",nextblock.shards.len());
         println!("full block: {} bytes",bincode::serialize(&nextblock).unwrap().len());
         println!("lightning block: {} bytes",bincode::serialize(&nextblock.tolightning()).unwrap().len());
 
@@ -249,12 +248,11 @@ fn main() -> Result<(),std::io::Error> {
 
         lastheight = height;
         nextblock.scan(&ryan, &mut mine, &mut height, &mut alltagsever);
-        nextblock.scanstk(&ryan, &mut smine, &mut sheight, &val_pool[0]);
+        nextblock.scanstk(&ryan, &mut smine, &mut sheight, &val_pool);
         nextblock.scan_as_noone(&mut stkinfo,&val_pool,&mut queue, &mut exitqueue,&mut comittee, true);
         nextblock.save_history_to_ram(&mut history);
         println!("history: {}",history.len());
         println!("stkinfo: {}",stkinfo.len());
-        println!("shards: {:?}        pools: {:?}",nextblock.shards,nextblock.pools);
         println!("-------------------------------->"); /* right now, bloom filter filters staker exits? */
         nextblock.update_bloom(&bloom);
 

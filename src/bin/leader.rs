@@ -178,7 +178,7 @@ impl Future for LeaderNode {
                 // println!("time:::{:?}",self.timekeeper.elapsed().as_secs()); // that's not it
                 let lastblock = NextBlock::finish(&self.key, &self.keylocation, &self.sigs.drain(..).collect::<Vec<_>>(), &self.comittee[shard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(shard as u16), &self.bnum, &self.lastname, &self.stkinfo);
 
-                if lastblock.validators.len() != 0 {
+                if lastblock.validators.is_some() {
                     self.lastblock = lastblock;
                     let mut m = bincode::serialize(&self.lastblock).unwrap();
     
@@ -229,9 +229,9 @@ impl Future for LeaderNode {
                 let failed_validators = vec![]; // need an extra round to weed out liers
                 let mut lastblock = NextBlock::default();
                 lastblock.bnum = self.bnum;
-                lastblock.emptyness = MultiSignature{x: self.points[1].compress(), y: MultiSignature::sum_group_y(&self.scalars), pk: failed_validators};
+                lastblock.emptyness = Some(MultiSignature{x: self.points[1].compress(), y: MultiSignature::sum_group_y(&self.scalars), pk: failed_validators});
                 lastblock.last_name = self.lastname.clone();
-                lastblock.pools = vec![shard];
+                lastblock.shards = vec![shard];
 
                 
                 let m = vec![BLOCK_KEYWORD.to_vec(),self.bnum.to_le_bytes().to_vec(),self.lastname.clone(),bincode::serialize(&lastblock.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();

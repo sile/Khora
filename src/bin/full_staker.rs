@@ -242,8 +242,8 @@ impl Future for StakerNode {
                         // if (mtype == 2) | (mtype == 4) | (mtype == 6) {print!("#{:?}", mtype);}
                         // else {println!("# MESSAGE TYPE: {:?}", mtype);}
                         println!("# MESSAGE TYPE: {:?}", mtype); // i dont do anything with lightning blocks because im a staker
-    
-    
+
+
                         if mtype == 0 {
                             self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
                         } else if mtype == 1 {
@@ -260,7 +260,7 @@ impl Future for StakerNode {
                                         self.inner.broadcast(m.clone());
                                         std::thread::sleep(Duration::from_millis(10u64));
                                     }
-                                } else if (m.txs.len() == 0) & (m.emptyness.y == Scalar::default()){
+                                } else if (m.txs.len() == 0) & (m.emptyness.is_none()){
                                     self.groupxnonce += 1;
                                     let m = MultiSignature::gen_group_x(&self.key, &self.groupxnonce, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
                                     let mut m = Signature::sign_message(&self.key, &m, keylocation);
@@ -284,7 +284,7 @@ impl Future for StakerNode {
                             let com = self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
                             println!("names match up: {}",lastblock.last_name == self.lastname);
                             println!("block verified: {}",lastblock.verify(&com[self.headshard], &self.stkinfo).unwrap());
-                            if (lastblock.last_name == self.lastname) & lastblock.verify(&com[lastblock.pools[0] as usize], &self.stkinfo).is_ok() {
+                            if (lastblock.last_name == self.lastname) & lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok() {
                                 self.lastblock = lastblock;
                                 println!("=========================================================\nyay!");
                                 // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
@@ -295,7 +295,7 @@ impl Future for StakerNode {
                                     select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                                 }
                                 self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
-                                self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &com[self.headshard]);
+                                self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &com);
     
                                 let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
                                 if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
@@ -317,10 +317,10 @@ impl Future for StakerNode {
                                 }
     
 
-                                if self.lastblock.validators.len() == 0 {
-                                    self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z - self.lastblock.emptyness.pk.iter().filter(|&&y| y == x as u64).count() as i32).collect::<Vec<_>>();
+                                if self.lastblock.emptyness.is_some() {
+                                    self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z - self.lastblock.emptyness.clone().unwrap().pk.iter().filter(|&&y| y == x as u64).count() as i32).collect::<Vec<_>>();
                                 } else {
-                                    self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z + self.lastblock.validators.iter().filter(|y| y.pk == x as u64).count() as i32).collect::<Vec<_>>();
+                                    self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z + self.lastblock.validators.clone().unwrap().iter().filter(|y| y.pk == x as u64).count() as i32).collect::<Vec<_>>();
                                 }
                                 
                                 /* LEADER CHOSEN BY VOTES */
@@ -595,7 +595,7 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
             if !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & ( (self.sigs.len() > 85) | ( (self.sigs.len() > 64) & (self.timekeeper.elapsed().as_secs() > 30) ) ) {
                 let lastblock = NextBlock::finish(&self.key, &self.keylocation.iter().next().unwrap(), &self.sigs.drain(..).collect::<Vec<_>>(), &self.comittee[self.headshard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(self.headshard as u16), &self.bnum, &self.lastname, &self.stkinfo);
 
-                if lastblock.validators.len() != 0 {
+                if lastblock.validators.is_some() {
                     self.lastblock = lastblock;
 
                     let mut m = bincode::serialize(&self.lastblock).unwrap();
@@ -667,9 +667,9 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
                     let failed_validators = vec![];
                     let mut lastblock = NextBlock::default();
                     lastblock.bnum = self.bnum;
-                    lastblock.emptyness = MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators};
+                    lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});
                     lastblock.last_name = self.lastname.clone();
-                    lastblock.pools = vec![self.headshard as u16];
+                    lastblock.shards = vec![self.headshard as u16];
     
                     
                     let m = vec![BLOCK_KEYWORD.to_vec(),(self.headshard as u16).to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.lastname.clone(),bincode::serialize(&lastblock.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
