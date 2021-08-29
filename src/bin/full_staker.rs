@@ -167,7 +167,7 @@ fn main() -> Result<(), MainError> {
         use std::io::BufRead;
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
-            println!("line sent: {:?}",line);
+            // println!("line sent: {:?}",line);
             let line = if let Ok(line) = line {
                 line
             } else {
@@ -239,9 +239,9 @@ impl Future for StakerNode {
                     let mut m = msg.payload().to_vec();
                     if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
                         self.clogging += 1;
-                        // if (mtype == 2) | (mtype == 4) | (mtype == 6) {print!("#{:?}", mtype);}
-                        // else {println!("# MESSAGE TYPE: {:?}", mtype);}
-                        println!("# MESSAGE TYPE: {:?}", mtype); // i dont do anything with lightning blocks because im a staker
+                        if mtype == 2 {print!("#{:?}", mtype);}
+                        else {println!("# MESSAGE TYPE: {:?}", mtype);}
+                        // println!("# MESSAGE TYPE: {:?}", mtype); // i dont do anything with lightning blocks because im a staker
 
 
                         if mtype == 0 {
@@ -289,13 +289,13 @@ impl Future for StakerNode {
                                 println!("=========================================================\nyay!");
                                 // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
 
-                                self.lastblock.scan_as_noone(&mut self.stkinfo,&com, &mut self.queue, &mut self.exitqueue, &mut self.comittee, true);
+                                self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
+                                self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
+                                self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, true);
                                 self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
                                 for i in 0..self.comittee.len() {
                                     select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                                 }
-                                self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
-                                self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &com);
     
                                 let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
                                 if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
@@ -411,8 +411,7 @@ impl Future for StakerNode {
 
 /*
 send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- 
-ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000a!
-ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000b!
+ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigmnjimdgmpelmdoehiemiefmhinffkcnbmkjofflhfcpbcamfhheknjkibbcooeccgfemcpbnfommaiefmllkeekmghjokbhjepfgnfeilgjkipokjmfffggckekhpbef10000000b!
   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   ------- 
 ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000a!
 
@@ -530,6 +529,7 @@ USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER 
                         println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
                         let stake = self.smine.iter().map(|x|x[1]).collect::<Vec<_>>();
                         println!("\nmy stake:\n---------------------------------------------\n{:?}\n",stake);
+                        println!("\nstake state:\n---------------------------------------------\n{:?}\n",self.stkinfo);
                         println!("\nheight:\n---------------------------------------------\n{:?}\n",self.height);
                         println!("\nsheight:\n---------------------------------------------\n{:?}\n",self.sheight);
                     } else if istx == 98 /* b */ {

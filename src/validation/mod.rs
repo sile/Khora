@@ -29,7 +29,7 @@ pub const BLOCK_KEYWORD: [u8;6] = [107,105,109,98,101,114]; // todo: make this s
 const NOT_BLOCK_KEYWORD: [u8;7] = [103,97,98,114,105,101,108]; // todo: make this something else (a obvious version of her name)
 pub const INFLATION_CONSTANT: f64 = 2u64.pow(30) as f64;
 pub const INFLATION_EXPONENT: f64 = 100f64;
-
+pub const PUNISHMENT_FRACTION: u64 = 1000;
 
 pub fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
     let message = bincode::serialize(message).unwrap();
@@ -415,7 +415,7 @@ impl NextBlock { // need to sign the staker inputs too
             let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec(),bincode::serialize(&self.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
             // println!("\n\nleader view: {:?}",hash_to_scalar(&m));
             // println!("\n\nleader view: {:?}",hash_to_scalar(&self.leader));
-            println!("block checking: {:?}",hash_to_scalar(&m));
+            // println!("block checking: {:?}",hash_to_scalar(&m));
             let mut s = Sha3_512::new();
             s.update(&m);
             // println!("\n\nleader view: {:?}",self.leader.verify(&mut s.clone(), &stkstate));
@@ -476,38 +476,98 @@ impl NextBlock { // need to sign the staker inputs too
         }
         return Ok(true)
     }
-    pub fn scan_as_noone(&self, valinfo: &mut Vec<(CompressedRistretto,u64)>, val_pools: &Vec<Vec<u64>>, queue: &mut Vec<VecDeque<usize>>, exitqueue: &mut Vec<VecDeque<usize>>, comittee: &mut Vec<Vec<usize>>, save_history: bool) {
+    pub fn scan_as_noone(&self, valinfo: &mut Vec<(CompressedRistretto,u64)>, queue: &mut Vec<VecDeque<usize>>, exitqueue: &mut Vec<VecDeque<usize>>, comittee: &mut Vec<Vec<usize>>, save_history: bool) {
         // let mut val_pools = val_pools.into_par_iter().enumerate().filter_map(|x|if !self.shards.par_iter().all(|y|*y!=(x.0 as u16)) {Some(x.1.clone())} else {None}).collect::<Vec<Vec<u64>>>();
         
         
         let mut info = Syncedtx::from(&self.txs);
         if save_history {History::append(&info.txout)};
 
-        let moneygetters: Vec<u64>;
+
+
+
+        let winners: Vec<usize>;
+        let masochists: Vec<usize>;
+        let lucky: Vec<usize>;
+        let feelovers: Vec<usize>;
         if let Some(x) = self.validators.clone() {
-            moneygetters = x.par_iter().map(|x| x.pk).collect::<Vec<_>>();
+            let x = x.par_iter().map(|x| x.pk as usize).collect::<HashSet<_>>();
+
+            winners = comittee[self.shards[0] as usize].par_iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            masochists = comittee[self.shards[0] as usize].par_iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            if self.shards.len() > 1 {
+                feelovers = self.shards[1..].par_iter().map(|x| comittee[*x as usize].clone()).flatten().chain(winners.clone()).collect::<Vec<_>>();
+            } else {
+                feelovers = winners.clone();
+            }
+            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
         } else {
-            let x = self.emptyness.clone().unwrap().pk;
-            let x = x.iter().collect::<HashSet<_>>();
-            moneygetters = val_pools[self.shards[0] as usize].par_iter().filter(|y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            let x = self.emptyness.clone().unwrap().pk.par_iter().map(|x| *x as usize).collect::<HashSet<_>>();
+
+            winners = comittee[self.shards[0] as usize].par_iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            masochists = comittee[self.shards[0] as usize].par_iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
+            feelovers = winners.clone();
+        }
+        let fees = info.fees/(feelovers.len() as u64);
+        let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64/winners.len() as u64;
+
+
+        for i in winners {
+            valinfo[i].1 += inflation;
+        }
+        for i in feelovers {
+            valinfo[i].1 += fees;
+        }
+        let mut punishments = 0u64;
+        for i in masochists {
+            punishments += valinfo[i].1/PUNISHMENT_FRACTION;
+            valinfo[i].1 -= valinfo[i].1/PUNISHMENT_FRACTION;
+        }
+        punishments = punishments/lucky.len() as u64;
+        for i in lucky {
+            valinfo[i].1 += punishments;
         }
 
-        let fees = self.txs.par_iter().map(|x|x.fee).sum::<u64>();
-        let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64;
+
+
+
+
+
+
+
+
+        // let moneygetters: Vec<u64>;
+        // let mut masochists = Vec::<u64>::new();
+        // if let Some(x) = self.validators.clone() {
+        //     moneygetters = x.par_iter().map(|x| x.pk).collect::<Vec<_>>();
+        //     for i in moneygetters.iter() {
+
+        //     }
+        //     masochists = val_pools[self.shards[0] as usize].par_iter().filter(|y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+        // } else {
+        //     let x = self.emptyness.clone().unwrap().pk;
+        //     let x = x.iter().collect::<HashSet<_>>();
+        //     moneygetters = val_pools[self.shards[0] as usize].par_iter().filter(|y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+        //     masochists = val_pools[self.shards[0] as usize].par_iter().filter(|y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+        // }
+
+        // let fees = info.fees;
+        // let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64;
         
-        let feelovers = self.shards.par_iter().map(|&x| comittee[x as usize].clone()).flatten().collect::<Vec<_>>();
-        let profits = fees/(feelovers.len() as u64);
-        for v in feelovers.iter() {
-            valinfo[*v].1 += profits;
-        }
-        for v in val_pools[self.shards[0] as usize].iter() {
-            if moneygetters.par_iter().all(|x|x!=v) {
-                valinfo[*v as usize].1 -= valinfo[*v as usize].1/1000;
-            }
-            else {
-                valinfo[*v as usize].1 += inflation;
-            }
-        }
+        // let feelovers = self.shards.par_iter().map(|&x| comittee[x as usize].clone()).flatten().collect::<Vec<_>>();
+        // let profits = fees/(feelovers.len() as u64);
+        // for v in feelovers.iter() {
+        //     valinfo[*v].1 += profits;
+        // }
+        // for v in val_pools[self.shards[0] as usize].iter() {
+        //     if moneygetters.contains(v) {
+        //         valinfo[*v as usize].1 += inflation;
+        //     }
+        //     else {
+        //         valinfo[*v as usize].1 -= valinfo[*v as usize].1/1000;
+        //     }
+        // }
 
 
         // if self.txs.len() > 0 {
@@ -656,7 +716,7 @@ impl NextBlock { // need to sign the staker inputs too
 
         x
     }
-    pub fn scanstk(&self, me: &Account, mine: &mut Vec<[u64;2]>, height: &mut u64, val_pools: &Vec<Vec<u64>>) {
+    pub fn scanstk(&self, me: &Account, mine: &mut Vec<[u64;2]>, height: &mut u64, comittee: &Vec<Vec<usize>>, valinfo: &Vec<(CompressedRistretto,u64)>) {
         let stkin = self.txs.par_iter().map(|x|
             x.outputs.par_iter().filter_map(|y| 
                 if let Ok(z) = stakereader_acc().read_ot(y) {Some(z)} else {None}
@@ -664,131 +724,220 @@ impl NextBlock { // need to sign the staker inputs too
         ).flatten().collect::<Vec<OTAccount>>();
         mine.par_extend(stkin.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.stake_acc().receive_ot(x) {Some([i as u64+*height,u64::from_le_bytes(y.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())])} else {None}).collect::<Vec<[u64;2]>>());
 
-        let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64;
-        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:#?}",stkin);
-        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:#?}",stkin.len());
-        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
-        let shards = self.shards.iter().map(|x| val_pools[*x as usize].clone()).collect::<Vec<Vec<_>>>();
-
-        if let Some(validators) = self.validators.clone() {
-            let fees = self.txs.par_iter().map(|x|x.fee).sum::<u64>();
-            // let profits = fees/(self.validators.len() as u64);
-            // println!("{:?}",val_pools);
-
-
-            // i want shards to be the first is the signers and the rest are the shards
-
-            
 
 
 
-            // let feelovers = self.shards.par_iter().map(|&x| val_pools[x as usize].clone()).flatten().collect::<HashSet<_>>();
-            // let profits = fees/(feelovers.len() as u64);
-            // mine.par_iter_mut().for_each(|x| if feelovers.contains(&x[0]) {x[1] += profits;});
 
-            // let inflationlovers = validators.par_iter().map(|x| x.pk).collect::<Vec<_>>();
-            // let masochists = val_pools[self.shards[0] as usize].par_iter().collect::<HashSet<_>>();
-            // mine.par_iter_mut().for_each(|x| if inflationlovers.contains(x[0] as u64) {x[1] += inflation;} else if masochists.contains(&x[0]) {x[1] -= x[1]/1000});
 
-            let feelovers = self.shards.par_iter().map(|&x| val_pools[x as usize].clone()).flatten().collect::<Vec<_>>();
-            let profits = fees/(feelovers.len() as u64);
-            // mine.par_iter_mut().for_each(|x| if feelovers.contains(&x[0]) {x[1] += profits;});
 
-            for (i,m) in mine.clone().iter().enumerate() {
-                for s in &feelovers {
-                    if m[0] == *s {
-                        mine[i][1] += profits;
-                    }
-                }
+        let info = Syncedtx::from(&self.txs);
+        let winners: Vec<usize>;
+        let masochists: Vec<usize>;
+        let lucky: Vec<usize>;
+        let feelovers: Vec<usize>;
+        if let Some(x) = self.validators.clone() {
+            let x = x.par_iter().map(|x| x.pk as usize).collect::<HashSet<_>>();
+
+            winners = comittee[self.shards[0] as usize].par_iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            masochists = comittee[self.shards[0] as usize].par_iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            if self.shards.len() > 1 {
+                feelovers = self.shards[1..].par_iter().map(|x| comittee[*x as usize].clone()).flatten().chain(winners.clone()).collect::<Vec<_>>();
+            } else {
+                feelovers = winners.clone();
             }
-            let inflationlovers = validators.par_iter().map(|x| x.pk).collect::<Vec<_>>();
-            let masochists = val_pools[self.shards[0] as usize].par_iter().map(|x|*x).collect::<Vec<_>>();
-            // mine.par_iter_mut().for_each(|x| if inflationlovers.par_iter().all(|y| *y!=x[0] as u64) {x[1] += inflation;} else if masochists.contains(&x[0]) {x[1] -= x[1]/1000});
-
-            for (i,m) in mine.clone().iter().enumerate() {
-                for s in &inflationlovers {
-                    if m[0] == *s {
-                        mine[i][1] += inflation;
-                    }
-                }
-            }
-            for (i,m) in mine.clone().iter().enumerate() {
-                for s in &masochists {
-                    if m[0] == *s {
-                        mine[i][1] -= m[1]/1000;
-                    }
-                }
-            }
-
-
-
-            // for &v in val_pools {
-            //     for (i,m) in mine.clone().iter().enumerate() {
-            //         if m[0] == v {
-            //             if self.validators.par_iter().all(|x|x.pk!=v) { // NEEED TO SUBTRACT LOCATION WHEN STAKERS LEAVE
-            //                 let delta = m[1]/1000;
-            //                 mine[i][1] -= delta;
-            //             } else {
-            //                 // println!("{:?}",mine[i].1.com.amount);
-            //                 let delta = profits+inflation;
-            //                 mine[i][1] += delta;
-            //             }
-            //         }
-            //     }
-            // }
-            // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
-    
-    
-            let stkout = self.txs.par_iter().filter_map(|x|
-                if x.inputs.len() == 8 {Some(u64::from_le_bytes(x.inputs.to_owned().try_into().unwrap()))} else {None}
-            ).collect::<Vec<u64>>();
-    
-    
-    
-    
-            for (i,m) in mine.clone().iter().enumerate().rev() {
-                for v in &stkout {
-                    if m[0] == *v {
-                        mine.remove(i as usize);
-                    }
-                }
-                for n in stkout.iter() {
-                    if *n < m[0] {
-                        mine[i][0] -= 1;
-                    }
-                    else {
-                        break;
-                    }
-                }
-            }
-            // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
-            *height += stkin.len() as u64;
-            *height -= stkout.len() as u64;
+            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
         } else {
-            for &v in shards[0].iter() {
-                mine.par_iter_mut().for_each(|m| if m[0] == v {
-                    if !self.emptyness.clone().unwrap().pk.par_iter().all(|x|*x!=v) {
-                        m[1] -= m[1]/1000;
-                    }
-                    else {
-                        m[1] += inflation;
-                    }
-                });
-                // for (i,m) in mine.clone().iter().enumerate() {
-                //     if m[0] == v {
-                //         if !self.emptyness.pk.par_iter().all(|x|*x!=v) {
-                //             let delta = m[1]/1000;
-                //             mine[i][1] -= delta;
-                //         }
-                //         else {
-                //             let delta = inflation;
-                //             mine[i][1] += delta;
-                //         }
-                //     }
-                // }
-            }
+            let x = self.emptyness.clone().unwrap().pk.par_iter().map(|x| *x as usize).collect::<HashSet<_>>();
 
+            winners = comittee[self.shards[0] as usize].par_iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            masochists = comittee[self.shards[0] as usize].par_iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
+            feelovers = winners.clone();
         }
+        let fees = info.fees/(feelovers.len() as u64);
+        let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64/winners.len() as u64;
+
+
+        for i in winners {
+            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] += inflation;});
+        }
+        for i in feelovers {
+            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] += fees;});
+        }
+        let mut punishments = 0u64;
+        for i in masochists {
+            punishments += valinfo[i].1/PUNISHMENT_FRACTION;
+            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] -= valinfo[i].1/PUNISHMENT_FRACTION;});
+        }
+        punishments = punishments/lucky.len() as u64;
+        for i in lucky {
+            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] += punishments;});
+        }
+
+
+
+
+
+
+
+
+
+
+
+    
+        let stkout = self.txs.par_iter().filter_map(|x|
+            if x.inputs.len() == 8 {Some(u64::from_le_bytes(x.inputs.to_owned().try_into().unwrap()))} else {None}
+        ).collect::<Vec<u64>>();
+
+
+
+
+        for (i,m) in mine.clone().iter().enumerate().rev() {
+            for v in &stkout {
+                if m[0] == *v {
+                    mine.remove(i as usize);
+                }
+            }
+            for n in stkout.iter() {
+                if *n < m[0] {
+                    mine[i][0] -= 1;
+                }
+                else {
+                    break;
+                }
+            }
+        }
+        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
+        *height += stkin.len() as u64;
+        *height -= stkout.len() as u64;
+
+
+
+
+
+
+
+        // let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64;
+        // // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:#?}",stkin);
+        // // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:#?}",stkin.len());
+        // // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
+        // let shards = self.shards.iter().map(|x| val_pools[*x as usize].clone()).collect::<Vec<Vec<_>>>();
+
+        // if let Some(validators) = self.validators.clone() {
+        //     // let fees = self.txs.par_iter().map(|x|x.fee).sum::<u64>();
+        //     // // let profits = fees/(self.validators.len() as u64);
+        //     // // println!("{:?}",val_pools);
+
+
+        //     // // i want shards to be the first is the signers and the rest are the shards
+
+
+
+        //     // // let feelovers = self.shards.par_iter().map(|&x| val_pools[x as usize].clone()).flatten().collect::<HashSet<_>>();
+        //     // // let profits = fees/(feelovers.len() as u64);
+        //     // // mine.par_iter_mut().for_each(|x| if feelovers.contains(&x[0]) {x[1] += profits;});
+
+        //     // // let inflationlovers = validators.par_iter().map(|x| x.pk).collect::<Vec<_>>();
+        //     // // let masochists = val_pools[self.shards[0] as usize].par_iter().collect::<HashSet<_>>();
+        //     // // mine.par_iter_mut().for_each(|x| if inflationlovers.contains(x[0] as u64) {x[1] += inflation;} else if masochists.contains(&x[0]) {x[1] -= x[1]/1000});
+
+        //     // let feelovers = self.shards.par_iter().map(|&x| val_pools[x as usize].clone()).flatten().collect::<HashSet<_>>();
+        //     // let profits = fees/(feelovers.len() as u64);
+        //     // // mine.par_iter_mut().for_each(|x| if feelovers.contains(&x[0]) {x[1] += profits;});
+
+        //     // for (i,m) in mine.clone().iter().enumerate() {
+        //     //     if feelovers.contains(&m[0]) {
+        //     //         mine[i][1] += profits;
+        //     //     }
+        //     // }
+        //     // let inflationlovers = validators.par_iter().map(|x| x.pk).collect::<Vec<_>>();
+        //     // let masochists = val_pools[self.shards[0] as usize].par_iter().map(|x|*x).collect::<Vec<_>>();
+        //     // // mine.par_iter_mut().for_each(|x| if inflationlovers.par_iter().all(|y| *y!=x[0] as u64) {x[1] += inflation;} else if masochists.contains(&x[0]) {x[1] -= x[1]/1000});
+
+        //     // for (i,m) in mine.clone().iter().enumerate() {
+        //     //     for s in &inflationlovers {
+        //     //         if m[0] == *s {
+        //     //             mine[i][1] += inflation + m[1]/1000;
+        //     //         }
+        //     //     }
+        //     // }
+        //     // for (i,m) in mine.clone().iter().enumerate() {
+        //     //     for s in &masochists {
+        //     //         if m[0] == *s {
+        //     //             mine[i][1] -= m[1]/1000;
+        //     //         }
+        //     //     }
+        //     // }
+
+
+
+        //     // for &v in val_pools {
+        //     //     for (i,m) in mine.clone().iter().enumerate() {
+        //     //         if m[0] == v {
+        //     //             if self.validators.par_iter().all(|x|x.pk!=v) { // NEEED TO SUBTRACT LOCATION WHEN STAKERS LEAVE
+        //     //                 let delta = m[1]/1000;
+        //     //                 mine[i][1] -= delta;
+        //     //             } else {
+        //     //                 // println!("{:?}",mine[i].1.com.amount);
+        //     //                 let delta = profits+inflation;
+        //     //                 mine[i][1] += delta;
+        //     //             }
+        //     //         }
+        //     //     }
+        //     // }
+        //     // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
+    
+    
+        //     // let stkout = self.txs.par_iter().filter_map(|x|
+        //     //     if x.inputs.len() == 8 {Some(u64::from_le_bytes(x.inputs.to_owned().try_into().unwrap()))} else {None}
+        //     // ).collect::<Vec<u64>>();
+    
+    
+    
+    
+        //     // for (i,m) in mine.clone().iter().enumerate().rev() {
+        //     //     for v in &stkout {
+        //     //         if m[0] == *v {
+        //     //             mine.remove(i as usize);
+        //     //         }
+        //     //     }
+        //     //     for n in stkout.iter() {
+        //     //         if *n < m[0] {
+        //     //             mine[i][0] -= 1;
+        //     //         }
+        //     //         else {
+        //     //             break;
+        //     //         }
+        //     //     }
+        //     // }
+        //     // // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
+        //     // *height += stkin.len() as u64;
+        //     // *height -= stkout.len() as u64;
+        // } else {
+        //     // for &v in shards[0].iter() {
+        //     //     mine.par_iter_mut().for_each(|m| if m[0] == v {
+        //     //         if !self.emptyness.clone().unwrap().pk.par_iter().all(|x|*x!=v) {
+        //     //             m[1] -= m[1]/1000;
+        //     //         }
+        //     //         else {
+        //     //             m[1] += inflation;
+        //     //         }
+        //     //     });
+        //     //     // for (i,m) in mine.clone().iter().enumerate() {
+        //     //     //     if m[0] == v {
+        //     //     //         if !self.emptyness.pk.par_iter().all(|x|*x!=v) {
+        //     //     //             let delta = m[1]/1000;
+        //     //     //             mine[i][1] -= delta;
+        //     //     //         }
+        //     //     //         else {
+        //     //     //             let delta = inflation;
+        //     //     //             mine[i][1] += delta;
+        //     //     //         }
+        //     //     //     }
+        //     //     // }
+        //     // }
+
+        // }
     }
     pub fn update_bloom(&self,bloom:&BloomFile) {
         self.txs.par_iter().map(|x| x.tags.par_iter().map(|y| bloom.insert(y.as_bytes())).collect::<Vec<_>>()).collect::<Vec<_>>();
@@ -905,30 +1054,90 @@ impl LightningSyncBlock {
         // println!("val shards: {:?}",val_pools);
         // println!("shards: {:?}",self.shards);
         let mut info =self.info.clone();
-        let fees = info.fees;
-        let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64;
 
 
-        let mut moneygetters: Vec<u64>;
+
+
+
+        let winners: Vec<usize>;
+        let masochists: Vec<usize>;
+        let lucky: Vec<usize>;
+        let feelovers: Vec<usize>;
         if let Some(x) = self.validators.clone() {
-            moneygetters = x.par_iter().map(|x| x.pk).collect::<Vec<_>>();
+            let x = x.par_iter().map(|x| x.pk as usize).collect::<HashSet<_>>();
+
+            winners = comittee[self.shards[0] as usize].par_iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            masochists = comittee[self.shards[0] as usize].par_iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            if self.shards.len() > 1 {
+                feelovers = self.shards[1..].par_iter().map(|x| comittee[*x as usize].clone()).flatten().chain(winners.clone()).collect::<Vec<_>>();
+            } else {
+                feelovers = winners.clone();
+            }
+            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
         } else {
-            moneygetters = self.emptyness.clone().unwrap().pk;
+            let x = self.emptyness.clone().unwrap().pk.par_iter().map(|x| *x as usize).collect::<HashSet<_>>();
+
+            winners = comittee[self.shards[0] as usize].par_iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            masochists = comittee[self.shards[0] as usize].par_iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
+            feelovers = winners.clone();
         }
+        let fees = info.fees/(feelovers.len() as u64);
+        let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64/winners.len() as u64;
+
+
+        for i in winners {
+            valinfo[i].1 += inflation;
+        }
+        for i in feelovers {
+            valinfo[i].1 += fees;
+        }
+        let mut punishments = 0u64;
+        for i in masochists {
+            punishments += valinfo[i].1/PUNISHMENT_FRACTION;
+            valinfo[i].1 -= valinfo[i].1/PUNISHMENT_FRACTION;
+        }
+        punishments = punishments/lucky.len() as u64;
+        for i in lucky {
+            valinfo[i].1 += punishments;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+        // let fees = info.fees;
+        // let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64;
+
+
+        // let mut moneygetters: Vec<u64>;
+        // if let Some(x) = self.validators.clone() {
+        //     moneygetters = x.par_iter().map(|x| x.pk).collect::<Vec<_>>();
+        // } else {
+        //     moneygetters = self.emptyness.clone().unwrap().pk;
+        // }
         
-        let feelovers = self.shards.par_iter().map(|&x| comittee[x as usize].clone()).flatten().collect::<Vec<_>>();
-        let profits = fees/(feelovers.len() as u64*128);
-        for v in feelovers.iter() {
-            valinfo[*v].1 += profits;
-        }
-        for v in val_pools[self.shards[0] as usize].iter() {
-            if moneygetters.par_iter().all(|x|x!=v) {
-                valinfo[*v as usize].1 -= valinfo[*v as usize].1/1000;
-            }
-            else {
-                valinfo[*v as usize].1 += inflation;
-            }
-        }
+        // let feelovers = self.shards.par_iter().map(|&x| comittee[x as usize].clone()).flatten().collect::<Vec<_>>();
+        // let profits = fees/(feelovers.len() as u64*128);
+        // for v in feelovers.iter() {
+        //     valinfo[*v].1 += profits;
+        // }
+        // for v in val_pools[self.shards[0] as usize].iter() {
+        //     if moneygetters.par_iter().all(|x|x!=v) {
+        //         valinfo[*v as usize].1 -= valinfo[*v as usize].1/1000;
+        //     }
+        //     else {
+        //         valinfo[*v as usize].1 += inflation;
+        //     }
+        // }
 
 
         // if info.tags.len() > 0 {

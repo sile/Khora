@@ -248,8 +248,8 @@ fn main() -> Result<(),std::io::Error> {
 
         lastheight = height;
         nextblock.scan(&ryan, &mut mine, &mut height, &mut alltagsever);
-        nextblock.scanstk(&ryan, &mut smine, &mut sheight, &val_pool);
-        nextblock.scan_as_noone(&mut stkinfo,&val_pool,&mut queue, &mut exitqueue,&mut comittee, true);
+        nextblock.scanstk(&ryan, &mut smine, &mut sheight, &comittee, &stkinfo);
+        nextblock.scan_as_noone(&mut stkinfo,&mut queue, &mut exitqueue,&mut comittee, true);
         nextblock.save_history_to_ram(&mut history);
         println!("history: {}",history.len());
         println!("stkinfo: {}",stkinfo.len());
