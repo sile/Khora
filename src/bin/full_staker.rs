@@ -47,6 +47,8 @@ fn main() -> Result<(), MainError> {
     let matches = app_from_crate!()
         .arg(Arg::with_name("PORT").index(1).required(true))
         .arg(Arg::with_name("PASSWORD").index(2).required(true))
+        .arg(Arg::with_name("SAVE_HISTORY").index(3).default_value("1").required(false))
+        .arg(Arg::with_name("CONTACT_SERVER").index(4).required(false))
         .arg(
             Arg::with_name("LOG_LEVEL")
                 .long("log-level")
@@ -84,8 +86,8 @@ fn main() -> Result<(), MainError> {
     let mut node = NodeBuilder::new().logger(logger).finish(service.handle());
     println!("{:?}",node.id());
     if let Some(contact) = matches.value_of("CONTACT_SERVER") {
+        let contact: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), contact).parse())?; // gatech
         println!("contact: {:?}",contact);
-        let contact: SocketAddr = track_any_err!(contact.parse())?;
         node.join(NodeId::new(contact, LocalNodeId::new(0)));
     }
 
@@ -94,8 +96,8 @@ fn main() -> Result<(), MainError> {
     let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
     let mut initial_history = vec![(leader,1u64)];
 
-    // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-    // initial_history.push((otheruser,1u64));
+    let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+    initial_history.push((otheruser,1u64));
 
     
     let me = Account::new(&format!("{}",pswrd));
@@ -121,6 +123,7 @@ fn main() -> Result<(), MainError> {
     let (message_tx, message_rx) = mpsc::channel();
     let node = StakerNode {
         inner: node,
+        save_history: (matches.value_of("SAVE_HISTORY").unwrap() != "0"),
         message_rx: message_rx,
         me: me,
         mine: vec![],
@@ -186,6 +189,7 @@ fn main() -> Result<(), MainError> {
 
 struct StakerNode {
     inner: Node<Vec<u8>>,
+    save_history: bool, //just testing. in real code this is true; but i need to pretend to be different people on the same computer
     me: Account,
     message_rx: mpsc::Receiver<String>,
     mine: Vec<(u64, OTAccount)>,
@@ -211,7 +215,7 @@ struct StakerNode {
     sigs: Vec<NextBlock>,
     multisig: bool,
     bannedlist: HashSet<NodeId>,
-    points: HashMap<usize,RistrettoPoint>, // point, supplier
+    points: HashMap<usize,RistrettoPoint>, // supplier, point
     groupxnonce: u64,
     scalars: HashMap<usize,Scalar>,
     timekeeper: Instant,
@@ -266,6 +270,7 @@ impl Future for StakerNode {
                                     let mut m = Signature::sign_message(&self.key, &m, keylocation);
                                     m.push(4);
                                     if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
+                                        println!("I'm sending a MESSAGE TYPE 4!");
                                         self.inner.broadcast(m.clone());
                                     }
                                 }
@@ -291,9 +296,14 @@ impl Future for StakerNode {
 
                                 self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
                                 self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
-                                self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, true);
+                                self.keylocation = self.smine.iter().map(|x| x[0]).collect();
+                                self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
                                 self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
     
+                                for i in 0..self.comittee.len() {
+                                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                                }
+
                                 let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
                                 if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
                                     println!("saving block...");
@@ -310,7 +320,7 @@ impl Future for StakerNode {
                                 
     
                                 if self.keylocation.contains(&(self.exitqueue[self.headshard][0] as u64)) | self.keylocation.contains(&(self.exitqueue[self.headshard][1] as u64)) {
-                                    /* broadcast the block to the outside world*/
+                                    /* broadcast the block to the outside world */
                                 }
     
 
@@ -332,10 +342,7 @@ impl Future for StakerNode {
                                 }).unwrap().0].0;
                                 /* LEADER CHOSEN BY VOTES */
                                 
-                                for i in 0..self.comittee.len() {
-                                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                                }
-
+                                self.stepeven = false;
                                 self.timeframedone = true;
                                 self.waitingforleader = Instant::now();
                                 self.timekeeper = Instant::now();
@@ -345,7 +352,9 @@ impl Future for StakerNode {
                         } else if mtype == 4 {
                             if let Some(pk) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
                                 let pk = pk as usize;
+                                println!("get sent: {:?}",pk);
                                 if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
+                                    println!("points getting bigger");
                                     self.points.insert(pk,CompressedRistretto(m.try_into().unwrap()).decompress().unwrap());
                                 }
                             }
@@ -518,7 +527,7 @@ USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER 
                         }
                         txbin.push(0);
 
-                        println!("----------------------------------------------------------------\n{:?}",txbin);
+                        // println!("----------------------------------------------------------------\n{:?}",txbin);
                         self.inner.broadcast(txbin);
                     } else if istx == 42 /* * */ { // ips to talk to
                         // 192.168.000.101:09876 192.168.000.101:09875*
@@ -535,11 +544,13 @@ USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER 
                         let moniez = u64::from_le_bytes(scalarmoney.as_bytes()[..8].try_into().unwrap());
                         println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
                         println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
-                        let stake = self.smine.iter().map(|x|x[1]).collect::<Vec<_>>();
-                        println!("\nmy stake:\n---------------------------------------------\n{:?}\n",stake);
+                        println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
                         println!("\nstake state:\n---------------------------------------------\n{:?}\n",self.stkinfo);
                         println!("\nheight:\n---------------------------------------------\n{:?}\n",self.height);
                         println!("\nsheight:\n---------------------------------------------\n{:?}\n",self.sheight);
+                        println!("\ncomittee:\n---------------------------------------------\n{:?}\n",self.comittee[self.headshard]);
+                        println!("\nleadership:\n---------------------------------------------\nmyself: {:?}\nleader: {:?}\n",self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress().as_bytes(), self.leader.as_bytes());
+                        println!("\ntime:\n---------------------------------------------\n{:?}s\n",self.timekeeper.elapsed().as_secs());
                     } else if istx == 98 /* b */ {
                         println!("\nlast block:\n---------------------------------------------\n{:#?}\n",self.lastblock);
                     } else if istx == 97 /* a */ { // 9876 9875a   (just input the ports, only for testing on a single computer)
@@ -600,145 +611,147 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
                     }
                 }).unwrap().0].0;
             }
-            if !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & ( (self.sigs.len() > 85) | ( (self.sigs.len() > 64) & (self.timekeeper.elapsed().as_secs() > 30) ) ) {
-                let lastblock = NextBlock::finish(&self.key, &self.keylocation.iter().next().unwrap(), &self.sigs.drain(..).collect::<Vec<_>>(), &self.comittee[self.headshard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(self.headshard as u16), &self.bnum, &self.lastname, &self.stkinfo);
-
-                if lastblock.validators.is_some() {
-                    self.lastblock = lastblock;
-
-                    let mut m = bincode::serialize(&self.lastblock).unwrap();
-                    let mut l = bincode::serialize(&self.lastblock.tolightning()).unwrap();
+            if self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress() == self.leader {
+                if (self.sigs.len() > 85) | ( (self.sigs.len() > 64) & (self.timekeeper.elapsed().as_secs() > 30) ) {
+                    let lastblock = NextBlock::finish(&self.key, &self.keylocation.iter().next().unwrap(), &self.sigs.drain(..).collect::<Vec<_>>(), &self.comittee[self.headshard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(self.headshard as u16), &self.bnum, &self.lastname, &self.stkinfo);
     
-                    self.sigs = vec![];
-
-                    let mut hasher = Sha3_512::new();
-                    hasher.update(&l);
-                    // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                    // println!("{:?}",hash_to_scalar(&self.lastblock));
-
-
+                    if lastblock.validators.is_some() {
+                        self.lastblock = lastblock;
     
-
-                    l.push(7u8);
-                    self.inner.broadcast(l);
-                    m.push(3u8);
-                    self.inner.broadcast(m);
-
-
-                    
-
-                    println!("made a block with {} transactions!",self.lastblock.txs.len());
-                    did_something = true;
-                } else {
-                    println!("failed to make a block :(");
-                    did_something = false;
-                }
-
-                self.timekeeper = Instant::now();
-            }
-            if !self.stepeven & !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 1) & (self.comittee[self.headshard].iter().filter(|&x|self.points.contains_key(x)).count() > 85) {
-                // should prob check that validators are accurate here?
-                let points = self.points.par_iter().map(|x| *x.1).collect::<Vec<_>>();
-                let mut m = MultiSignature::sum_group_x(&points).as_bytes().to_vec();
-                m.push(5u8);
-                self.inner.broadcast(m);
-                // self.points = HashMap::new();
-                self.points.insert(usize::MAX,MultiSignature::sum_group_x(&points).decompress().unwrap());
-                self.stepeven = true;
-                did_something = true;
-
-            }
-            let k = self.scalars.keys().collect::<HashSet<_>>();
-            // println!("{:?}",self.stepeven & self.points.get(&usize::MAX).is_some() & !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2));
-            // println!("but also {:?}", self.comittee[0].iter().filter(|x| k.contains(x)).count());
-            // println!("but also {:?}", k);
-            if self.stepeven & self.points.get(&usize::MAX).is_some() & !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2) & (self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > 85) {
-                self.multisig = false; // should definitely check that validators are accurate here
-                // this is for if everyone signed... really > 0.5 or whatever... 
-                
-                let sumpt = self.points.remove(&usize::MAX).unwrap();
-
-                let keys = self.points.clone();
-                let mut keys = keys.keys().collect::<Vec<_>>();
-                let mut s = Sha3_512::new();
-                let mut m = self.leader.as_bytes().to_vec();
-                m.extend(&self.lastname);
-                m.extend(&(self.headshard as u16).to_le_bytes().to_vec());
-                s.update(&m);
-                s.update(sumpt.compress().as_bytes());
-                let e = Scalar::from_hash(s);
-                // println!("keys: {:?}",keys);
-                let k = keys.len();
-                keys.retain(|&x| (self.points[x] + e*self.stkinfo[*x].0.decompress().unwrap() == self.scalars[x]*PEDERSEN_H()) & self.comittee[self.headshard].contains(x));
-                if k == keys.len() {
-
-                    let failed_validators = vec![];
-                    let mut lastblock = NextBlock::default();
-                    lastblock.bnum = self.bnum;
-                    lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});
-                    lastblock.last_name = self.lastname.clone();
-                    lastblock.shards = vec![self.headshard as u16];
+                        let mut m = bincode::serialize(&self.lastblock).unwrap();
+                        let mut l = bincode::serialize(&self.lastblock.tolightning()).unwrap();
+        
+                        self.sigs = vec![];
     
-                    
-                    let m = vec![BLOCK_KEYWORD.to_vec(),(self.headshard as u16).to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.lastname.clone(),bincode::serialize(&lastblock.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
-                    let mut s = Sha3_512::new();
-                    s.update(&m);
-                    let leader = Signature::sign(&self.key, &mut s,&self.keylocation.iter().next().unwrap());
-                    lastblock.leader = leader;
+                        let mut hasher = Sha3_512::new();
+                        hasher.update(&l);
+                        // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                        // println!("{:?}",hash_to_scalar(&self.lastblock));
     
     
-                    let mut m = bincode::serialize(&lastblock).unwrap();
-                    let mut l = bincode::serialize(&lastblock.tolightning()).unwrap();
-                    
-                    // self.lastblock = lastblock;
-                    // let mut hasher = Sha3_512::new();
-                    // hasher.update(&l);
-                    println!("sending off block {}!!!",lastblock.bnum);
-                    m.push(3u8);
-                    self.inner.broadcast(m);
+        
     
-                    l.push(7u8);
-                    self.inner.broadcast(l);
+                        l.push(7u8);
+                        self.inner.broadcast(l);
+                        m.push(3u8);
+                        self.inner.broadcast(m);
     
-                    self.points = HashMap::new();
-                    self.scalars = HashMap::new();
-                    self.sigs = vec![];
     
-                    // let m = bincode::serialize(&self.lastblock).unwrap();
-                    // let mut hasher = Sha3_512::new();
-                    // hasher.update(&m);
-                    // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                    // self.bnum += 1;
-                    
-                    self.stepeven = false;
+                        
+    
+                        println!("made a block with {} transactions!",self.lastblock.txs.len());
+                        did_something = true;
+                    } else {
+                        println!("failed to make a block :(");
+                        did_something = false;
+                    }
+    
                     self.timekeeper = Instant::now();
-
-                } else { // need an extra round to weed out liers
-                    let points = keys.iter().map(|x| self.points[x]).collect::<Vec<_>>();
-                    let p = MultiSignature::sum_group_x(&points);
-                    self.points.insert(usize::MAX,p.decompress().unwrap());
-                    let mut m = p.as_bytes().to_vec();
+                }
+                if !self.stepeven & (self.timekeeper.elapsed().as_secs() > 1) & (self.comittee[self.headshard].iter().filter(|&x|self.points.contains_key(x)).count() > 85) {
+                    // should prob check that validators are accurate here?
+                    let points = self.points.par_iter().map(|x| *x.1).collect::<Vec<_>>();
+                    let mut m = MultiSignature::sum_group_x(&points).as_bytes().to_vec();
                     m.push(5u8);
                     self.inner.broadcast(m);
-                    self.points = keys.iter().map(|&x| (*x,self.points[x])).collect::<HashMap<_,_>>();
-                    self.scalars = HashMap::new();
-
-                    self.timekeeper -= Duration::from_secs(1);
+                    // self.points = HashMap::new();
+                    self.points.insert(usize::MAX,MultiSignature::sum_group_x(&points).decompress().unwrap());
+                    self.stepeven = true;
+                    did_something = true;
+    
                 }
-                did_something = true;
-
-            }
-            if !self.keylocation.iter().all(|x| self.stkinfo[*x as usize].0 != self.leader) & (self.timekeeper.elapsed().as_secs() > 10) { // make this a floating point function for variable time
-                self.sigs = vec![];
-                self.points = HashMap::new();
-                self.scalars = HashMap::new();
-                let mut m = bincode::serialize(&self.txses).unwrap();
-                m.push(1u8);
-                self.inner.broadcast(m);
-                self.txses = vec![];
-                self.timekeeper = Instant::now();
-                if self.txses.len() == 0 {self.multisig = true;}
-                did_something = true;
+                let k = self.scalars.keys().collect::<HashSet<_>>();
+                // println!("{:?}",self.stepeven & self.points.get(&usize::MAX).is_some() & !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2));
+                // println!("but also {:?}", self.comittee[0].iter().filter(|x| k.contains(x)).count());
+                // println!("but also {:?}", k);
+                if self.stepeven & self.points.get(&usize::MAX).is_some() & (self.timekeeper.elapsed().as_secs() > 2) & (self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > 85) {
+                    // self.multisig = false; // should definitely check that validators are accurate here
+                    // // this is for if everyone signed... really > 0.5 or whatever... 
+                    
+                    let sumpt = self.points.remove(&usize::MAX).unwrap();
+    
+                    let keys = self.points.clone();
+                    let mut keys = keys.keys().collect::<Vec<_>>();
+                    let mut s = Sha3_512::new();
+                    let mut m = self.leader.as_bytes().to_vec();
+                    m.extend(&self.lastname);
+                    m.extend(&(self.headshard as u16).to_le_bytes().to_vec());
+                    s.update(&m);
+                    s.update(sumpt.compress().as_bytes());
+                    let e = Scalar::from_hash(s);
+                    // println!("keys: {:?}",keys);
+                    let k = keys.len();
+                    keys.retain(|&x| (self.points[x] + e*self.stkinfo[*x].0.decompress().unwrap() == self.scalars[x]*PEDERSEN_H()) & self.comittee[self.headshard].contains(x));
+                    if k == keys.len() {
+    
+                        let failed_validators = vec![];
+                        let mut lastblock = NextBlock::default();
+                        lastblock.bnum = self.bnum;
+                        lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});
+                        lastblock.last_name = self.lastname.clone();
+                        lastblock.shards = vec![self.headshard as u16];
+        
+                        
+                        let m = vec![BLOCK_KEYWORD.to_vec(),(self.headshard as u16).to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.lastname.clone(),bincode::serialize(&lastblock.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+                        let mut s = Sha3_512::new();
+                        s.update(&m);
+                        let leader = Signature::sign(&self.key, &mut s,&self.keylocation.iter().next().unwrap());
+                        lastblock.leader = leader;
+        
+        
+                        let mut m = bincode::serialize(&lastblock).unwrap();
+                        let mut l = bincode::serialize(&lastblock.tolightning()).unwrap();
+                        
+                        // self.lastblock = lastblock;
+                        // let mut hasher = Sha3_512::new();
+                        // hasher.update(&l);
+                        println!("sending off block {}!!!",lastblock.bnum);
+                        m.push(3u8);
+                        self.inner.broadcast(m);
+        
+                        l.push(7u8);
+                        self.inner.broadcast(l);
+        
+                        self.points = HashMap::new();
+                        self.scalars = HashMap::new();
+                        self.sigs = vec![];
+        
+                        // let m = bincode::serialize(&self.lastblock).unwrap();
+                        // let mut hasher = Sha3_512::new();
+                        // hasher.update(&m);
+                        // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                        // self.bnum += 1;
+                        
+                        self.stepeven = false;
+                        self.timekeeper = Instant::now();
+    
+                    } else { // need an extra round to weed out liers
+                        let points = keys.iter().map(|x| self.points[x]).collect::<Vec<_>>();
+                        let p = MultiSignature::sum_group_x(&points);
+                        self.points.insert(usize::MAX,p.decompress().unwrap());
+                        let mut m = p.as_bytes().to_vec();
+                        m.push(5u8);
+                        self.inner.broadcast(m);
+                        self.points = keys.iter().map(|&x| (*x,self.points[x])).collect::<HashMap<_,_>>();
+                        self.scalars = HashMap::new();
+    
+                        self.timekeeper -= Duration::from_secs(1);
+                    }
+                    did_something = true;
+    
+                }
+                if self.timekeeper.elapsed().as_secs() > 10 { // make this a floating point function for variable time
+                    self.sigs = vec![];
+                    self.points = HashMap::new();
+                    self.scalars = HashMap::new();
+                    let mut m = bincode::serialize(&self.txses).unwrap();
+                    m.push(1u8);
+                    self.inner.broadcast(m);
+                    self.txses = vec![];
+                    self.timekeeper = Instant::now();
+                    // if self.txses.len() == 0 {self.multisig = true;}
+                    did_something = true;
+                }
             }
             // }
 
