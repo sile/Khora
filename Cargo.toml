@@ -11,16 +11,8 @@ name = "please_work"
 path = "src/bin/please_work.rs"
 
 [[bin]]
-name = "leader"
-path = "src/bin/leader.rs"
-
-[[bin]]
-name = "validator"
-path = "src/bin/validator.rs"
-
-[[bin]]
 name = "user"
-path = "src/bin/user.rs"
+path = "src/bin/user_incomplete.rs"
 
 [[bin]]
 name = "full_staker"

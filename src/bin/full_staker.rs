@@ -293,9 +293,6 @@ impl Future for StakerNode {
                                 self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
                                 self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, true);
                                 self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
-                                for i in 0..self.comittee.len() {
-                                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                                }
     
                                 let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
                                 if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
@@ -324,9 +321,20 @@ impl Future for StakerNode {
                                 }
                                 
                                 /* LEADER CHOSEN BY VOTES */
-                                self.leader = self.stkinfo[*self.comittee[self.headshard].iter().zip(self.votes.iter()).max_by_key(|(_,&y)| y).unwrap().0].0;
+                                let mut abouttoleave = self.exitqueue[self.headshard].clone();
+                                let abouttoleave = abouttoleave.drain(..10).collect::<Vec<_>>().into_iter().map(|z| self.comittee[self.headshard][z].clone()).collect::<HashSet<_>>();
+                                self.leader = self.stkinfo[*self.comittee[self.headshard].iter().zip(self.votes.iter()).max_by_key(|(x,&y)| {
+                                    if abouttoleave.contains(x) {
+                                        i32::MIN
+                                    } else {
+                                        y
+                                    }
+                                }).unwrap().0].0;
                                 /* LEADER CHOSEN BY VOTES */
                                 
+                                for i in 0..self.comittee.len() {
+                                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                                }
 
                                 self.timeframedone = true;
                                 self.waitingforleader = Instant::now();
