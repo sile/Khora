@@ -343,6 +343,9 @@ impl Future for StakerNode {
                                 /* LEADER CHOSEN BY VOTES */
                                 
                                 self.stepeven = false;
+                                self.sigs = vec![];
+                                self.points = HashMap::new();
+                                self.scalars = HashMap::new();
                                 self.timeframedone = true;
                                 self.waitingforleader = Instant::now();
                                 self.timekeeper = Instant::now();
