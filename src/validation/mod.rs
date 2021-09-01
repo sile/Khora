@@ -319,6 +319,9 @@ impl NextBlock { // need to sign the staker inputs too
         return NextBlock::default()
     }
     pub fn valimerge(key: &Scalar, location: &u64, leader: &CompressedRistretto, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, mypoolnum: &u16) -> Signature {
+        // WARNING:: MUST MAKE SURE blks[0] IS THE ONE YOU MADE YOURSELF
+        
+        
         let mut blks: Vec<NextBlock> = blks.par_iter().zip(val_pools).filter_map(|(x,y)| if x.verify(&y,&stkstate).is_ok() {Some(x.to_owned())} else {None}).collect();
         let mut blk = blks.remove(0); // their own shard should be this one!
         // blk.shards = vec![*mypoolnum].into_iter().chain(blk.shards.into_iter()).collect::<Vec<_>>(); // main shard should be contributing as a shard while waiting

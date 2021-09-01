@@ -189,6 +189,8 @@ impl BloomFilter {
 pub struct BloomFile {
     h1: AHasher,
     h2: AHasher,
+    key1: u128,
+    key2: u128,
 }
 
 static FILE_NAME: &str = "bloomfile";
@@ -209,8 +211,13 @@ impl BloomFile {
         BloomFile {
             h1: AHasher::new_with_keys(key1,0),
             h2: AHasher::new_with_keys(key2,0),
+            key1: key1,
+            key2: key2,
         }
 
+    }
+    pub fn get_keys(&self) -> [u128;2] {
+        [self.key1, self.key2]
     }
     /// Insert item into this bloomfilter
     pub fn insert(&self, item: &[u8;32]) { // loc, pk, com = 32*3 = 96

@@ -30,10 +30,10 @@ use rayon::prelude::*;
 use kora::bloom::*;
 use kora::validation::*;
 use kora::ringmaker::*;
+use serde::{Serialize, Deserialize};
 
 use local_ipaddress;
 
-use serde::Serialize;
 pub fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
     let message = bincode::serialize(message).unwrap();
     let mut hasher = Sha3_512::new();
@@ -83,85 +83,95 @@ fn main() -> Result<(), MainError> {
         // .finish(executor.handle(), UnixtimeLocalNodeIdGenerator::new());
         
         // just use a different local node id to represent the comittee?
-    let mut node = NodeBuilder::new().logger(logger).finish(service.handle());
-    println!("{:?}",node.id());
+    let mut backnode = NodeBuilder::new().logger(logger).finish(service.handle());
+    println!("{:?}",backnode.id());
     if let Some(contact) = matches.value_of("CONTACT_SERVER") {
         let contact: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), contact).parse())?; // gatech
         println!("contact: {:?}",contact);
-        node.join(NodeId::new(contact, LocalNodeId::new(0)));
+        backnode.join(NodeId::new(contact, LocalNodeId::new(0)));
     }
 
 
-
-    let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-    let mut initial_history = vec![(leader,1u64)];
-
-    let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-    initial_history.push((otheruser,1u64));
-
-    
-    let me = Account::new(&format!("{}",pswrd));
-    let validator = me.stake_acc().receive_ot(&me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
-    let key = validator.sk.unwrap();
-    let mut keylocation = HashSet::new();
-
-    History::initialize();
-    BloomFile::initialize_bloom_file();
-    let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this
-
-    let mut smine = vec![];
-    for i in 0..initial_history.len() {
-        if initial_history[i].0 == me.stake_acc().derive_stk_ot(&Scalar::from(initial_history[i].1)).pk.compress() {
-            smine.push([i as u64,initial_history[i].1]);
-            keylocation.insert(i as u64);
-            println!("\n\nhey i guess i founded this crypto!\n\n");
-        }
-
-    }
 
 
     let (message_tx, message_rx) = mpsc::channel();
-    let node = StakerNode {
-        inner: node,
-        save_history: (matches.value_of("SAVE_HISTORY").unwrap() != "0"),
-        message_rx: message_rx,
-        me: me,
-        mine: vec![],
-        smine: smine, // [location, amount]
-        key: key,
-        keylocation: keylocation,
-        leader: leader,
-        overthrown: HashSet::new(),
-        votes: vec![0;128],
-        stkinfo: initial_history.clone(),
-        lastblock: NextBlock::default(),
-        queue: (0..max_shards).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
-        exitqueue: (0..max_shards).map(|_|(0..128usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
-        comittee: (0..max_shards).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>(),
-        lastname: vec![],
-        bloom: bloom,
-        bnum: 1u64,
-        lastbnum: 0u64,
-        height: 0u64,
-        sheight: 1u64,
-        alltagsever: vec![],
-        txses: vec![],
-        sigs: vec![],
-        multisig: false,
-        bannedlist: HashSet::new(),
-        points: HashMap::new(),
-        groupxnonce: 0,
-        scalars: HashMap::new(),
-        timekeeper: Instant::now(),
-        waitingforleader: Instant::now(),
-        timeframedone: false,
-        stepeven: false,
-        clogging: 0,
-        emitmessage: Instant::now(),
-        laststkgossip: HashSet::new(),
-        headshard: 0,
-        usurpingtime: Instant::now(),
-    };
+
+
+
+    let node: StakerNode;
+    if pswrd != "load" {
+        let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        let mut initial_history = vec![(leader,1u64)];
+
+        // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        // initial_history.push((otheruser,1u64));
+
+        
+        let me = Account::new(&format!("{}",pswrd));
+        let validator = me.stake_acc().receive_ot(&me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
+        let key = validator.sk.unwrap();
+        let mut keylocation = HashSet::new();
+
+        History::initialize();
+        BloomFile::initialize_bloom_file();
+        let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this
+
+        let mut smine = vec![];
+        for i in 0..initial_history.len() {
+            if initial_history[i].0 == me.stake_acc().derive_stk_ot(&Scalar::from(initial_history[i].1)).pk.compress() {
+                smine.push([i as u64,initial_history[i].1]);
+                keylocation.insert(i as u64);
+                println!("\n\nhey i guess i founded this crypto!\n\n");
+            }
+
+        }
+
+
+        node = StakerNode {
+            inner: backnode,
+            message_rx: message_rx,
+            save_history: (matches.value_of("SAVE_HISTORY").unwrap() != "0"),
+            me: me,
+            mine: vec![],
+            smine: smine, // [location, amount]
+            key: key,
+            keylocation: keylocation,
+            leader: leader,
+            overthrown: HashSet::new(),
+            votes: vec![0;128],
+            stkinfo: initial_history.clone(),
+            lastblock: NextBlock::default(),
+            queue: (0..max_shards).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
+            exitqueue: (0..max_shards).map(|_|(0..128usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
+            comittee: (0..max_shards).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>(),
+            lastname: Scalar::from(1u8).as_bytes().to_vec(),
+            bloom: bloom,
+            bnum: 0u64,
+            lastbnum: 0u64,
+            height: 0u64,
+            sheight: 1u64,
+            alltagsever: vec![],
+            txses: vec![],
+            sigs: vec![],
+            bannedlist: HashSet::new(),
+            points: HashMap::new(),
+            groupxnonce: 0,
+            scalars: HashMap::new(),
+            timekeeper: Instant::now(),
+            waitingforleader: Instant::now(),
+            timeframedone: false,
+            stepeven: false,
+            clogging: 0,
+            emitmessage: Instant::now(),
+            laststkgossip: HashSet::new(),
+            headshard: 0,
+            usurpingtime: Instant::now(),
+        };
+    } else {
+        node = StakerNode::load(backnode, message_rx);
+    }
+
+
     executor.spawn(service.map_err(|e| panic!("{}", e)));
     executor.spawn(node);
 
@@ -187,11 +197,39 @@ fn main() -> Result<(), MainError> {
     Ok(())
 }
 
-struct StakerNode {
-    inner: Node<Vec<u8>>,
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+struct SavedNode {
     save_history: bool, //just testing. in real code this is true; but i need to pretend to be different people on the same computer
     me: Account,
+    mine: Vec<(u64, OTAccount)>,
+    smine: Vec<[u64; 2]>, // [location, amount]
+    key: Scalar,
+    keylocation: HashSet<u64>,
+    leader: CompressedRistretto,
+    overthrown: HashSet<CompressedRistretto>,
+    votes: Vec<i32>,
+    stkinfo: Vec<(CompressedRistretto,u64)>,
+    lastblock: NextBlock,
+    queue: Vec<VecDeque<usize>>,
+    exitqueue: Vec<VecDeque<usize>>,
+    comittee: Vec<Vec<usize>>,
+    lastname: Vec<u8>,
+    bloom: [u128;2],
+    bnum: u64,
+    lastbnum: u64,
+    height: u64,
+    sheight: u64,
+    alltagsever: Vec<CompressedRistretto>,
+    headshard: usize,
+    view: Vec<SocketAddr>,
+}
+
+struct StakerNode {
+    inner: Node<Vec<u8>>,
     message_rx: mpsc::Receiver<String>,
+    save_history: bool, //just testing. in real code this is true; but i need to pretend to be different people on the same computer
+    me: Account,
     mine: Vec<(u64, OTAccount)>,
     smine: Vec<[u64; 2]>, // [location, amount]
     key: Scalar,
@@ -213,7 +251,6 @@ struct StakerNode {
     alltagsever: Vec<CompressedRistretto>,
     txses: Vec<Vec<u8>>,
     sigs: Vec<NextBlock>,
-    multisig: bool,
     bannedlist: HashSet<NodeId>,
     points: HashMap<usize,RistrettoPoint>, // supplier, point
     groupxnonce: u64,
@@ -227,6 +264,87 @@ struct StakerNode {
     laststkgossip: HashSet<Vec<u8>>,
     headshard: usize,
     usurpingtime: Instant,
+}
+impl StakerNode {
+    fn save(&self) {
+        let sn = SavedNode {
+            save_history: self.save_history,
+            me: self.me,
+            mine: self.mine.clone(),
+            smine: self.smine.clone(), // [location, amount]
+            key: self.key,
+            keylocation: self.keylocation.clone(),
+            leader: self.leader.clone(),
+            overthrown: self.overthrown.clone(),
+            votes: self.votes.clone(),
+            stkinfo: self.stkinfo.clone(),
+            lastblock: self.lastblock.clone(),
+            queue: self.queue.clone(),
+            exitqueue: self.exitqueue.clone(),
+            comittee: self.comittee.clone(),
+            lastname: self.lastname.clone(),
+            bloom: self.bloom.get_keys(),
+            bnum: self.bnum,
+            lastbnum: self.lastbnum,
+            height: self.height,
+            sheight: self.sheight,
+            alltagsever: self.alltagsever.clone(),
+            headshard: self.headshard.clone(),
+            view: self.inner.hyparview_node().active_view().iter().map(|x| x.address()).collect::<Vec<_>>(),
+        }; // just redo initial conditions on the rest
+        let mut sn = bincode::serialize(&sn).unwrap();
+        let mut f = File::create("myNode").unwrap();
+        f.write_all(&mut sn).unwrap();
+    }
+    fn load(inner: Node<Vec<u8>>, message_rx: mpsc::Receiver<String>,) -> StakerNode {
+        let mut buf = Vec::<u8>::new();
+        let mut f = File::open("myNode").unwrap();
+        f.read_to_end(&mut buf).unwrap();
+
+        let sn = bincode::deserialize::<SavedNode>(&buf).unwrap();
+        let mut inner = inner;
+        inner.dm(vec![], &sn.view.iter().map(|&x| NodeId::new(x, LocalNodeId::new(0))).collect::<Vec<_>>(), true);
+        StakerNode {
+            inner: inner,
+            message_rx,
+            timekeeper: Instant::now(),
+            waitingforleader: Instant::now(),
+            emitmessage: Instant::now(),
+            usurpingtime: Instant::now(),
+            txses: vec![],
+            sigs: vec![],
+            bannedlist: HashSet::new(),
+            points: HashMap::new(),
+            scalars: HashMap::new(),
+            laststkgossip: HashSet::new(),
+            groupxnonce: 0,
+            clogging: 0,
+            stepeven: false,
+            timeframedone: false,
+            save_history: sn.save_history,
+            me: sn.me,
+            mine: sn.mine.clone(),
+            smine: sn.smine.clone(), // [location, amount]
+            key: sn.key,
+            keylocation: sn.keylocation.clone(),
+            leader: sn.leader.clone(),
+            overthrown: sn.overthrown.clone(),
+            votes: sn.votes.clone(),
+            stkinfo: sn.stkinfo.clone(),
+            lastblock: sn.lastblock.clone(),
+            queue: sn.queue.clone(),
+            exitqueue: sn.exitqueue.clone(),
+            comittee: sn.comittee.clone(),
+            lastname: sn.lastname.clone(),
+            bloom: BloomFile::from_keys(sn.bloom[0],sn.bloom[1]),
+            bnum: sn.bnum,
+            lastbnum: sn.lastbnum,
+            height: sn.height,
+            sheight: sn.sheight,
+            alltagsever: sn.alltagsever.clone(),
+            headshard: sn.headshard.clone(),
+        }
+    }
 }
 impl Future for StakerNode {
     type Item = ();
@@ -253,7 +371,7 @@ impl Future for StakerNode {
                         } else if mtype == 1 {
                             let m: Vec<Vec<u8>> = bincode::deserialize(&m).unwrap(); // come up with something better
                             let m = m.into_par_iter().map(|x| bincode::deserialize(&x).unwrap()).collect::<Vec<PolynomialTransaction>>();
-    
+
                             for keylocation in &self.keylocation {
                                 let m = NextBlock::valicreate(&self.key, &keylocation, &self.leader, &m, &(self.headshard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
                                 if m.txs.len() > 0 {
@@ -288,8 +406,10 @@ impl Future for StakerNode {
     
                             let com = self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
                             println!("names match up: {}",lastblock.last_name == self.lastname);
-                            println!("block verified: {}",lastblock.verify(&com[self.headshard], &self.stkinfo).unwrap());
-                            if (lastblock.last_name == self.lastname) & lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok() {
+                            println!("block verified: {}",lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).unwrap());
+                            if (lastblock.shards[0] as usize >= self.headshard) & (lastblock.last_name == self.lastname) & lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok() {
+                                self.headshard = lastblock.shards[0] as usize;
+
                                 self.lastblock = lastblock;
                                 println!("=========================================================\nyay!");
                                 // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
@@ -297,24 +417,27 @@ impl Future for StakerNode {
                                 self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
                                 self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
                                 self.keylocation = self.smine.iter().map(|x| x[0]).collect();
-                                self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
-                                self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
-    
-                                for i in 0..self.comittee.len() {
-                                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                                }
 
-                                let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
+                                for _ in self.bnum..=self.lastblock.bnum { // add whole different scannings for empty blocks
+                                    self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
+                                    self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
+        
+                                    for i in 0..self.comittee.len() {
+                                        select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                                    }
+                                    self.bnum += 1;
+                                }
+                                
                                 if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
+                                    let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
                                     println!("saving block...");
                                     let mut f = File::create(format!("blocks/b{}",self.lastblock.bnum)).unwrap();
                                     f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
                                     self.lastbnum = self.bnum;
+                                    let mut hasher = Sha3_512::new();
+                                    hasher.update(lightning);
+                                    self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                                 }
-                                let mut hasher = Sha3_512::new();
-                                hasher.update(lightning);
-                                self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                                self.bnum += 1;
                                 
 
                                 
@@ -342,6 +465,8 @@ impl Future for StakerNode {
                                 }).unwrap().0].0;
                                 /* LEADER CHOSEN BY VOTES */
                                 
+                                println!("block {} name: {:?}",self.bnum, self.lastname);
+
                                 self.stepeven = false;
                                 self.sigs = vec![];
                                 self.points = HashMap::new();
@@ -383,6 +508,20 @@ impl Future for StakerNode {
                                 println!("someone's REALLY trying to send you a scalar!");
                                 if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
                                     self.scalars.insert(pk,Scalar::from_bits(m.try_into().unwrap()));
+                                }
+                            }
+                        } else if mtype == 121 {
+                            let theirnum = u64::from_le_bytes(m.try_into().unwrap());
+                            println!("they're at {}, syncing them...",theirnum);
+                            for b in theirnum+1..=self.bnum {
+                                let file = format!("blocks/b{}",b);
+                                println!("checking for file {:?}...",file);
+                                if let Ok(mut file) = File::open(file) {
+                                    let mut x = vec![];
+                                    file.read_to_end(&mut x).unwrap();
+                                    println!("sending block {} of {}\t{:?}",b,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
+                                    x.push(3);
+                                    self.inner.dm(x,&vec![msg.id().node()],false);
                                 }
                             }
                         } else if mtype == 129 {
@@ -554,6 +693,21 @@ USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER 
                         println!("\ncomittee:\n---------------------------------------------\n{:?}\n",self.comittee[self.headshard]);
                         println!("\nleadership:\n---------------------------------------------\nmyself: {:?}\nleader: {:?}\n",self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress().as_bytes(), self.leader.as_bytes());
                         println!("\ntime:\n---------------------------------------------\n{:?}s\n",self.timekeeper.elapsed().as_secs());
+                        println!("\nblock number:\n---------------------------------------------\n{:?}\n",self.bnum);
+                        println!("\nblock name:\n---------------------------------------------\n{:?}\n",self.lastname);
+                    } else if istx == 115 /* s */ {
+                        self.save();
+                        // maybe do something else??? like save or load contacts???
+
+
+                        // add sync request button and rotor and timer tp cycle through friends to sync in dm
+
+                    } else if istx == 121 /* y */ {
+                        let mut mynum = self.bnum.to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
+                        mynum.push(121);
+                        let mut friend = self.inner.hyparview_node().active_view().to_vec();
+                        friend.extend(self.inner.hyparview_node().passive_view().to_vec());
+                        self.inner.dm(mynum, &friend, false); // you really dont need to send it to all your friends though
                     } else if istx == 98 /* b */ {
                         println!("\nlast block:\n---------------------------------------------\n{:#?}\n",self.lastblock);
                     } else if istx == 97 /* a */ { // 9876 9875a   (just input the ports, only for testing on a single computer)
@@ -757,12 +911,6 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
                 }
             }
             // }
-
-
-
-
-
-
 
 
             if self.usurpingtime.elapsed().as_secs() > 300 { // this will be much larger

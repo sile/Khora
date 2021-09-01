@@ -216,7 +216,7 @@ impl ClientServiceHandle {
     /// Delete's all you connections hopefully
     pub fn delete_friends(&mut self) {
         /* that makes you think your friends are dead so you cant talk to them but they can still talk to you */
-        let mut x = self.channels.load();
+        let x = self.channels.load();
         // let mut y = HashMap::new();
         for x in x.iter() {
             // let mut a = x.1.clone();
@@ -233,6 +233,16 @@ impl ClientServiceHandle {
         // self.channels = Arc::new(AtomicImmut::new(y));
 
         
+    }
+
+
+    /// Delete's one of you connections hopefully
+    pub fn delete_friend(&mut self, addr: &SocketAddr) {
+        /* that makes you think your friends are dead so you cant talk to them but they can still talk to you */
+        let command = Command::RemoveChannel {
+            server: *addr
+        };
+        self.command_tx.send(command).unwrap();        
     }
 
     pub(crate) fn send_message(&self, server: SocketAddr, message: Message) -> bool {

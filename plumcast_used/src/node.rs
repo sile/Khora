@@ -237,6 +237,21 @@ impl<M: MessagePayload> Node<M> {
 
     }
     /// unmutes everyone because you're done validating
+    pub fn delete_friend(&mut self, who: &NodeId) {
+        self.plumtree_node.eager_push_peers.remove(who);
+        self.plumtree_node.lazy_push_peers.remove(who);
+        let (mut x, _y): (Vec<usize>,Vec<NodeId>) = self.hyparview_node.active_view.iter().enumerate().filter(|(_x,&y)| y == *who).unzip();
+        if let Some(x) = x.pop() {
+            self.hyparview_node.active_view.remove(x);
+        }
+        let (mut x, _y): (Vec<usize>,Vec<NodeId>) = self.hyparview_node.passive_view.iter().enumerate().filter(|(_x,&y)| y == *who).unzip();
+        if let Some(x) = x.pop() {
+            self.hyparview_node.passive_view.remove(x);
+        }
+        self.service.rpc_service.delete_friend(&who.address())
+        
+    }
+    /// unmutes everyone because you're done validating
     pub fn unmute_all(&mut self) {
         
         self.plumtree_node.eager_push_peers.extend(&self.muted_friends[0]);

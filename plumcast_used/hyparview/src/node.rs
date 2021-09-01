@@ -26,8 +26,8 @@ use std::hash::Hash;
 pub struct Node<T, R = ThreadRng> {
     id: T,
     actions: VecDeque<Action<T>>,
-    active_view: Vec<T>,
-    passive_view: Vec<T>,
+    pub active_view: Vec<T>,
+    pub passive_view: Vec<T>,
     pub isolationist: bool,
     paused: [HashSet<T>;2],
     rng: R,
