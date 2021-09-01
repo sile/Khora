@@ -419,25 +419,29 @@ impl Future for StakerNode {
                                 self.keylocation = self.smine.iter().map(|x| x[0]).collect();
 
                                 for _ in self.bnum..=self.lastblock.bnum { // add whole different scannings for empty blocks
-                                    self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
-                                    self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
-        
-                                    for i in 0..self.comittee.len() {
-                                        select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+
+
+                                    if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
+                                        self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
+                                        self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
+            
+                                        for i in 0..self.comittee.len() {
+                                            select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                                        }
+
+                                        let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
+                                        println!("saving block...");
+                                        let mut f = File::create(format!("blocks/b{}",self.lastblock.bnum)).unwrap();
+                                        f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
+                                        self.lastbnum = self.bnum;
+                                        let mut hasher = Sha3_512::new();
+                                        hasher.update(lightning);
+                                        self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                                     }
                                     self.bnum += 1;
+
                                 }
                                 
-                                if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
-                                    let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
-                                    println!("saving block...");
-                                    let mut f = File::create(format!("blocks/b{}",self.lastblock.bnum)).unwrap();
-                                    f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
-                                    self.lastbnum = self.bnum;
-                                    let mut hasher = Sha3_512::new();
-                                    hasher.update(lightning);
-                                    self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                                }
                                 
 
                                 
