@@ -144,7 +144,7 @@ fn main() -> Result<(), MainError> {
             queue: (0..max_shards).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
             exitqueue: (0..max_shards).map(|_|(0..128usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
             comittee: (0..max_shards).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>(),
-            lastname: Scalar::from(1u8).as_bytes().to_vec(),
+            lastname: Scalar::one().as_bytes().to_vec(),
             bloom: bloom,
             bnum: 0u64,
             lastbnum: 0u64,
@@ -405,6 +405,7 @@ impl Future for StakerNode {
 
     
                             let com = self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
+                            println!("someone's sending block {} with name: {:?}",lastblock.bnum,lastblock.last_name);
                             println!("names match up: {}",lastblock.last_name == self.lastname);
                             println!("block verified: {}",lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).unwrap());
                             if (lastblock.shards[0] as usize >= self.headshard) & (lastblock.last_name == self.lastname) & lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok() {
@@ -414,34 +415,42 @@ impl Future for StakerNode {
                                 println!("=========================================================\nyay!");
                                 // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
 
-                                for _ in self.bnum..=self.lastblock.bnum { // add whole different scannings for empty blocks
+                                for _ in self.bnum..self.lastblock.bnum { // add whole different scannings for empty blocks
+                                    println!("I missed a block!");
+                                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.stkinfo, &mut self.smine);
+                                    NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
 
-
-                                    if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
-                                        self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
-                                        self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
-                                        self.keylocation = self.smine.iter().map(|x| x[0]).collect();
-        
-                                        self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
-                                        self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
-            
-                                        for i in 0..self.comittee.len() {
-                                            select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                                        }
-
-                                        let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
-                                        println!("saving block...");
-                                        let mut f = File::create(format!("blocks/b{}",self.lastblock.bnum)).unwrap();
-                                        f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
-                                        self.lastbnum = self.bnum;
-                                        let mut hasher = Sha3_512::new();
-                                        hasher.update(lightning);
-                                        self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                                    self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
+                                    for i in 0..self.comittee.len() {
+                                        select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                                     }
                                     self.bnum += 1;
-
+                                    // self.lastname = (Scalar::from_canonical_bytes(self.lastname.clone().try_into().unwrap()).unwrap() + Scalar::one()).as_bytes().to_vec();
                                 }
-                                
+                                if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
+                                    self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
+                                    self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
+                                    self.keylocation = self.smine.iter().map(|x| x[0]).collect();
+                                    self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
+
+                                    let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
+                                    println!("saving block...");
+                                    let mut f = File::create(format!("blocks/b{}",self.lastblock.bnum)).unwrap();
+                                    f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
+                                    self.lastbnum = self.bnum;
+                                    let mut hasher = Sha3_512::new();
+                                    hasher.update(lightning);
+                                    self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                                } else {
+                                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.stkinfo, &mut self.smine);
+                                    NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
+                                }
+                                self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
+                                for i in 0..self.comittee.len() {
+                                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                                }
+                                self.bnum += 1;
+                                // self.lastname = (Scalar::from_canonical_bytes(self.lastname.clone().try_into().unwrap()).unwrap() + Scalar::one()).as_bytes().to_vec();
                                 
 
                                 
@@ -706,8 +715,22 @@ USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER 
 
                         // add sync request button and rotor and timer tp cycle through friends to sync in dm
 
+                    } else if istx == 100 /* d */ {
+                        let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+                        let mut initial_history = vec![(leader,1u64)];
+                        self.bnum = 0;
+                        self.lastbnum = 0;
+                        self.height = 0;
+                        self.sheight = 0;
+                        self.lastname = Scalar::one().as_bytes().to_vec();
+                        self.lastblock = NextBlock::default();
+                        self.queue = (0..self.comittee.len()).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
+                        self.exitqueue = (0..self.comittee.len()).map(|_|(0..128usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
+                        self.comittee = (0..self.comittee.len()).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>();
+                        self.stkinfo = initial_history.clone();
+
                     } else if istx == 121 /* y */ {
-                        let mut mynum = self.bnum.to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
+                        let mut mynum = (self.bnum - 1).to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
                         mynum.push(121);
                         let mut friend = self.inner.hyparview_node().active_view().to_vec();
                         friend.extend(self.inner.hyparview_node().passive_view().to_vec());
@@ -901,7 +924,7 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
                     did_something = true;
     
                 }
-                if self.timekeeper.elapsed().as_secs() > 10 { // make this a floating point function for variable time
+                if self.timekeeper.elapsed().as_secs() > 5 { // make this a floating point function for variable time
                     self.sigs = vec![];
                     self.points = HashMap::new();
                     self.scalars = HashMap::new();
