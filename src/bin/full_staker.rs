@@ -721,7 +721,7 @@ USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER 
                         self.bnum = 0;
                         self.lastbnum = 0;
                         self.height = 0;
-                        self.sheight = 0;
+                        self.sheight = 1;
                         self.lastname = Scalar::one().as_bytes().to_vec();
                         self.lastblock = NextBlock::default();
                         self.queue = (0..self.comittee.len()).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
