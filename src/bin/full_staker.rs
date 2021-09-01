@@ -414,14 +414,14 @@ impl Future for StakerNode {
                                 println!("=========================================================\nyay!");
                                 // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
 
-                                self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
-                                self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
-                                self.keylocation = self.smine.iter().map(|x| x[0]).collect();
-
                                 for _ in self.bnum..=self.lastblock.bnum { // add whole different scannings for empty blocks
 
 
                                     if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
+                                        self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
+                                        self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
+                                        self.keylocation = self.smine.iter().map(|x| x[0]).collect();
+        
                                         self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
                                         self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
             
