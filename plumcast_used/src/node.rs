@@ -204,6 +204,34 @@ impl<M: MessagePayload> Node<M> {
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
+    /// mute node
+    pub fn mute(&mut self, node: &NodeId) {
+        
+        if self.plumtree_node.eager_push_peers.remove(&node) {
+            self.muted_friends[0].insert(*node);
+        }
+        if self.plumtree_node.lazy_push_peers.remove(&node) {
+            self.muted_friends[1].insert(*node);
+        }
+        self.hyparview_node.active_view.retain(|x| x != node);
+        self.hyparview_node.passive_view.retain(|x| x != node);
+        self.service.rpc_service.delete_friend(&node.address());
+
+    }
+    /// unmute node
+    pub fn unmute(&mut self, node: &NodeId) {
+
+        if self.muted_friends[0].remove(&node) {
+            self.plumtree_node.eager_push_peers.insert(*node);
+        }
+        if self.muted_friends[1].remove(&node) {
+            self.plumtree_node.lazy_push_peers.insert(*node);
+        }
+        if !self.hyparview_node.passive_view.iter().any(|x| x == node) {
+            self.hyparview_node.passive_view.push(*node);
+        }
+
+    }
     /// mutes everyone because you're about to start validating
     pub fn mute_all(&mut self) {
         
@@ -236,7 +264,7 @@ impl<M: MessagePayload> Node<M> {
         }
 
     }
-    /// unmutes everyone because you're done validating
+    /// deletes a friend
     pub fn delete_friend(&mut self, who: &NodeId) {
         self.plumtree_node.eager_push_peers.remove(who);
         self.plumtree_node.lazy_push_peers.remove(who);
