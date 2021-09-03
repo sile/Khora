@@ -523,8 +523,8 @@ impl Future for StakerNode {
                                     self.scalars.insert(pk,Scalar::from_bits(m.try_into().unwrap()));
                                 }
                             }
-                        } else if mtype == 105 /* i */{
-                            // add identity to known people and delete oldest maybe
+                        } else if mtype == 105 /* i */ {
+                            // add identity to known people and delete oldest maybe (VecDeque)
                         } else if mtype == 112 /* p */ {
                             self.laststkgossip.insert(m);
                         } else if mtype == 114 /* r */ {
@@ -533,9 +533,32 @@ impl Future for StakerNode {
                             x.append(&mut y);
                             x.push(254);
                             self.inner.dm(x,&vec![msg.id().node()],false);
-                        } else if mtype == 116 /* t */{
-                            // track and dm back responce
-                        } else if mtype == 121 /* y */{
+                        } else if mtype == 116 /* t */ { // this is totally untested
+                            let tsk = Scalar::from_canonical_bytes(m.try_into().unwrap()).unwrap();
+                            let mut location = 0u64;
+                            let mut allyours = vec![];
+                            for b in 0..=self.bnum {
+                                let file = format!("blocks/b{}",b);
+                                println!("checking for file {:?}...",file);
+                                if let Ok(mut file) = File::open(file) {
+                                    let mut x = vec![];
+                                    file.read_to_end(&mut x).unwrap();
+                                    let block = bincode::deserialize::<NextBlock>(&x).unwrap().tolightning();
+                                    println!("sending block {} of {}\t{:?}",b,self.bnum,block.last_name);
+                                    let thisheight = block.info.txout.len() as u64;
+                                    let yours = block.info.txout.par_iter().enumerate().filter_map(|(i,a)| {
+                                        if a.track_ot(&tsk) {
+                                            Some((i as u64 + location,a.clone()))
+                                        } else {
+                                            None
+                                        }
+                                    }).collect::<Vec<_>>();
+                                    allyours.par_extend(yours);
+                                    location += thisheight;
+                                }
+                            }
+                            self.inner.dm(bincode::serialize(&allyours).unwrap(),&vec![msg.id().node()],false);
+                        } else if mtype == 121 /* y */ {
                             let theirnum = u64::from_le_bytes(m.try_into().unwrap());
                             println!("they're at {}, syncing them...",theirnum);
                             for b in theirnum+1..=self.bnum {
