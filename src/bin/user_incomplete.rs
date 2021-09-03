@@ -211,7 +211,7 @@ impl Future for UserNode {
                         if self.lastblock.last_name == self.lastname {
                             println!("===============================\nyay!");
                             self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                            self.lastblock.scan_as_noone(&mut self.stkinfo,&self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>(), &mut self.queue, &mut self.exitqueue, &mut self.comittee);
+                            self.lastblock.scan_as_noone(&mut self.stkinfo,&mut self.queue, &mut self.exitqueue, &mut self.comittee);
                             for i in 0..self.comittee.len() {
                                 select_stakers(&self.lastname, &0u64, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                             }

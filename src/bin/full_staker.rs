@@ -417,7 +417,7 @@ impl Future for StakerNode {
 
                                 for _ in self.bnum..self.lastblock.bnum { // add whole different scannings for empty blocks
                                     println!("I missed a block!");
-                                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.stkinfo, &mut self.smine);
+                                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
                                     NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
 
                                     self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
@@ -442,7 +442,7 @@ impl Future for StakerNode {
                                     hasher.update(lightning);
                                     self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                                 } else {
-                                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.stkinfo, &mut self.smine);
+                                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
                                     NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
                                 }
                                 self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
@@ -523,7 +523,19 @@ impl Future for StakerNode {
                                     self.scalars.insert(pk,Scalar::from_bits(m.try_into().unwrap()));
                                 }
                             }
-                        } else if mtype == 121 {
+                        } else if mtype == 105 /* i */{
+                            // add identity to known people and delete oldest maybe
+                        } else if mtype == 112 /* p */ {
+                            self.laststkgossip.insert(m);
+                        } else if mtype == 114 /* r */ {
+                            let mut y = m[..8].to_vec();
+                            let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
+                            x.append(&mut y);
+                            x.push(254);
+                            self.inner.dm(x,&vec![msg.id().node()],false);
+                        } else if mtype == 116 /* t */{
+                            // track and dm back responce
+                        } else if mtype == 121 /* y */{
                             let theirnum = u64::from_le_bytes(m.try_into().unwrap());
                             println!("they're at {}, syncing them...",theirnum);
                             for b in theirnum+1..=self.bnum {
@@ -537,35 +549,6 @@ impl Future for StakerNode {
                                     self.inner.dm(x,&vec![msg.id().node()],false);
                                 }
                             }
-                        } else if mtype == 129 {
-                            self.laststkgossip.insert(m);
-                        } else if mtype == u8::MAX {
-                            println!("address:              {:?}",self.inner.plumtree_node().id());
-                            println!("eager push pears:     {:?}",self.inner.plumtree_node().eager_push_peers());
-                            println!("lazy push pears:      {:?}",self.inner.plumtree_node().lazy_push_peers());
-                            println!("active view:          {:?}",self.inner.hyparview_node().active_view());
-                            println!("passive view:         {:?}",self.inner.hyparview_node().passive_view());
-                            
-                            
-                            // let mut s = Sha3_512::new();
-                            // s.update(&bincode::serialize(&self.inner.plumtree_node().id()).unwrap());
-                            // s.update(&bincode::serialize(&self.bnum).unwrap());
-                            // let s = bincode::serialize( // is bincode ok for things phones have to read???
-                            //     &(Signature::sign(&self.key, &mut s,&self.keylocation.iter().next().unwrap()),
-                            //     self.inner.hyparview_node().id().address(),
-                            //     self.bnum,)
-                            // ).unwrap();
-                            // let (a,b,c): (Signature, SocketAddr, u64) = bincode::deserialize(&s).unwrap();
-    
-    
-    
-    
-    
-                            let mut y = m[..8].to_vec();
-                            let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
-                            x.append(&mut y);
-                            x.push(254);
-                            self.inner.dm(x,&vec![msg.id().node()],false);
                         }
                     }
                 }
@@ -972,10 +955,10 @@ LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF |||||||||||||
                 self.emitmessage = Instant::now();
                 let mut m = hash_to_scalar(&self.stkinfo).as_bytes().to_vec();
                 if self.laststkgossip.contains(&m) & (self.clogging < 3000) { // 10 messages per second
-                    m.push(129u8);
+                    m.push(112u8);
                     self.inner.broadcast(m);
                     let mut m = Signature::sign_message(&self.key, &bincode::serialize(&self.inner.id().address()).unwrap(), &self.keylocation.iter().next().unwrap());
-                    m.push(130u8);
+                    m.push(105u8);
                     self.inner.broadcast(m);
                 }
                 self.laststkgossip = HashSet::new();

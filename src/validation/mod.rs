@@ -1,4 +1,3 @@
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use crate::account::*;
@@ -6,7 +5,6 @@ use rayon::prelude::*;
 use crate::transaction::*;
 use std::convert::TryInto;
 use std::iter::FromIterator;
-use std::ops::MulAssign;
 use crate::bloom::BloomFile;
 use rand::{thread_rng};
 use sha3::{Digest, Sha3_512};
@@ -25,8 +23,7 @@ use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
 pub const NUMBER_OF_VALIDATORS: u8 = 128;
 pub const REPLACERATE: usize = 2;
-pub const BLOCK_KEYWORD: [u8;6] = [107,105,109,98,101,114]; // todo: make this something else (a obvious version of her name)
-const NOT_BLOCK_KEYWORD: [u8;7] = [103,97,98,114,105,101,108]; // todo: make this something else (a obvious version of her name)
+pub const BLOCK_KEYWORD: [u8;6] = [107,105,109,98,101,114]; // todo: make this something else (a less obvious version of her name)
 pub const INFLATION_CONSTANT: f64 = 2u64.pow(30) as f64;
 pub const INFLATION_EXPONENT: f64 = 100f64;
 pub const PUNISHMENT_FRACTION: u64 = 1000;
@@ -318,7 +315,7 @@ impl NextBlock { // need to sign the staker inputs too
 
         return NextBlock::default()
     }
-    pub fn valimerge(key: &Scalar, location: &u64, leader: &CompressedRistretto, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, mypoolnum: &u16) -> Signature {
+    pub fn valimerge(key: &Scalar, location: &u64, leader: &CompressedRistretto, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, _mypoolnum: &u16) -> Signature {
         // WARNING:: MUST MAKE SURE blks[0] IS THE ONE YOU MADE YOURSELF
         
         
@@ -354,7 +351,7 @@ impl NextBlock { // need to sign the staker inputs too
         s.update(&m);
         Signature::sign(&key,&mut s, &location)
     }
-    pub fn finishmerge(key: &Scalar, location: &u64, sigs: &Vec<Signature>, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, headpool: &Vec<u64>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, mypoolnum: &u16) -> NextBlock {
+    pub fn finishmerge(key: &Scalar, location: &u64, sigs: &Vec<Signature>, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, headpool: &Vec<u64>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, _mypoolnum: &u16) -> NextBlock {
         let headpool = headpool.into_par_iter().map(|x|stkstate[*x as usize].0).collect::<Vec<CompressedRistretto>>();
         let mut blks: Vec<NextBlock> = blks.par_iter().zip(val_pools).filter_map(|(x,y)| if x.verify(&y, &stkstate).is_ok() {Some(x.to_owned())} else {None}).collect();
         let mut blk = blks.remove(0);
@@ -494,7 +491,7 @@ impl NextBlock { // need to sign the staker inputs too
             valinfo[i].1 += inflation;
         }
     }
-    pub fn pay_self_empty(bnum: &u64, shard: &usize, comittee: &Vec<Vec<usize>>, valinfo: &mut Vec<(CompressedRistretto,u64)>, mine: &mut Vec<[u64;2]>) {
+    pub fn pay_self_empty(bnum: &u64, shard: &usize, comittee: &Vec<Vec<usize>>, mine: &mut Vec<[u64;2]>) {
 
         let winners = comittee[*shard].iter();
         let inflation = (INFLATION_CONSTANT/2f64.powf(*bnum as f64/INFLATION_EXPONENT)) as u64/winners.len() as u64;
@@ -502,10 +499,7 @@ impl NextBlock { // need to sign the staker inputs too
             mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] += inflation;});
         }
     }
-    pub fn scan_as_noone(&self, valinfo: &mut Vec<(CompressedRistretto,u64)>, queue: &mut Vec<VecDeque<usize>>, exitqueue: &mut Vec<VecDeque<usize>>, comittee: &mut Vec<Vec<usize>>, save_history: bool) {
-        // let mut val_pools = val_pools.into_par_iter().enumerate().filter_map(|x|if !self.shards.par_iter().all(|y|*y!=(x.0 as u16)) {Some(x.1.clone())} else {None}).collect::<Vec<Vec<u64>>>();
-        
-        
+    pub fn scan_as_noone(&self, valinfo: &mut Vec<(CompressedRistretto,u64)>, queue: &mut Vec<VecDeque<usize>>, exitqueue: &mut Vec<VecDeque<usize>>, comittee: &mut Vec<Vec<usize>>, save_history: bool) {        
         let mut info = Syncedtx::from(&self.txs);
         if save_history {History::append(&info.txout)};
 
@@ -554,13 +548,6 @@ impl NextBlock { // need to sign the staker inputs too
         for i in lucky {
             valinfo[i].1 += punishments;
         }
-
-
-
-
-
-
-
 
 
 
@@ -688,10 +675,6 @@ impl NextBlock { // need to sign the staker inputs too
 
 
 
-
-
-
-
         let info = Syncedtx::from(&self.txs);
         let winners: Vec<usize>;
         let masochists: Vec<usize>;
@@ -735,15 +718,6 @@ impl NextBlock { // need to sign the staker inputs too
         for i in lucky {
             mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] += punishments;});
         }
-
-
-
-
-
-
-
-
-
 
 
     
@@ -881,18 +855,8 @@ impl LightningSyncBlock {
         }
         return Ok(true)
     }
-    pub fn scan_as_noone(&self, valinfo: &mut Vec<(CompressedRistretto,u64)>, val_pools: &Vec<Vec<u64>>, queue: &mut Vec<VecDeque<usize>>, exitqueue: &mut Vec<VecDeque<usize>>, comittee: &mut Vec<Vec<usize>>) {
-        // let mut val_pools = val_pools.into_par_iter().enumerate().filter_map(|x|if self.shards.par_iter().all(|y|*y!=(x.0 as u16)) {None} else {Some(x.1.clone())}).collect::<Vec<Vec<u64>>>();
-
-
-
-        // println!("val shards: {:?}",val_pools);
-        // println!("shards: {:?}",self.shards);
+    pub fn scan_as_noone(&self, valinfo: &mut Vec<(CompressedRistretto,u64)>, queue: &mut Vec<VecDeque<usize>>, exitqueue: &mut Vec<VecDeque<usize>>, comittee: &mut Vec<Vec<usize>>) {
         let mut info =self.info.clone();
-
-
-
-
 
         let winners: Vec<usize>;
         let masochists: Vec<usize>;
@@ -938,72 +902,6 @@ impl LightningSyncBlock {
         }
 
 
-
-
-
-
-
-
-
-
-
-
-
-        // let fees = info.fees;
-        // let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64;
-
-
-        // let mut moneygetters: Vec<u64>;
-        // if let Some(x) = self.validators.clone() {
-        //     moneygetters = x.par_iter().map(|x| x.pk).collect::<Vec<_>>();
-        // } else {
-        //     moneygetters = self.emptyness.clone().unwrap().pk;
-        // }
-        
-        // let feelovers = self.shards.par_iter().map(|&x| comittee[x as usize].clone()).flatten().collect::<Vec<_>>();
-        // let profits = fees/(feelovers.len() as u64*128);
-        // for v in feelovers.iter() {
-        //     valinfo[*v].1 += profits;
-        // }
-        // for v in val_pools[self.shards[0] as usize].iter() {
-        //     if moneygetters.par_iter().all(|x|x!=v) {
-        //         valinfo[*v as usize].1 -= valinfo[*v as usize].1/1000;
-        //     }
-        //     else {
-        //         valinfo[*v as usize].1 += inflation;
-        //     }
-        // }
-
-
-        // if info.tags.len() > 0 {
-        //     let profits = fees/(self.validators.len() as u64);
-        //     for v in val_pools.remove(0) {
-        //         if self.validators.par_iter().all(|x|x.pk!=v) {
-        //             valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
-        //         }
-        //         else {
-        //             valinfo[v as usize].1 += profits+inflation;
-        //         }
-        //     }
-        //     for vv in val_pools {
-        //         for v in vv {
-        //             if self.shards.par_iter().all(|x|*x!=v) {
-        //                 valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
-        //             }
-        //             else {
-        //                 valinfo[v as usize].1 += profits+inflation;
-        //             }
-        //         }
-        //     }
-        // } else {
-        //     for v in val_pools.remove(0) {
-        //         if self.emptyness.pk.par_iter().all(|x| *x != v) {
-        //             valinfo[v as usize].1 += inflation;
-        //         } else {
-        //             valinfo[v as usize].1 -= valinfo[v as usize].1/1000;
-        //         }
-        //     }
-        // }
 
 
         for x in self.info.stkout.iter().rev() {

@@ -304,69 +304,14 @@ impl OTAccount {
         }
     }
 
-    pub fn track_ot(&self, ask: &Scalar) -> bool {
+    pub fn track_ot(&self, ask: &Scalar) -> bool { // just says weather the person who sent me their tracking key owns the account
         let mut label = self.pk.compress().as_bytes().to_vec();
         label.extend( self.com.com.compress().as_bytes().to_vec());
         match self.eek.as_ref().unwrap().decrypt(ask, &label) {
-            Ok(_) => return true, // tracking secret key (can scan for tx)
-            Err(_) => return false
+            Ok(_) => return true,
+            Err(_) => return false,
         };
     }
-
-    // pub fn add_money(&mut self, acc: &Account, add_amount: &Scalar) -> Result<(), AccountError> {
-    //     let mut label = self.pk.compress().as_bytes().to_vec();
-    //     self.com.com = self.com.com + add_amount*RISTRETTO_BASEPOINT_POINT;
-    //     self.com.amount = Some(self.com.amount.unwrap() + add_amount);
-    //     label.extend( (self.com.com-add_amount*RISTRETTO_BASEPOINT_POINT).compress().as_bytes().to_vec());
-    //     // let ek = match self.eek.as_ref().unwrap().decrypt(&acc.ask, &label) {
-    //     //     Ok(ek) => ek, // tracking secret key (can scan for tx)
-    //     //     Err(_) => return Err(AccountError::NotOurAccount)
-    //     // };
-    //     let ek = [0u8; 32].to_vec();
-
-
-    //     let mut label = acc.pk.compress().as_bytes().to_vec();
-    //     label.extend( acc.com.com.compress().as_bytes().to_vec());
-    //     let ck = match acc.eck.as_ref().unwrap().decrypt(&self.vsk, &label) {
-    //         Ok(ck) => ck,  // viewing secret key (can also view amount)
-    //         Err(_) => return Err(AccountError::NotOurAccount)
-    //     };
-    //     println!("hi");
-    //     let ck = match self.eck.as_ref().unwrap().decrypt(&acc.vsk, &label) {
-    //         Ok(ck) => ck,  // viewing secret key (can also view amount)
-    //         Err(_) => return Err(AccountError::NotOurAccount)
-    //     };
-    //     let (amount, randomness): (Scalar, Scalar) = serde_cbor::from_slice(&ck).unwrap();
-    //     // println!("hi");
-
-    //     let mut hasher = Sha3_512::new();
-    //     hasher.update(&acc.pk.compress().as_bytes());
-    //     hasher.update(&ek);
-    //     let s = Scalar::from_hash(hasher);
-    //     let sk = acc.sk + s; // if the s's match, so does the rest
-
-    //     if Account::tag_k_gen(sk) != self.pk {
-    //         return Err(AccountError::NotOurAccount)
-    //     }
-    //     let trcom = Commitment::commit(&amount, &randomness);
-    //     if trcom != self.com {
-    //         return Err(AccountError::NotOurAccount)
-    //     }
-        
-    //     *self = OTAccount{
-    //             pk: self.pk,
-    //             com: trcom,
-    //             account: Some(*acc),
-    //             ek: Some(ek),
-    //             eek: self.eek.clone(),
-    //             eck: self.eck.clone(),
-    //             s: Some(s),
-    //             sk: Some(sk),
-    //             tag: Some(Account::tag_eval(sk).compress()),
-    //         };
-    //     Ok(())
-    // }
-
 
     pub fn get_sk(&self) -> Result<Scalar, AccountError> {
         match self.sk {
