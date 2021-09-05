@@ -32,7 +32,7 @@ impl LocalNodeId {
 ///
 /// [`Node`]: ./struct.Node.html
 /// [`LocalNodeId`]: ./struct.LocalNodeId.html
-#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Hash)]
 // #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub struct NodeId {
     address: SocketAddr,

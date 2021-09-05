@@ -218,6 +218,16 @@ impl<M: MessagePayload> Node<M> {
         self.service.rpc_service.delete_friend(&node.address());
 
     }
+    /// kill node
+    pub fn kill(&mut self, node: &NodeId) {
+        
+        self.plumtree_node.eager_push_peers.remove(&node);
+        self.plumtree_node.lazy_push_peers.remove(&node);
+        self.hyparview_node.active_view.retain(|x| x != node);
+        self.hyparview_node.passive_view.retain(|x| x != node);
+        self.service.rpc_service.delete_friend(&node.address());
+
+    }
     /// unmute node
     pub fn unmute(&mut self, node: &NodeId) {
 
@@ -240,6 +250,15 @@ impl<M: MessagePayload> Node<M> {
         self.plumtree_node.eager_push_peers = HashSet::new();
         self.plumtree_node.lazy_push_peers = HashSet::new();
         self.hyparview_node.isolate();
+        self.service.rpc_service.delete_friends();
+
+    }
+    /// deletes all friends
+    pub fn purge_friends(&mut self) {
+        
+        self.plumtree_node.eager_push_peers = HashSet::new();
+        self.plumtree_node.lazy_push_peers = HashSet::new();
+        self.hyparview_node.purge_friends();
         self.service.rpc_service.delete_friends();
 
     }
@@ -300,7 +319,7 @@ impl<M: MessagePayload> Node<M> {
         
     }
     /// Direct Message a message to a set of recievers.
-    pub fn dm(&mut self, message_payload: M, peers: &Vec<NodeId>, stay: bool) {
+    pub fn dm<'a, I: IntoIterator<Item=&'a NodeId>>(&mut self, message_payload: M, peers: I, stay: bool) {
         
         let id = MessageId::new(self.id(), self.message_seqno);
         self.message_seqno += 1;
@@ -312,8 +331,7 @@ impl<M: MessagePayload> Node<M> {
         };
         self.plumtree_node.actions.deliver(message.clone());
 
-        for peer in peers.into_iter()
-        { // hop count for messages recieved through gossip is never 0
+        for peer in peers.into_iter() { // hop count for messages recieved through gossip is never 0
             if stay {
                 self.join(*peer);
                 self.add_gosip_friend(*peer, true);

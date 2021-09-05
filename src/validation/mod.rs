@@ -73,7 +73,7 @@ impl Syncedtx {
 pub struct MultiSignature{
     pub x: CompressedRistretto,
     pub y: Scalar,
-    pub pk: Vec<u64>, // whose not in it... maybe this should be comitte index not stake index to save space? -7 bytes per sig not in -> 42 - 0 sigs -> 0 to 294 bytes saved per block
+    pub pk: Vec<u8>, // whose not in it... maybe this should be comitte index not stake index to save space? -7 bytes per sig not in -> 42 - 0 sigs -> 0 to 294 bytes saved per block
 }
 impl MultiSignature {
     pub fn gen_group_x(key: &Scalar, nonce: &u64, bnum: &u64) -> CompressedRistretto { // WARNING: make a function to sign arbitrary messages when sending them for validators
@@ -118,7 +118,31 @@ impl MultiSignature {
 }
 
 
+#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+pub struct ValidatorSignature{
+    pub c: Scalar,
+    pub r: Scalar,
+    pub pk: u8,
+}
 
+impl ValidatorSignature { // THIS IS NOT IN USE YET
+    pub fn sign(key: &Scalar, message: &mut Sha3_512, location: &u8) -> ValidatorSignature {
+        // let mut s = Sha3_512::new();
+        // s.update(&message);
+        let mut csprng = thread_rng();
+        let a = Scalar::random(&mut csprng);
+        message.update((a*PEDERSEN_H()).compress().to_bytes());
+        let c = Scalar::from_hash(message.to_owned());
+        ValidatorSignature{c, r: (a - c*key), pk: *location}
+    }
+    pub fn to_signature(&self, validator_pool: &Vec<u64>) -> Signature {
+        Signature {
+            c: self.c,
+            r: self.r,
+            pk: validator_pool[self.pk as usize],
+        }
+    }
+}
 #[derive(Default, Clone, Serialize, Deserialize, Debug)]
 pub struct Signature{
     pub c: Scalar,
@@ -449,12 +473,15 @@ impl NextBlock { // need to sign the staker inputs too
                 return Err("there's multiple signatures from the same validator")
             }
         } else if let Some(emptyness) = self.emptyness.clone() {
-            // if self.txs.len() > 0 {
-            //     return Err("the block isn't empty!") // i should allow multisignatures for full blocks
-            // }
-            let who = validator_pool.into_par_iter().filter_map(|x|
-                if emptyness.pk.par_iter().all(|y| y!=x) {
-                    Some(stkstate[*x as usize].0)
+            if self.txs.len() > 0 { //this is neccesary so that you cant just add transactions that no one signed off on (unless I also have them sign an empty vector)
+                return Err("the block isn't empty!") // i should allow multisignatures for full blocks
+            }
+            if emptyness.pk.len() != emptyness.pk.par_iter().collect::<HashSet<_>>().len() {
+                return Err("someone failed to sign twice as the same validator")
+            }
+            let who = validator_pool.into_par_iter().filter_map(|&x|
+                if emptyness.pk.par_iter().all(|&y| validator_pool[y as usize]!=x) {
+                    Some(stkstate[x as usize].0)
                 } else { // may need to add more checks here
                     None
                 }
@@ -825,12 +852,15 @@ impl LightningSyncBlock {
                 return Err("there's multiple signatures from the same validator")
             }
         } else if let Some(emptyness) = self.emptyness.clone() {
-            if self.info.tags.len() != 0 {
-                return Err("the block isn't empty!")
+            if self.info.tags.len() > 0 { //this is neccesary so that you cant just add transactions that no one signed off on (unless I also have them sign an empty vector)
+                return Err("the block isn't empty!") // i should allow multisignatures for full blocks??
             }
-            let who = validator_pool.into_par_iter().filter_map(|x|
-                if emptyness.pk.par_iter().all(|y| y!=x) {
-                    Some(stkstate[*x as usize].0)
+            if emptyness.pk.len() != emptyness.pk.par_iter().collect::<HashSet<_>>().len() {
+                return Err("someone failed to sign twice as the same validator")
+            }
+            let who = validator_pool.into_par_iter().filter_map(|&x|
+                if emptyness.pk.par_iter().all(|&y| validator_pool[y as usize]!=x) {
+                    Some(stkstate[x as usize].0)
                 } else { // may need to add more checks here
                     None
                 }

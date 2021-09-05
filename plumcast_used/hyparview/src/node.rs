@@ -111,33 +111,6 @@ where
     }
 
 
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    pub fn delete_all(&mut self, node: &T) {
-        self.disconnect(node, true);
-        self.remove_from_passive_view(node);
-    }
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    
-
-
-
-
     /// Handles the given incoming message.
     pub fn handle_protocol_message(&mut self, message: ProtocolMessage<T>) {
         let sender = message.sender().clone();
@@ -230,7 +203,7 @@ where
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     fn handle_join(&mut self, m: JoinMessage<T>) {
-        if self.isolationist { // spam attack through other communications?
+        if self.isolationist {
             self.disconnect(&m.sender, false);
             self.paused[0].insert(m.sender);
         } else {
@@ -243,14 +216,27 @@ where
             }
         }
     }
+    pub fn delete_node(&mut self, node: &T) {
+        self.disconnect(node, true);
+        self.remove_from_passive_view(node);
+    }
+    /// deletes all your friends making this do nothing
+    pub fn purge_friends(&mut self) {
+        for friend in self.active_view.clone() {
+            self.disconnect(&friend, false);
+        };
+        self.active_view = vec![];
+        self.passive_view = vec![];
+    }
+    /// this does not effect current friends, just new people who try to talk to you
     pub fn isolate(&mut self) {
         self.isolationist = true;
         let x = self.active_view.drain(..).collect::<HashSet<_>>();
         self.paused[0].extend(x);
         let x = self.passive_view.drain(..).collect::<HashSet<_>>();
         self.paused[1].extend(x);
-        
     }
+    /// allows new friend requests and unmutes everyone
     pub fn deisolate(&mut self) {
         self.isolationist = false;
         for new_node in self.paused[0].drain().collect::<Vec<_>>() {
