@@ -11,7 +11,7 @@ use plumcast::node::{LocalNodeId, Node, NodeBuilder, NodeId, SerialLocalNodeIdGe
 use plumcast::service::ServiceBuilder;
 use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::Build;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use trackable::error::MainError;
@@ -101,10 +101,9 @@ fn main() -> Result<(), MainError> {
     let node: StakerNode;
     if pswrd != "load" {
         let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let mut initial_history = vec![(leader,1u64)];
-
         // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        // initial_history.push((otheruser,1u64));
+        let initial_history = vec![(leader,1u64)];
+        // let initial_history = vec![(leader,1u64),(otheruser,1u64)];
 
         
         let me = Account::new(&format!("{}",pswrd));
@@ -164,6 +163,7 @@ fn main() -> Result<(), MainError> {
             stepeven: false,
             clogging: 0,
             emitmessage: Instant::now(),
+            randomstakers: VecDeque::new(),
             laststkgossip: HashSet::new(),
             headshard: 0,
             usurpingtime: Instant::now(),
@@ -270,6 +270,7 @@ struct StakerNode {
     laststkgossip: HashSet<Vec<u8>>,
     headshard: usize,
     usurpingtime: Instant,
+    randomstakers: VecDeque<NodeId>,
     is_validator: bool,
     is_staker: bool,
     sent_onces: HashSet<Vec<u8>>,
@@ -354,6 +355,7 @@ impl StakerNode {
             sheight: sn.sheight,
             alltagsever: sn.alltagsever.clone(),
             headshard: sn.headshard.clone(),
+            randomstakers: VecDeque::new(),
             is_validator: false,
             is_staker: true,
             sent_onces: HashSet::new(), // maybe occasionally clear this or replace with vecdeq?
@@ -629,7 +631,7 @@ impl Future for StakerNode {
                             self.lastblock = lastblock;
         
                             let mut m = bincode::serialize(&self.lastblock).unwrap();
-                            let mut l = bincode::serialize(&self.lastblock.tolightning()).unwrap();
+                            let l = bincode::serialize(&self.lastblock.tolightning()).unwrap();
             
                             self.sigs = vec![];
         
@@ -710,27 +712,15 @@ impl Future for StakerNode {
             
             
                             let mut m = bincode::serialize(&lastblock).unwrap();
-                            let mut l = bincode::serialize(&lastblock.tolightning()).unwrap();
-                            
-                            // self.lastblock = lastblock;
-                            // let mut hasher = Sha3_512::new();
-                            // hasher.update(&l);
+
                             println!("sending off block {}!!!",lastblock.bnum);
                             m.push(3u8);
                             self.inner.broadcast(m);
-            
-                            // l.push(7u8);
-                            // self.inner.broadcast(l);
             
                             self.points = HashMap::new();
                             self.scalars = HashMap::new();
                             self.sigs = vec![];
             
-                            // let m = bincode::serialize(&self.lastblock).unwrap();
-                            // let mut hasher = Sha3_512::new();
-                            // hasher.update(&m);
-                            // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                            // self.bnum += 1;
                             
                             self.stepeven = false;
                             self.timekeeper = Instant::now();
@@ -887,6 +877,10 @@ impl Future for StakerNode {
                                 }
                                 // println!("{:?}",hash_to_scalar(&self.lastblock));
                             } else if mtype == 105 /* i */ {
+                                if Signature::recieve_signed_message(&mut m, &self.stkinfo).is_some() {
+                                    self.randomstakers.push_front(bincode::deserialize::<NodeId>(&m).unwrap());
+                                    self.randomstakers.pop_back();
+                                }
                                 // add identity to known people and delete oldest maybe (VecDeque)
                             } else if mtype == 112 /* p */ {
                                 self.laststkgossip.insert(m);
@@ -895,7 +889,7 @@ impl Future for StakerNode {
                                 let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
                                 x.append(&mut y);
                                 x.push(254);
-                                self.inner.dm(x,&vec![msg.id().node()],false);
+                                self.outer.dm(x,&vec![msg.id().node()],false);
                             } else if mtype == 116 /* t */ { // this is totally untested
                                 let tsk = Scalar::from_canonical_bytes(m.try_into().unwrap()).unwrap();
                                 let mut location = 0u64;
@@ -920,7 +914,7 @@ impl Future for StakerNode {
                                         location += thisheight;
                                     }
                                 }
-                                self.inner.dm(bincode::serialize(&allyours).unwrap(),&vec![msg.id().node()],false);
+                                self.outer.dm(bincode::serialize(&allyours).unwrap(),&vec![msg.id().node()],false);
                             } else if mtype == 118 /* v */ {
                                 if let Some(who) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
                                     if self.queue[self.headshard].contains(&(who as usize)) {
@@ -939,7 +933,7 @@ impl Future for StakerNode {
                                         file.read_to_end(&mut x).unwrap();
                                         println!("sending block {} of {}\t{:?}",b,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
                                         x.push(3);
-                                        self.inner.dm(x,&vec![msg.id().node()],false);
+                                        self.outer.dm(x,&vec![msg.id().node()],false);
                                     }
                                 }
                             }
@@ -964,10 +958,10 @@ impl Future for StakerNode {
                     let mut m = hash_to_scalar(&self.stkinfo).as_bytes().to_vec();
                     if self.laststkgossip.contains(&m) & (self.clogging < 3000) { // 10 messages per second
                         m.push(112u8);
-                        self.inner.broadcast(m);
-                        let mut m = Signature::sign_message(&self.key, &bincode::serialize(&self.inner.id().address()).unwrap(), &self.keylocation.iter().next().unwrap());
+                        self.outer.broadcast(m);
+                        let mut m = Signature::sign_message(&self.key, &bincode::serialize(&self.outer.id().address()).unwrap(), &self.keylocation.iter().next().unwrap());
                         m.push(105u8);
-                        self.inner.broadcast(m);
+                        self.outer.broadcast(m);
                     }
                     self.laststkgossip = HashSet::new();
                     self.clogging = 0;
@@ -1085,16 +1079,16 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         txbin.push(0);
 
                         // println!("----------------------------------------------------------------\n{:?}",txbin);
-                        self.inner.broadcast(txbin);
+                        self.outer.broadcast(txbin);
                     } else if istx == 42 /* * */ { // ips to talk to
                         // 192.168.000.101:09876 192.168.000.101:09875*
                         let addrs = String::from_utf8_lossy(&m);
                         let addrs = addrs.split(" ").collect::<Vec<_>>().par_iter().map(|x| NodeId::new(x.parse::<SocketAddr>().unwrap(), LocalNodeId::new(0))).collect::<Vec<_>>();
-                        self.inner.dm(vec![],&addrs,true);
+                        self.outer.dm(vec![],&addrs,true);
                     } else if istx == 105 /* i */ {
                         println!("\nmy name:\n---------------------------------------------\n{:?}\n",self.me.name());
-                        println!("\nmy addr plumtree:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().id());
-                        println!("\nmy addr hyparview:\n---------------------------------------------\n{:?}\n",self.inner.hyparview_node().id());
+                        println!("\nmy addr plumtree:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().id());
+                        println!("\nmy addr hyparview:\n---------------------------------------------\n{:?}\n",self.outer.hyparview_node().id());
                         println!("\nmy staker name:\n---------------------------------------------\n{:?}\n",self.me.stake_acc().name());
                         let scalarmoney = self.mine.iter().map(|x|self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>();
                         println!("\nmy scalar money:\n---------------------------------------------\n{:?}\n",scalarmoney);
@@ -1119,7 +1113,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
 
                     } else if istx == 100 /* d */ {
                         let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-                        let mut initial_history = vec![(leader,1u64)];
+                        let initial_history = vec![(leader,1u64)];
                         self.bnum = 0;
                         self.lastbnum = 0;
                         self.height = 0;
@@ -1134,16 +1128,16 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                     } else if istx == 121 /* y */ {
                         let mut mynum = (self.bnum - 1).to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
                         mynum.push(121);
-                        let mut friend = self.inner.hyparview_node().active_view().to_vec();
-                        friend.extend(self.inner.hyparview_node().passive_view().to_vec());
-                        self.inner.dm(mynum, &friend, false); // you really dont need to send it to all your friends though
+                        let mut friend = self.outer.hyparview_node().active_view().to_vec();
+                        friend.extend(self.outer.hyparview_node().passive_view().to_vec());
+                        self.outer.dm(mynum, &friend, false); // you really dont need to send it to all your friends though
                     } else if istx == 98 /* b */ {
                         println!("\nlast block:\n---------------------------------------------\n{:#?}\n",self.lastblock);
                     } else if istx == 97 /* a */ { // 9876 9875a   (just input the ports, only for testing on a single computer)
                         let addrs = String::from_utf8_lossy(&m);
                         let addrs = addrs.split(" ").collect::<Vec<_>>().par_iter().map(|x| NodeId::new( format!("{}:{}", local_ipaddress::get().unwrap(), x).parse::<SocketAddr>().unwrap(), LocalNodeId::new(0))).collect::<Vec<_>>();
 
-                        self.inner.dm(vec![],&addrs,true);
+                        self.outer.dm(vec![],&addrs,true);
                     }
                 }
                 did_something = true;
