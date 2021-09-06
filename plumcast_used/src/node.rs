@@ -3,7 +3,7 @@
 //! [`Node`]: ./node/struct.Node.html
 use crate::message::{Message, MessageId, MessagePayload};
 use crate::metrics::NodeMetrics;
-use crate::misc::{HyparviewAction, HyparviewNode, HyparviewNodeOptions, PlumtreeAction, PlumtreeMessage, PlumtreeNode, PlumtreeNodeOptions};
+use crate::misc::{GossipMessage, HyparviewAction, HyparviewNode, HyparviewNodeOptions, PlumtreeAction, PlumtreeMessage, PlumtreeNode, PlumtreeNodeOptions};
 use crate::rpc::RpcMessage;
 use crate::service::ServiceHandle;
 use crate::{Error, ErrorKind};
@@ -162,7 +162,7 @@ pub struct Node<M: MessagePayload> {
     message_rx: mpsc::Receiver<RpcMessage<M>>,
     hyparview_node: HyparviewNode,
     plumtree_node: PlumtreeNode<M>,
-    message_seqno: u64,
+    pub message_seqno: u64,
     hyparview_shuffle_time: NodeTime,
     hyparview_sync_active_view_time: NodeTime,
     hyparview_fill_active_view_time: NodeTime,
@@ -204,6 +204,24 @@ impl<M: MessagePayload> Node<M> {
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
+
+    /// broadcasts a message right now.
+    pub fn broadcast_now(&mut self, message_payload: M) -> MessageId {
+        let id = MessageId::new(self.id(), self.message_seqno);
+        self.message_seqno += 1;
+        debug!(self.logger, "Starts direct messaging a message: {:?}", id);
+
+        let message = PlumtreeAppMessage {
+            id,
+            payload: message_payload,
+        };
+        self.plumtree_node.actions.deliver(message.clone());
+
+        for peer in self.plumtree_node.all_push_peers() {
+            self.plumtree_node.actions.send(peer, plumtree::message::GossipMessage::new(self.plumtree_node.id(), message.clone(), 1));
+        }
+        id
+    }
     /// mute node
     pub fn mute(&mut self, node: &NodeId) {
         

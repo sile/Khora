@@ -142,6 +142,11 @@ impl<T: System> Node<T> {
         &self.lazy_push_peers
     }
 
+    /// Returns the union of eager_push_peers and lazy_push_peers
+    pub fn all_push_peers(&self) -> HashSet<T::NodeId> {
+        self.eager_push_peers().union(self.lazy_push_peers()).collect::<HashSet<_>>().iter().map(|x| x.to_owned().to_owned()).collect::<HashSet<_>>()
+    }
+
     /// Broadcasts the given message.
     pub fn broadcast_message(&mut self, message: Message<T>) {
         self.actions.deliver(message.clone());

@@ -7,7 +7,8 @@ use clap::Arg;
 use fibers::sync::mpsc;
 use fibers::{Executor, Spawn, ThreadPoolExecutor};
 use futures::{Async, Future, Poll, Stream};
-use plumcast::node::{LocalNodeId, Node, NodeBuilder, NodeId, SerialLocalNodeIdGenerator, UnixtimeLocalNodeIdGenerator};
+use plumcast::message::MessageId;
+use plumcast::node::{LocalNodeId, Node, NodeBuilder, NodeId, SerialLocalNodeIdGenerator};
 use plumcast::service::ServiceBuilder;
 use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::Build;
@@ -390,7 +391,7 @@ impl Future for StakerNode {
                         }
                     })
                 }) {
-                    self.is_validator = true;
+                    self.is_validator = false;
                 } else {
                     self.outer.purge_friends();
                     self.knownvalidators = HashSet::new();
@@ -528,10 +529,12 @@ impl Future for StakerNode {
                                     
 
                                     
-        
-                                    if self.keylocation.contains(&(self.exitqueue[self.headshard][0] as u64)) | self.keylocation.contains(&(self.exitqueue[self.headshard][1] as u64)) {
+                                    // println!("-----------------------------------------------\n{}\n--------------------------------",self.comittee[self.headshard][self.exitqueue[self.headshard][0]]);
+                                    // println!("{:?}",self.keylocation);
+                                    if self.keylocation.contains(&(self.comittee[self.headshard][self.exitqueue[self.headshard][0]] as u64)) | self.keylocation.contains(&(self.comittee[self.headshard][self.exitqueue[self.headshard][1]] as u64)) {
                                         m.push(3);
-                                        self.outer.broadcast(m); /* broadcast the block to the outside world */
+                                        println!("-----------------------------------------------\nsending out the new block {}!\n-----------------------------------------------",self.lastblock.bnum);
+                                        self.outer.broadcast_now(m); /* broadcast the block to the outside world */
                                     }
         
 
@@ -790,7 +793,7 @@ impl Future for StakerNode {
 
                             if mtype == 0 {
                                 self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
-                            } else if mtype == 3 {
+                            } else if (mtype == 3) & !self.is_validator {
                                 let lastblock: NextBlock = bincode::deserialize(&m).unwrap();
                                 // let mut hasher = Sha3_512::new();
                                 // hasher.update(&m);
@@ -876,21 +879,21 @@ impl Future for StakerNode {
                                     self.usurpingtime = Instant::now();
                                 }
                                 // println!("{:?}",hash_to_scalar(&self.lastblock));
-                            } else if mtype == 105 /* i */ {
+                            } else if (mtype == 105) & !self.is_validator /* i */ {
                                 if Signature::recieve_signed_message(&mut m, &self.stkinfo).is_some() {
                                     self.randomstakers.push_front(bincode::deserialize::<NodeId>(&m).unwrap());
                                     self.randomstakers.pop_back();
                                 }
                                 // add identity to known people and delete oldest maybe (VecDeque)
-                            } else if mtype == 112 /* p */ {
+                            } else if (mtype == 112) & !self.is_validator /* p */ {
                                 self.laststkgossip.insert(m);
-                            } else if mtype == 114 /* r */ {
+                            } else if (mtype == 114) & !self.is_validator /* r */ {
                                 let mut y = m[..8].to_vec();
                                 let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
                                 x.append(&mut y);
                                 x.push(254);
                                 self.outer.dm(x,&vec![msg.id().node()],false);
-                            } else if mtype == 116 /* t */ { // this is totally untested
+                            } else if (mtype == 116) & !self.is_validator /* t */ { // this is totally untested
                                 let tsk = Scalar::from_canonical_bytes(m.try_into().unwrap()).unwrap();
                                 let mut location = 0u64;
                                 let mut allyours = vec![];
@@ -922,7 +925,7 @@ impl Future for StakerNode {
                                         self.knownvalidators.insert(m);
                                     };
                                 }
-                            } else if mtype == 121 /* y */ {
+                            } else if (mtype == 121) & !self.is_validator /* y */ {
                                 let theirnum = u64::from_le_bytes(m.try_into().unwrap());
                                 println!("they're at {}, syncing them...",theirnum);
                                 for b in theirnum+1..=self.bnum {
@@ -1104,6 +1107,10 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         println!("\ntime:\n---------------------------------------------\n{:?}s\n",self.timekeeper.elapsed().as_secs());
                         println!("\nblock number:\n---------------------------------------------\n{:?}\n",self.bnum);
                         println!("\nblock name:\n---------------------------------------------\n{:?}\n",self.lastname);
+                        println!("\ninner friends:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().all_push_peers());
+                        println!("\nouter friends:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().all_push_peers());
+                        println!("\nis validating:\n---------------------------------------------\n{:?}\n",self.is_validator);
+                        println!("\nis staking:\n---------------------------------------------\n{:?}\n",self.is_staker);
                     } else if istx == 115 /* s */ {
                         self.save();
                         // maybe do something else??? like save or load contacts???
