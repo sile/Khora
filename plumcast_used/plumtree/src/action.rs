@@ -65,7 +65,7 @@ impl<T: System> ActionQueue<T> {
         ActionQueue(VecDeque::new())
     }
 
-    pub fn send_asap<M: Into<ProtocolMessage<T>>>(&mut self, destination: T::NodeId, message: M) {
+    pub fn send_now<M: Into<ProtocolMessage<T>>>(&mut self, destination: T::NodeId, message: M) {
         self.0.push_front(Action::send(destination, message));
     }
 

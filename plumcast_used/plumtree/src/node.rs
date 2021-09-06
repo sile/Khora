@@ -284,9 +284,7 @@ impl<T: System> Node<T> {
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     pub fn kill_condition(gossip: &GossipMessage<T>) -> bool {
-        // !gossip.message.payload.clone().into_iter().all(|x| x!=100)
-        // gossip.message.payload.clone().into_iter().all(|x| x==100)
-        false
+        false // maybe some conditions on a message being valid???
     }
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
@@ -306,8 +304,8 @@ impl<T: System> Node<T> {
             self.lazy_push_peers.insert(gossip.sender.clone());
             self.actions
                 .send(gossip.sender, PruneMessage::new(&self.id));
-        } else if gossip.round == 0 {
-            if gossip.message.payload.clone().into_iter().collect::<Vec<_>>().len() == 0 {
+        } else if gossip.round == 0 { // this handels DMs
+            if gossip.message.payload.clone().into_iter().count() == 0 {
                 self.eager_push_peers.insert(gossip.sender);
             } else {
                 self.actions.deliver(gossip.message);

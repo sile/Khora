@@ -1118,6 +1118,9 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
 
                         // add sync request button and rotor and timer tp cycle through friends to sync in dm
 
+                    } else if istx == 112 /* p */ {
+                        self.inner.poll();
+                        self.outer.poll();
                     } else if istx == 100 /* d */ {
                         let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
                         let initial_history = vec![(leader,1u64)];
