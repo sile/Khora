@@ -44,6 +44,11 @@ impl NodeId {
         NodeId { address, local_id }
     }
 
+    /// Makes a new `NodeId` instance from an old one with new local_id.
+    pub fn with_id(&self, local_id: u64) -> Self {
+        NodeId { address: self.address, local_id: LocalNodeId::new(local_id) }
+    }
+
     /// Returns the RPC server address part of the identifier.
     pub fn address(&self) -> SocketAddr {
         self.address
