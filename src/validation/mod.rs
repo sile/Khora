@@ -150,19 +150,28 @@ pub struct Signature{
     pub pk: u64, // should i switch this to u8 and only validation squad is involved?
 }
 
-impl Signature { // the inputs are the hashed messages you are checking for signatures on because it's faster for many messages.
-    pub fn sign(key: &Scalar, message: &mut Sha3_512, location: &u64) -> Signature {
-        // let mut s = Sha3_512::new();
-        // s.update(&message);
+impl Signature {
+    pub fn to_validator_signature(&self, validator_pool: &Vec<u64>) -> ValidatorSignature { // this hasn't actually been implimented in the blocks yet
+        ValidatorSignature{
+            c: self.c,
+            r: self.r,
+            pk: validator_pool.par_iter().enumerate().filter_map(|(i,&pk)| {
+                if pk == self.pk {
+                    Some(i)
+                } else {
+                    None
+                }
+            }).collect::<Vec<_>>()[0] as u8
+        }
+    }
+    pub fn sign(key: &Scalar, message: &mut Sha3_512, location: &u64) -> Signature { // the inputs are the hashed messages you are checking for signatures on because it's faster for many messages.
         let mut csprng = thread_rng();
         let a = Scalar::random(&mut csprng);
         message.update((a*PEDERSEN_H()).compress().to_bytes());
         let c = Scalar::from_hash(message.to_owned());
         Signature{c, r: (a - c*key), pk: *location}
     }
-    pub fn verify(&self, message: &mut Sha3_512, stkstate: &Vec<(CompressedRistretto,u64)>) -> bool {
-        // let mut s = Sha3_512::new();
-        // s.update(&message);
+    pub fn verify(&self, message: &mut Sha3_512, stkstate: &Vec<(CompressedRistretto,u64)>) -> bool { // the inputs are the hashed messages you are checking for signatures on because it's faster for many messages.
         message.update((self.r*PEDERSEN_H() + self.c*stkstate[self.pk as usize].0.decompress().unwrap()).compress().to_bytes());
         self.c == Scalar::from_hash(message.to_owned())
     }
