@@ -28,7 +28,6 @@ pub struct Node<T, R = ThreadRng> {
     actions: VecDeque<Action<T>>,
     pub active_view: Vec<T>,
     pub passive_view: Vec<T>,
-    // pub isolationist: bool,
     paused: [HashSet<T>;2],
     rng: R,
     options: NodeOptions,
@@ -50,7 +49,6 @@ where
             actions: VecDeque::new(),
             active_view: Vec::with_capacity(options.max_active_view_size as usize),
             passive_view: Vec::with_capacity(options.max_passive_view_size as usize),
-            // isolationist: false,
             paused: [HashSet::new(),HashSet::new()],
             rng,
             options,
@@ -211,24 +209,6 @@ where
             send(&mut self.actions, n.clone(), message);
         }
     }
-    // fn handle_join(&mut self, m: JoinMessage<T>) {
-    //     if self.isolationist {
-    //         self.disconnect(&m.sender, false);
-    //         self.paused[0].insert(m.sender);
-    //     } else {
-    //         let new_node = m.sender;
-    //         self.add_to_active_view(new_node.clone(), true);
-    //         let ttl = TimeToLive::new(self.options.active_random_walk_len);
-    //         for n in self.active_view.iter().filter(|n| **n != new_node) {
-    //             let message = ProtocolMessage::forward_join(&self.id, new_node.clone(), ttl);
-    //             send(&mut self.actions, n.clone(), message);
-    //         }
-    //     }
-    // }
-    // pub fn delete_node(&mut self, node: &T) {
-    //     self.disconnect(node, true);
-    //     self.remove_from_passive_view(node);
-    // }
     /// deletes all your friends making this do nothing
     pub fn purge_friends(&mut self) {
         for friend in self.active_view.clone() {
@@ -237,29 +217,6 @@ where
         self.active_view = vec![];
         self.passive_view = vec![];
     }
-    // /// this does not effect current friends, just new people who try to talk to you
-    // pub fn isolate(&mut self) {
-    //     self.isolationist = true;
-    //     let x = self.active_view.drain(..).collect::<HashSet<_>>();
-    //     self.paused[0].extend(x);
-    //     let x = self.passive_view.drain(..).collect::<HashSet<_>>();
-    //     self.paused[1].extend(x);
-    // }
-    // /// allows new friend requests and unmutes everyone
-    // pub fn deisolate(&mut self) {
-    //     self.isolationist = false;
-    //     for new_node in self.paused[0].drain().collect::<Vec<_>>() {
-    //         self.add_to_active_view(new_node.clone(), true);
-    //         let ttl = TimeToLive::new(self.options.active_random_walk_len);
-    //         for n in self.active_view.iter().filter(|n| **n != new_node) {
-    //             let message = ProtocolMessage::forward_join(&self.id, new_node.clone(), ttl);
-    //             send(&mut self.actions, n.clone(), message);
-    //         }
-    //     }
-    //     for new_node in self.paused[1].drain().collect::<Vec<_>>() {
-    //         self.add_to_passive_view(new_node);
-    //     }
-    // }
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */

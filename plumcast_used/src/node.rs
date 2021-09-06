@@ -223,20 +223,6 @@ impl<M: MessagePayload> Node<M> {
         }
         id
     }
-    // /// mute node
-    // pub fn mute(&mut self, node: &NodeId) {
-        
-    //     if self.plumtree_node.eager_push_peers.remove(&node) {
-    //         self.muted_friends[0].insert(*node);
-    //     }
-    //     if self.plumtree_node.lazy_push_peers.remove(&node) {
-    //         self.muted_friends[1].insert(*node);
-    //     }
-    //     self.hyparview_node.active_view.retain(|x| x != node);
-    //     self.hyparview_node.passive_view.retain(|x| x != node);
-    //     self.service.rpc_service.delete_friend(&node.address());
-
-    // }
     /// kill node
     pub fn kill(&mut self, node: &NodeId) {
         
@@ -245,33 +231,7 @@ impl<M: MessagePayload> Node<M> {
         self.hyparview_node.active_view.retain(|x| x != node);
         self.hyparview_node.passive_view.retain(|x| x != node);
         self.service.rpc_service.delete_friend(&node.address());
-
     }
-    // /// unmute node
-    // pub fn unmute(&mut self, node: &NodeId) {
-
-    //     if self.muted_friends[0].remove(&node) {
-    //         self.plumtree_node.eager_push_peers.insert(*node);
-    //     }
-    //     if self.muted_friends[1].remove(&node) {
-    //         self.plumtree_node.lazy_push_peers.insert(*node);
-    //     }
-    //     if !self.hyparview_node.passive_view.iter().any(|x| x == node) {
-    //         self.hyparview_node.passive_view.push(*node);
-    //     }
-
-    // }
-    // /// mutes everyone because you're about to start validating
-    // pub fn mute_all(&mut self) {
-        
-    //     self.muted_friends[0].extend(&self.plumtree_node.eager_push_peers);
-    //     self.muted_friends[1].extend(&self.plumtree_node.lazy_push_peers);
-    //     self.plumtree_node.eager_push_peers = HashSet::new();
-    //     self.plumtree_node.lazy_push_peers = HashSet::new();
-    //     self.hyparview_node.isolate();
-    //     self.service.rpc_service.delete_friends();
-
-    // }
     /// deletes all friends
     pub fn purge_friends(&mut self) {
         
@@ -281,27 +241,6 @@ impl<M: MessagePayload> Node<M> {
         self.service.rpc_service.delete_friends();
 
     }
-    // /// mutes everyone but accept new
-    // pub fn mute_all_accept_new(&mut self) {
-        
-    //     self.muted_friends[0].extend(&self.plumtree_node.eager_push_peers);
-    //     self.muted_friends[1].extend(&self.plumtree_node.lazy_push_peers);
-    //     self.plumtree_node.eager_push_peers = HashSet::new();
-    //     self.plumtree_node.lazy_push_peers = HashSet::new();
-    //     self.hyparview_node.isolationist = false;
-    //     self.service.rpc_service.delete_friends();
-
-    // }
-    // /// adds people from the validator set
-    // pub fn add_gosip_friend(&mut self, validator_ip: NodeId, eager: bool) { // they'll dm you their ips
-        
-    //     if eager {
-    //         self.plumtree_node.eager_push_peers.insert(validator_ip);
-    //     } else {
-    //         self.plumtree_node.lazy_push_peers.insert(validator_ip);
-    //     }
-
-    // }
     /// deletes a friend
     pub fn delete_friend(&mut self, who: &NodeId) {
         self.plumtree_node.eager_push_peers.remove(who);
@@ -317,26 +256,6 @@ impl<M: MessagePayload> Node<M> {
         self.service.rpc_service.delete_friend(&who.address())
         
     }
-    // /// unmutes everyone because you're done validating
-    // pub fn unmute_all(&mut self) {
-        
-    //     self.plumtree_node.eager_push_peers.extend(&self.muted_friends[0]);
-    //     self.plumtree_node.lazy_push_peers.extend(&self.muted_friends[1]);
-    //     self.muted_friends[0] = HashSet::new();
-    //     self.muted_friends[1] = HashSet::new();
-    //     self.hyparview_node.deisolate();
-        
-    // }
-    // /// unmutes everyone because you're done validating and also exits your current plumtree gossip peers
-    // pub fn replace_with_muted(&mut self) {
-        
-    //     self.plumtree_node.eager_push_peers = self.muted_friends[0].clone();
-    //     self.plumtree_node.lazy_push_peers = self.muted_friends[1].clone();
-    //     self.muted_friends[0] = HashSet::new();
-    //     self.muted_friends[1] = HashSet::new();
-    //     self.hyparview_node.deisolate();
-        
-    // }
     /// Direct Message a message to a set of recievers.
     pub fn dm<'a, I: IntoIterator<Item=&'a NodeId>>(&mut self, message_payload: M, peers: I, stay: bool) {
         
@@ -361,12 +280,6 @@ impl<M: MessagePayload> Node<M> {
         }
 
     }
-    // pub fn isolate_hyparview(&mut self) {
-    //     self.hyparview_node.isolate();
-    // }
-    // pub fn deisolate_hyparview(&mut self) {
-    //     self.hyparview_node.deisolate();
-    // }
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */

@@ -374,6 +374,18 @@ impl Future for StakerNode {
             did_something = false;
             print!(".");
 
+            /*\_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner|\
+            \*/
+            /*\control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________|--\
+            \*/
+            /*\_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner|----\
+            \*/
+            /*\control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________|----/
+            \*/
+            /*\_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner|--/
+            \*/
+            /*\control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________|/
+            \*/
             if self.keylocation.iter().all(|keylocation| self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) ) { // not on comittee
                 self.is_staker = true;
                 if self.keylocation.clone().iter().all(|&keylocation| {
@@ -488,7 +500,6 @@ impl Future for StakerNode {
 
                                     self.lastblock = lastblock;
                                     println!("=========================================================\nyay!");
-                                    // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
 
                                     for _ in self.bnum..self.lastblock.bnum { // add whole different scannings for empty blocks
                                         println!("I missed a block!");
@@ -500,7 +511,6 @@ impl Future for StakerNode {
                                             select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                                         }
                                         self.bnum += 1;
-                                        // self.lastname = (Scalar::from_canonical_bytes(self.lastname.clone().try_into().unwrap()).unwrap() + Scalar::one()).as_bytes().to_vec();
                                     }
                                     if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
                                         self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
@@ -525,7 +535,6 @@ impl Future for StakerNode {
                                         select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                                     }
                                     self.bnum += 1;
-                                    // self.lastname = (Scalar::from_canonical_bytes(self.lastname.clone().try_into().unwrap()).unwrap() + Scalar::one()).as_bytes().to_vec();
                                     
 
                                     
