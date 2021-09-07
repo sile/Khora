@@ -485,14 +485,10 @@ impl Future for StakerNode {
                                     }
                                 }
                                 self.waitingforleader = Instant::now();
-                                // println!("{:?}",hash_to_scalar(&self.lastblock));
                             } else if mtype == 2 {
                                 self.sigs.push(bincode::deserialize(&m).unwrap());
                             } else if mtype == 3 {
                                 let lastblock: NextBlock = bincode::deserialize(&m).unwrap();
-                                // let mut hasher = Sha3_512::new();
-                                // hasher.update(&m);
-                                // self.lastblock = bincode::deserialize(&m).unwrap();
 
         
                                 let com = self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
@@ -680,13 +676,7 @@ impl Future for StakerNode {
         
                     }
                     let k = self.scalars.keys().collect::<HashSet<_>>();
-                    // println!("{:?}",self.stepeven & self.points.get(&usize::MAX).is_some() & !self.keylocation.iter().all(|x|self.stkinfo[*x as usize].0 != self.leader) & (self.multisig == true) & (self.timekeeper.elapsed().as_secs() > 2));
-                    // println!("but also {:?}", self.comittee[0].iter().filter(|x| k.contains(x)).count());
-                    // println!("but also {:?}", k);
                     if self.stepeven & self.points.get(&usize::MAX).is_some() & (self.timekeeper.elapsed().as_secs() > 2) & (self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > 85) {
-                        // self.multisig = false; // should definitely check that validators are accurate here
-                        // // this is for if everyone signed... really > 0.5 or whatever... 
-                        
                         let sumpt = self.points.remove(&usize::MAX).unwrap();
         
                         let keys = self.points.clone();
