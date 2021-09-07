@@ -92,6 +92,18 @@ where
         );
     }
 
+    /// Starts joining the cluster to which `contact_node_id` belongs at the front of the action queue.
+    ///
+    /// This method may be called multiple times for recovering cluster connectivity
+    /// if an upper layer detects the cluster is splitted to sub-clusters.
+    pub fn join_now(&mut self, contact_node_id: T) {
+        send_now(
+            &mut self.actions,
+            contact_node_id,
+            ProtocolMessage::join(&self.id),
+        );
+    }
+
     /// Removes `node` from the active view of the instance.
     ///
     /// If there is no such node, it is simply ignored.
@@ -410,4 +422,8 @@ where
 
 fn send<T>(actions: &mut VecDeque<Action<T>>, destination: T, message: ProtocolMessage<T>) {
     actions.push_back(Action::send(destination, message));
+}
+
+fn send_now<T>(actions: &mut VecDeque<Action<T>>, destination: T, message: ProtocolMessage<T>) {
+    actions.push_front(Action::send(destination, message));
 }

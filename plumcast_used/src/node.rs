@@ -195,6 +195,15 @@ impl<M: MessagePayload> Node<M> {
         self.hyparview_node.join(contact_node);
     }
 
+    /// Joins the cluster to which the given contact node belongs at the front of the action queue.
+    pub fn join_now(&mut self, contact_node: NodeId) {
+        info!(
+            self.logger,
+            "Joins a cluster by contacting to {:?}", contact_node
+        );
+        self.hyparview_node.join_now(contact_node);
+    }
+
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
@@ -276,6 +285,33 @@ impl<M: MessagePayload> Node<M> {
                 self.plumtree_node.actions.send(*peer, plumtree::message::GossipMessage::new(self.plumtree_node.id(), message.clone(), 0));
             } else {
                 self.plumtree_node.actions.send(*peer, plumtree::message::GossipMessage::new(self.plumtree_node.id(), message.clone(), 0));
+            }
+        }
+    }
+    /// Direct Message a message to a set of recievers at the front.
+    pub fn dm_now<'a, I: IntoIterator<Item=&'a NodeId>>(&mut self, message_payload: M, peers: I, stay: bool) {
+        
+        let id = MessageId::new(self.id(), self.message_seqno);
+        self.message_seqno += 1;
+        debug!(self.logger, "Starts direct messaging a message: {:?}", id);
+
+        let message = PlumtreeAppMessage {
+            id,
+            payload: message_payload,
+        };
+        self.plumtree_node.actions.deliver_now(message.clone());
+        self.poll().expect("shouldn't fail");
+
+        for peer in peers.into_iter() { // hop count for messages recieved through gossip is never 0
+            if stay {
+                self.join_now(*peer);
+                self.poll().expect("shouldn't fail");
+                self.plumtree_node.eager_push_peers.insert(*peer);
+                self.plumtree_node.actions.send_now(*peer, plumtree::message::GossipMessage::new(self.plumtree_node.id(), message.clone(), 0));
+                self.poll().expect("shouldn't fail");
+            } else {
+                self.plumtree_node.actions.send_now(*peer, plumtree::message::GossipMessage::new(self.plumtree_node.id(), message.clone(), 0));
+                self.poll().expect("shouldn't fail");
             }
         }
 

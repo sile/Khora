@@ -73,6 +73,10 @@ impl<T: System> ActionQueue<T> {
         self.0.push_back(Action::send(destination, message));
     }
 
+    pub fn deliver_now(&mut self, message: Message<T>) {
+        self.0.push_front(Action::Deliver { message });
+    }
+
     pub fn deliver(&mut self, message: Message<T>) {
         self.0.push_back(Action::Deliver { message });
     }
