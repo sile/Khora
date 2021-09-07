@@ -21,7 +21,8 @@ use crate::constants::PEDERSEN_H;
 use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
 
-pub const NUMBER_OF_VALIDATORS: u8 = 128;
+pub const NUMBER_OF_VALIDATORS: usize = 128;
+pub const SIGNING_CUTOFF: usize = 2*NUMBER_OF_VALIDATORS/3;
 pub const REPLACERATE: usize = 2;
 pub const BLOCK_KEYWORD: [u8;6] = [107,105,109,98,101,114]; // todo: make this something else (a less obvious version of her name)
 pub const INFLATION_CONSTANT: f64 = 2u64.pow(30) as f64;
@@ -280,11 +281,11 @@ impl NextBlock { // need to sign the staker inputs too
         let mut sigs = sigs.into_par_iter().filter(|x| !validator_pool.into_par_iter().all(|y| x.leader.pk != *y)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
         let mut txs: Vec<PolynomialTransaction>;
         let mut sigfinale: Vec<NextBlock>;
-        for _ in 0..(sigs.len() as u8 - 2*(NUMBER_OF_VALIDATORS/3)) {
+        for _ in 0..(sigs.len() - 2*(NUMBER_OF_VALIDATORS/3)) {
             let b = sigs.pop().unwrap();
             txs = b.txs;
             sigfinale = sigs.par_iter().filter(|x| if let (Ok(z),Ok(y)) = (bincode::serialize(&x.txs),bincode::serialize(&txs)) {z==y} else {false}).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
-            if sigfinale.len() as u8 > 2*(NUMBER_OF_VALIDATORS/3) {
+            if sigfinale.len() > 2*(NUMBER_OF_VALIDATORS/3) {
                 let sigfinale = sigfinale.par_iter().enumerate().filter_map(|(i,x)| if sigs[..i].par_iter().all(|y| x.leader.pk != y.leader.pk) {Some(x.to_owned())} else {None}).collect::<Vec<NextBlock>>();
                 // println!("{:?}",sigfinale.len());
                 let shortcut = Syncedtx::to_sign(&sigfinale[0].txs); /* moving this to after the for loop made this code 3x faster. this is just a reminder to optimize everything later. (i can use [0]) */
@@ -474,7 +475,7 @@ impl NextBlock { // need to sign the staker inputs too
             if !validators.par_iter().all(|x| !validator_pool.clone().into_par_iter().all(|y| x.pk != y)) {
                 return Err("at least 1 validator is not in the pool")
             }
-            if validator_pool.par_iter().filter(|x| !validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < (2*NUMBER_OF_VALIDATORS as usize/3) {
+            if validator_pool.par_iter().filter(|x| !validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < (2*NUMBER_OF_VALIDATORS/3) {
                 return Err("there aren't enough validators")
             }
             let x = validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>();
@@ -495,7 +496,7 @@ impl NextBlock { // need to sign the staker inputs too
                     None
                 }
             ).collect::<Vec<_>>();
-            if who.len() <= 2*NUMBER_OF_VALIDATORS as usize/3 {
+            if who.len() <= 2*NUMBER_OF_VALIDATORS/3 {
                 return Err("there's not enough validators for the empty block")
             }
             let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
@@ -638,7 +639,7 @@ impl NextBlock { // need to sign the staker inputs too
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
             x.append(&mut y);
         });
         exitqueue.par_iter_mut().for_each(|x| {
@@ -651,7 +652,7 @@ impl NextBlock { // need to sign the staker inputs too
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
             x.append(&mut y);
         });
         comittee.par_iter_mut().for_each(|x| {
@@ -664,7 +665,7 @@ impl NextBlock { // need to sign the staker inputs too
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
+            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
             x.append(&mut y);
         });
 
@@ -853,7 +854,7 @@ impl LightningSyncBlock {
             if !validators.par_iter().all(|x| !validator_pool.into_par_iter().all(|y| x.pk != *y)) {
                 return Err("at least 1 validator is not in the pool")
             }
-            if validator_pool.par_iter().filter(|x| !validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < (2*NUMBER_OF_VALIDATORS as usize/3) {
+            if validator_pool.par_iter().filter(|x| !validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < (2*NUMBER_OF_VALIDATORS/3) {
                 return Err("there aren't enough validators")
             }
             let x = validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>();
@@ -874,7 +875,7 @@ impl LightningSyncBlock {
                     None
                 }
             ).collect::<Vec<_>>();
-            if who.len() <= NUMBER_OF_VALIDATORS as usize/2 {
+            if who.len() <= 2*NUMBER_OF_VALIDATORS/3 {
                 return Err("there's not enough validators for the empty block")
             }
             let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
@@ -995,7 +996,7 @@ impl LightningSyncBlock {
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
             x.append(&mut y);
         });
         exitqueue.par_iter_mut().for_each(|x| {
@@ -1008,7 +1009,7 @@ impl LightningSyncBlock {
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
             x.append(&mut y);
         });
         comittee.par_iter_mut().for_each(|x| {
@@ -1021,7 +1022,7 @@ impl LightningSyncBlock {
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS as usize-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
+            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
             x.append(&mut y);
         });
 
@@ -1107,7 +1108,7 @@ pub fn select_stakers(block: &Vec<u8>, bnum: &u64, shard: &u128, queue: &mut Vec
         let mut s = s.clone();
         s.write(&x.to_le_bytes()[..]);
         let c = s.finish() as usize;
-        c%NUMBER_OF_VALIDATORS as usize
+        c%NUMBER_OF_VALIDATORS
     }).collect::<VecDeque<usize>>();
     // println!("loser locations: {:?}",loser);
     exitqueue.append(&mut loser);

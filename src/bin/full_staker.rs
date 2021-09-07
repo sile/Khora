@@ -7,7 +7,6 @@ use clap::Arg;
 use fibers::sync::mpsc;
 use fibers::{Executor, Spawn, ThreadPoolExecutor};
 use futures::{Async, Future, Poll, Stream};
-use plumcast::message::MessageId;
 use plumcast::node::{LocalNodeId, Node, NodeBuilder, NodeId, SerialLocalNodeIdGenerator};
 use plumcast::service::ServiceBuilder;
 use sloggers::terminal::{Destination, TerminalLoggerBuilder};
@@ -33,6 +32,7 @@ use kora::bloom::*;
 use kora::validation::*;
 use kora::ringmaker::*;
 use serde::{Serialize, Deserialize};
+use kora::validation::{NUMBER_OF_VALIDATORS, SIGNING_CUTOFF};
 
 use local_ipaddress;
 
@@ -140,12 +140,12 @@ fn main() -> Result<(), MainError> {
             keylocation: keylocation,
             leader: leader,
             overthrown: HashSet::new(),
-            votes: vec![0;128],
+            votes: vec![0;NUMBER_OF_VALIDATORS],
             stkinfo: initial_history.clone(),
             lastblock: NextBlock::default(),
-            queue: (0..max_shards).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
-            exitqueue: (0..max_shards).map(|_|(0..128usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
-            comittee: (0..max_shards).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>(),
+            queue: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
+            exitqueue: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
+            comittee: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>(),
             lastname: Scalar::one().as_bytes().to_vec(),
             bloom: bloom,
             bnum: 0u64,
@@ -627,7 +627,7 @@ impl Future for StakerNode {
                 *//////////////////////////////////////////////////////////////////////////////////////////////////////////
                 // if self.headshard != 0 { // that tests shard usurption
                 if self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress() == self.leader {
-                    if (self.sigs.len() > 85) | ( (self.sigs.len() > 64) & (self.timekeeper.elapsed().as_secs() > 30) ) {
+                    if (self.sigs.len() > SIGNING_CUTOFF) /*| ( (self.sigs.len() > 64) & (self.timekeeper.elapsed().as_secs() > 30) )*/ {
                         let lastblock = NextBlock::finish(&self.key, &self.keylocation.iter().next().unwrap(), &self.sigs.drain(..).collect::<Vec<_>>(), &self.comittee[self.headshard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(self.headshard as u16), &self.bnum, &self.lastname, &self.stkinfo);
         
                         if lastblock.validators.is_some() {
@@ -663,7 +663,7 @@ impl Future for StakerNode {
         
                         self.timekeeper = Instant::now();
                     }
-                    if !self.stepeven & (self.timekeeper.elapsed().as_secs() > 1) & (self.comittee[self.headshard].iter().filter(|&x|self.points.contains_key(x)).count() > 85) {
+                    if !self.stepeven & (self.timekeeper.elapsed().as_secs() > 1) & (self.comittee[self.headshard].iter().filter(|&x|self.points.contains_key(x)).count() > SIGNING_CUTOFF) {
                         // should prob check that validators are accurate here?
                         let points = self.points.par_iter().map(|x| *x.1).collect::<Vec<_>>();
                         let mut m = MultiSignature::sum_group_x(&points).as_bytes().to_vec();
@@ -676,7 +676,7 @@ impl Future for StakerNode {
         
                     }
                     let k = self.scalars.keys().collect::<HashSet<_>>();
-                    if self.stepeven & self.points.get(&usize::MAX).is_some() & (self.timekeeper.elapsed().as_secs() > 2) & (self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > 85) {
+                    if self.stepeven & self.points.get(&usize::MAX).is_some() & (self.timekeeper.elapsed().as_secs() > 2) & (self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > SIGNING_CUTOFF) {
                         let sumpt = self.points.remove(&usize::MAX).unwrap();
         
                         let keys = self.points.clone();
@@ -1150,9 +1150,9 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         self.sheight = 1;
                         self.lastname = Scalar::one().as_bytes().to_vec();
                         self.lastblock = NextBlock::default();
-                        self.queue = (0..self.comittee.len()).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
-                        self.exitqueue = (0..self.comittee.len()).map(|_|(0..128usize).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
-                        self.comittee = (0..self.comittee.len()).map(|_|(0..128usize).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>();
+                        self.queue = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
+                        self.exitqueue = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
+                        self.comittee = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>();
                         self.stkinfo = initial_history.clone();
 
                     } else if istx == 121 /* y */ {
