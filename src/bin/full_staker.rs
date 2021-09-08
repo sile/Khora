@@ -32,7 +32,7 @@ use kora::bloom::*;
 use kora::validation::*;
 use kora::ringmaker::*;
 use serde::{Serialize, Deserialize};
-use kora::validation::{NUMBER_OF_VALIDATORS, SIGNING_CUTOFF};
+use kora::validation::{NUMBER_OF_VALIDATORS, SIGNING_CUTOFF, QUEUE_LENGTH};
 
 use local_ipaddress;
 
@@ -105,9 +105,11 @@ fn main() -> Result<(), MainError> {
         let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         // let initial_history = vec![(leader,1u64)];
         let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let initial_history = vec![(leader,1u64),(otheruser,1u64)];
+        let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
 
-        
+
         let me = Account::new(&format!("{}",pswrd));
         let validator = me.stake_acc().receive_ot(&me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
         let key = validator.sk.unwrap();
@@ -143,9 +145,9 @@ fn main() -> Result<(), MainError> {
             votes: vec![0;NUMBER_OF_VALIDATORS],
             stkinfo: initial_history.clone(),
             lastblock: NextBlock::default(),
-            queue: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
-            exitqueue: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
-            comittee: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>(),
+            queue: (0..max_shards).map(|_|(0..QUEUE_LENGTH).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
+            exitqueue: (0..max_shards).map(|_|(0..QUEUE_LENGTH).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
+            comittee: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>(),
             lastname: Scalar::one().as_bytes().to_vec(),
             bloom: bloom,
             bnum: 0u64,
@@ -387,7 +389,7 @@ impl Future for StakerNode {
             \*/
             /*\control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________|/
             \*/
-            if self.keylocation.iter().all(|keylocation| self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) ) { // if you're not in the comittee
+            if self.keylocation.iter().all(|keylocation| self.comittee[self.headshard].iter().all(|&x| x as u64 != *keylocation) ) { // if you're not in the comittee
                 self.is_staker = true;
                 self.is_validator = false;
             } else { // if you're in the comittee
@@ -415,7 +417,8 @@ impl Future for StakerNode {
                     evidence.push(118); // v
                     self.inner.dm_now(evidence,&self.knownvalidators.iter().filter_map(|(&location,node)| {
                         let node = node.with_id(1);
-                        if self.comittee[self.headshard].contains(&(location as usize)) & !self.inner.plumtree_node().all_push_peers().contains(&node) {
+                        if self.comittee[self.headshard].contains(&(location as usize)) & !(self.inner.plumtree_node().all_push_peers().contains(&node) | (node == self.inner.plumtree_node().id)) {
+                            println!("((((((((((((((((((((((((((((((((((((((((((((((()))))))))))))))))))))))))))))))))))))))))))))))))))))");
                             Some(node)
                         } else {
                             None
@@ -499,7 +502,8 @@ impl Future for StakerNode {
                                     self.headshard = lastblock.shards[0] as usize;
 
                                     self.lastblock = lastblock;
-                                    println!("=========================================================\nyay!");
+                                    println!("=========================================================\nyay validator!");
+                                    println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
 
                                     for _ in self.bnum..self.lastblock.bnum { // add whole different scannings for empty blocks
                                         println!("I missed a block!");
@@ -512,6 +516,7 @@ impl Future for StakerNode {
                                         }
                                         self.bnum += 1;
                                     }
+                                    println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                                     if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
                                         self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
                                         self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
@@ -530,6 +535,7 @@ impl Future for StakerNode {
                                         NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
                                         NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
                                     }
+                                    println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                                     self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
                                     for i in 0..self.comittee.len() {
                                         select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
@@ -540,6 +546,7 @@ impl Future for StakerNode {
                                     
                                     // println!("-----------------------------------------------\n{}\n--------------------------------",self.comittee[self.headshard][self.exitqueue[self.headshard][0]]);
                                     // println!("{:?}",self.keylocation);
+                                    println!("exitqueue: {:?}",self.exitqueue[self.headshard]);
                                     if self.keylocation.contains(&(self.comittee[self.headshard][self.exitqueue[self.headshard][0]] as u64)) | self.keylocation.contains(&(self.comittee[self.headshard][self.exitqueue[self.headshard][1]] as u64)) {
                                         m.push(3);
                                         println!("-----------------------------------------------\nsending out the new block {}!\n-----------------------------------------------",self.lastblock.bnum);
@@ -802,7 +809,9 @@ impl Future for StakerNode {
                                     self.headshard = lastblock.shards[0] as usize;
 
                                     self.lastblock = lastblock;
-                                    println!("=========================================================\nyay!");
+                                    println!("=========================================================\nyay staker!");
+                                    println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
+
                                     // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
 
                                     for _ in self.bnum..self.lastblock.bnum { // add whole different scannings for empty blocks
@@ -817,10 +826,14 @@ impl Future for StakerNode {
                                         self.bnum += 1;
                                         // self.lastname = (Scalar::from_canonical_bytes(self.lastname.clone().try_into().unwrap()).unwrap() + Scalar::one()).as_bytes().to_vec();
                                     }
+                                    println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                                     if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
+                                        println!("running a full block!");
                                         self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
+                                        println!("scanning as stk!");
                                         self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
                                         self.keylocation = self.smine.iter().map(|x| x[0]).collect();
+                                        println!("scanning as noone!");
                                         self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
 
                                         let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
@@ -832,9 +845,11 @@ impl Future for StakerNode {
                                         hasher.update(lightning);
                                         self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                                     } else {
+                                        println!("running an empty block!");
                                         NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
                                         NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
                                     }
+                                    println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                                     self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
                                     for i in 0..self.comittee.len() {
                                         select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
@@ -1143,16 +1158,18 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
                         // let initial_history = vec![(leader,1u64)];
                         let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-                        let initial_history = vec![(leader,1u64),(otheruser,1u64)];
+                        let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+                        let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+                        let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
                         self.bnum = 0;
                         self.lastbnum = 0;
                         self.height = 0;
                         self.sheight = 1;
                         self.lastname = Scalar::one().as_bytes().to_vec();
                         self.lastblock = NextBlock::default();
-                        self.queue = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| x%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
+                        self.queue = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
                         self.exitqueue = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
-                        self.comittee = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| x%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>();
+                        self.comittee = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>();
                         self.stkinfo = initial_history.clone();
 
                     } else if istx == 121 /* y */ {

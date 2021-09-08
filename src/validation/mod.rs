@@ -21,8 +21,9 @@ use crate::constants::PEDERSEN_H;
 use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
 
-pub const NUMBER_OF_VALIDATORS: usize = 128;
+pub const NUMBER_OF_VALIDATORS: usize = 3;
 pub const SIGNING_CUTOFF: usize = 2*NUMBER_OF_VALIDATORS/3;
+pub const QUEUE_LENGTH: usize = 10;
 pub const REPLACERATE: usize = 2;
 pub const BLOCK_KEYWORD: [u8;6] = [107,105,109,98,101,114]; // todo: make this something else (a less obvious version of her name)
 pub const INFLATION_CONSTANT: f64 = 2u64.pow(30) as f64;
@@ -639,7 +640,7 @@ impl NextBlock { // need to sign the staker inputs too
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            let mut y = (0..QUEUE_LENGTH-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
             x.append(&mut y);
         });
         exitqueue.par_iter_mut().for_each(|x| {
@@ -652,7 +653,7 @@ impl NextBlock { // need to sign the staker inputs too
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            let mut y = (0..QUEUE_LENGTH-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
             x.append(&mut y);
         });
         comittee.par_iter_mut().for_each(|x| {
@@ -665,7 +666,7 @@ impl NextBlock { // need to sign the staker inputs too
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
+            let mut y = (0..QUEUE_LENGTH-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
             x.append(&mut y);
         });
 
@@ -996,7 +997,7 @@ impl LightningSyncBlock {
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            let mut y = (0..QUEUE_LENGTH-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
             x.append(&mut y);
         });
         exitqueue.par_iter_mut().for_each(|x| {
@@ -1009,7 +1010,7 @@ impl LightningSyncBlock {
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
+            let mut y = (0..QUEUE_LENGTH-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<VecDeque<usize>>();
             x.append(&mut y);
         });
         comittee.par_iter_mut().for_each(|x| {
@@ -1022,7 +1023,7 @@ impl LightningSyncBlock {
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
+            let mut y = (0..QUEUE_LENGTH-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
             x.append(&mut y);
         });
 

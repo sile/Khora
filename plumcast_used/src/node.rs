@@ -474,56 +474,6 @@ impl<M: MessagePayload> Node<M> {
                 true
             }
             RpcMessage::Plumtree(m) => {
-                /* this seems to be the place to add spam filtering... where's the TCP stream though? */
-                // use plumtree::message::{ProtocolMessage as PTPM, PruneMessage};
-                // // use crate::misc::DisconnectMessage;
-                // use hyparview::message::{DisconnectMessage, ProtocolMessage as HVPM};
-                // if let PTPM::Gossip(n) = m.clone() {
-                //     println!("hey a gossip!");
-                //     if !n.message.payload.clone().into_iter().all(|x|x!=100) { // d is ILLEGAL
-                //         let peer = m.sender();
-                //         println!(":::::::::::::::::::::::::::::hi:::::::::::::::::::::::::::::");
-                //         println!("{:?} sent spam...\nDELETING THEM",peer);
-                //         // // println!("{:?}",self.hyparview_node.active_view());
-                //         // // println!("{:?}",self.hyparview_node.passive_view());
-                //         self.hyparview_node.disconnect(&peer,false); // alive is if to move to passive view
-                //         self.hyparview_node.remove_from_passive_view(&peer);
-                //         self.plumtree_node.handle_neighbor_down(&peer);
-                //         // self.plumtree_node.forget_message(&n.message.id);
-                //         self.plumtree_node.actions
-                //             .send(*peer, PruneMessage::new(self.plumtree_node.id()));
-                //         // // println!("{:?}",self.hyparview_node.active_view());
-                //         // // println!("{:?}",self.hyparview_node.passive_view());
-
-
-                //         self.plumtree_node.missings.remove(&n.message.id);
-                //         // self.plumtree_node.messages.insert(n.message.id, n.message.payload.clone());
-
-                //         // n.message.payload;
-                //         // ProtocolMessage::Gossip(GossipMessage{});
-
-                //         let message = DisconnectMessage {
-                //             sender: self.id(),
-                //             alive: false,
-                //         };
-                //         let message = HVPM::Disconnect(message);
-                //         let message = RpcMessage::Hyparview(message);
-                //         let _ = self.service.send_message(*peer, message);
-
-                //         // let message = DisconnectMessage { // assume spammer modified code
-                //         //     sender: *peer,
-                //         //     alive: false,
-                //         // };
-                //         // let message = HVPM::Disconnect(message);
-                //         // let message = RpcMessage::Hyparview(message);
-                //         // let _ = self.service.send_message(self.id(), message);
-
-                //         // println!("{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}");
-                //         return false
-                //     }
-                // }
-
-                
                 debug!(self.logger, "Received a Plumtree message");
                 if !self.plumtree_node.handle_protocol_message(m) {
                     self.metrics.unknown_plumtree_node_errors.increment();

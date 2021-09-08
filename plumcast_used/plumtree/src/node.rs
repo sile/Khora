@@ -66,7 +66,7 @@ impl Default for NodeOptions {
 /// [`handle_neighbor_down`]: ./struct.Node.html#method.handle_neighbor_down
 /// [`clock_mut`]: ./struct.Node.html#method.clock_mut
 pub struct Node<T: System> {
-    id: T::NodeId,
+    pub id: T::NodeId,
     options: NodeOptions,
     pub eager_push_peers: HashSet<T::NodeId>,
     pub lazy_push_peers: HashSet<T::NodeId>,
