@@ -165,7 +165,6 @@ fn main() -> Result<(), MainError> {
             waitingforleaderbool: false,
             waitingforleadertime: Instant::now(),
             waitingforentrytime: Instant::now(),
-            stepeven: false,
             clogging: 0,
             emitmessage: Instant::now(),
             randomstakers: VecDeque::new(),
@@ -272,7 +271,6 @@ struct StakerNode {
     waitingforleaderbool: bool,
     waitingforleadertime: Instant,
     waitingforentrytime: Instant,
-    stepeven: bool,
     clogging: u64,
     emitmessage: Instant,
     laststkgossip: HashSet<Vec<u8>>,
@@ -343,7 +341,6 @@ impl StakerNode {
             laststkgossip: HashSet::new(),
             groupxnonce: 0,
             clogging: 0,
-            stepeven: false,
             save_history: sn.save_history,
             me: sn.me,
             mine: sn.mine.clone(),
@@ -505,7 +502,7 @@ impl Future for StakerNode {
                                                     std::thread::sleep(Duration::from_millis(10u64));
                                                 }
                                             } else if (m.txs.len() == 0) & (m.emptyness.is_none()){
-                                                self.groupxnonce += 1;
+                                                // self.groupxnonce += 1;
                                                 let m = MultiSignature::gen_group_x(&self.key, &self.groupxnonce, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
                                                 let mut m = Signature::sign_message(&self.key, &m, keylocation);
                                                 m.push(4);
@@ -612,7 +609,6 @@ impl Future for StakerNode {
                                         
                                         println!("block {} name: {:?}",self.bnum, self.lastname);
 
-                                        self.stepeven = false;
                                         self.sigs = vec![];
                                         self.points = HashMap::new();
                                         self.scalars = HashMap::new();
@@ -626,12 +622,14 @@ impl Future for StakerNode {
                                 }
                                 // println!("{:?}",hash_to_scalar(&self.lastblock));
                             } else if mtype == 4 {
-                                if let Some(pk) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
-                                    let pk = pk as usize;
-                                    // println!("got sent from: {:?}",pk);
-                                    if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
-                                        println!("points getting bigger");
-                                        self.points.insert(pk,CompressedRistretto(m.try_into().unwrap()).decompress().unwrap());
+                                if !self.points.contains_key(&usize::MAX) {
+                                    if let Some(pk) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
+                                        let pk = pk as usize;
+                                        // println!("got sent from: {:?}",pk);
+                                        if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
+                                            println!("points getting bigger");
+                                            self.points.insert(pk,CompressedRistretto(m.try_into().unwrap()).decompress().unwrap());
+                                        }
                                     }
                                 }
                             } else if mtype == 5 {
@@ -711,7 +709,7 @@ impl Future for StakerNode {
         
                         self.timekeeper = Instant::now();
                     }
-                    if !self.stepeven & (self.timekeeper.elapsed().as_secs() > 1) & (self.comittee[self.headshard].iter().filter(|&x|self.points.contains_key(x)).count() > SIGNING_CUTOFF) {
+                    if self.points.get(&usize::MAX).is_none() & (self.timekeeper.elapsed().as_secs() > 1) & (self.comittee[self.headshard].iter().filter(|&x|self.points.contains_key(x)).count() > SIGNING_CUTOFF) {
                         // should prob check that validators are accurate here?
                         let points = self.points.par_iter().map(|x| *x.1).collect::<Vec<_>>();
                         let mut m = MultiSignature::sum_group_x(&points).as_bytes().to_vec();
@@ -719,12 +717,11 @@ impl Future for StakerNode {
                         self.inner.broadcast(m);
                         // self.points = HashMap::new();
                         self.points.insert(usize::MAX,MultiSignature::sum_group_x(&points).decompress().unwrap());
-                        self.stepeven = true;
                         did_something = true;
         
                     }
                     let k = self.scalars.keys().collect::<HashSet<_>>();
-                    if self.stepeven & self.points.get(&usize::MAX).is_some() & (self.timekeeper.elapsed().as_secs() > 2) & (self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > SIGNING_CUTOFF) {
+                    if self.points.get(&usize::MAX).is_some() & (self.timekeeper.elapsed().as_secs() > 2) & (self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > SIGNING_CUTOFF) {
                         let sumpt = self.points.remove(&usize::MAX).unwrap();
         
                         let keys = self.points.clone();
@@ -738,10 +735,21 @@ impl Future for StakerNode {
                         let e = Scalar::from_hash(s);
                         // println!("keys: {:?}",keys);
                         let k = keys.len();
-                        keys.retain(|&x| (self.points[x] + e*self.stkinfo[*x].0.decompress().unwrap() == self.scalars[x]*PEDERSEN_H()) & self.comittee[self.headshard].contains(x));
+                        keys.retain(|&x|
+                            if self.scalars.contains_key(&x) {
+                                (self.points[x] + e*self.stkinfo[*x].0.decompress().unwrap() == self.scalars[x]*PEDERSEN_H()) & self.comittee[self.headshard].contains(x)
+                            } else {
+                                false
+                            }
+                        );
                         if k == keys.len() {
-
-                            let failed_validators = vec![];
+                            let failed_validators = self.comittee[self.headshard].iter().enumerate().filter_map(|(i,x)|
+                                if self.points.contains_key(x) {
+                                    None
+                                } else {
+                                    Some(i as u8)
+                                }
+                            ).collect::<Vec<_>>();
                             let mut lastblock = NextBlock::default();
                             lastblock.bnum = self.bnum;
                             lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});
@@ -755,9 +763,10 @@ impl Future for StakerNode {
                             let leader = Signature::sign(&self.key, &mut s,&self.keylocation.iter().next().unwrap());
                             lastblock.leader = leader;
             
-            
+                            println!("sum of points is accurate: {}",sumpt == self.points.iter().map(|x| x.1).sum());
                             let mut m = bincode::serialize(&lastblock).unwrap();
-
+                            lastblock.verify(&self.comittee[self.headshard].iter().map(|x| *x as u64).collect(),&self.stkinfo).unwrap();
+                            println!("block verified!");
                             println!("sending off block {}!!!",lastblock.bnum);
                             m.push(3u8);
                             self.inner.broadcast(m);
@@ -781,7 +790,6 @@ impl Future for StakerNode {
         
                             self.timekeeper -= Duration::from_secs(1);
                         }
-                        self.stepeven = false;
                         did_something = true;
         
                     }
@@ -815,7 +823,7 @@ impl Future for StakerNode {
                                 std::thread::sleep(Duration::from_millis(10u64));
                             }
                         } else if (m.txs.len() == 0) & (m.emptyness.is_none()){
-                            self.groupxnonce += 1;
+                            // self.groupxnonce += 1;
                             let m = MultiSignature::gen_group_x(&self.key, &self.groupxnonce, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
                             let mut m = Signature::sign_message(&self.key, &m, keylocation);
                             m.push(4);
@@ -945,7 +953,6 @@ impl Future for StakerNode {
                                             }
                                         }).collect::<HashMap<_,_>>();
 
-                                        self.stepeven = false;
                                         self.timekeeper = Instant::now();
                                     }
                                 }
