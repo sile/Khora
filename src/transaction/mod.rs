@@ -207,9 +207,12 @@ impl PolynomialTransaction {
     pub fn verifystk(&self,history:&Vec<(CompressedRistretto,u64)>) -> Result<(), TransactionError> {
         let mut tr = Transcript::new(b"seal tx");
         let tags: Vec<&Tag> = self.tags.par_iter().map(|a| a).collect();
-
-        let (pk,amnt) = history[u64::from_le_bytes(self.inputs.to_owned().try_into().unwrap()) as usize];
-        let com = Commitment::commit(&Scalar::from(amnt),&Scalar::zero());
+        println!("history {}: {:?}",history.len(),history);
+        let (pk,amnt) = match history.get(u64::from_le_bytes(self.inputs.to_owned().try_into().unwrap()) as usize) {
+            Some(x) => x,
+            None => return Err(TransactionError::InvalidTransaction),
+        };
+        let com = Commitment::commit(&Scalar::from(*amnt),&Scalar::zero());
         let input = OTAccount{pk: pk.decompress().unwrap(),com,..Default::default()};
         let mut outputs = self.outputs.clone();
         outputs.push(fee_ota(&Scalar::from(self.fee)));
