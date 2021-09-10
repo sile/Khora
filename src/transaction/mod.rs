@@ -227,28 +227,6 @@ impl PolynomialTransaction {
     }
 
 }
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
-pub struct SavedTransactionFull {
-    pub outputs: Vec<OTAccount>,
-    pub inputs: Vec<RistrettoPoint>,
-    pub tags: Vec<Tag>,
-    pub proof: SealSig,
-    pub fee: u64,
-}
-impl SavedTransactionFull {
-    pub fn from(tx: &Transaction) -> SavedTransactionFull {
-        SavedTransactionFull {
-            outputs: tx.outputs.to_owned(),
-            inputs: tx.inputs.to_owned().into_par_iter().map(|x| x.pk).collect::<Vec<RistrettoPoint>>(),
-            tags: tx.tags.to_owned(),
-            proof: tx.seal.to_owned(),
-            fee: tx.fee,
-        }
-    }
-    pub fn shorten(&self) -> Vec<OTAccount> {
-        self.outputs.to_owned()
-    }
-}
 
 #[cfg(test)]
 mod tests {

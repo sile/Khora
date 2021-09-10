@@ -358,33 +358,14 @@ impl NextBlock { // need to sign the staker inputs too
                 // println!("\n\nled: {:?}",hash_to_scalar(&leader));
                 // assert!(leader.verify(&mut s.clone(), &stkstate));
                 // println!("\n\nled: {:?}",leader.verify(&mut s.clone(), &stkstate));
-
-                return NextBlock{emptyness: None, validators: Some(sigs), leader, txs: sigfinale[0].txs.to_owned(), last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned(), forker: None}
+                if sigfinale.len() > SIGNING_CUTOFF {
+                    return NextBlock{emptyness: None, validators: Some(sigs), leader, txs: sigfinale[0].txs.to_owned(), last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned(), forker: None}
+                } else {
+                    break
+                }
             }
-        } /* based on the line below, a validator could send a ton of requests with fake tx and eliminate block making */
-        // sigfinale = sigs.par_iter().filter(|x| if let (Ok(z),Ok(y)) = (bincode::serialize(&x.txs),bincode::serialize(&Vec::<PolynomialTransaction>::new())) {z==y} else {false}).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
-        // if sigfinale.len() as u8 > (NUMBER_OF_VALIDATORS/2) { // i dont like making it easier to make empty blocks because leader could use it to profit
-        //     let sigfinale = sigfinale.par_iter().enumerate().filter_map(|(i,x)| if sigs[..i].par_iter().all(|y| x.leader.pk != y.leader.pk) {Some(x.to_owned())} else {None}).collect::<Vec<NextBlock>>();
-        //     /* literally just ignore block content with less than 2/3 sigs */
-        //     let shortcut = Syncedtx::to_sign(&sigfinale[0].txs); /* moving this to after the for loop made this code 3x faster. this is just a reminder to optimize everything later. (i can use [0]) */
-        //     let m = vec![leader.clone(),bincode::serialize(&vec![pool]).unwrap(),shortcut.to_owned(),bincode::serialize(&Vec::<CompressedRistretto>::new()).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-        //     let mut s = Sha3_512::new();
-        //     s.update(&m);
-        //     let sigfinale = sigfinale.into_par_iter().filter(|x| Signature::verify(&x.leader, &mut s.clone(),&stkstate)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
-        //     /* my txt file codes are hella optimized but also hella incomplete with respect to polynomials and also hella disorganized */
-        //     let sigs = sigfinale.par_iter().map(|x| x.leader.to_owned()).collect::<Vec<Signature>>();
-        //     /* do i need to add an empty block option that requires >1/3 signatures of you as leader? */
-        //     let mut s = Sha3_512::new();
-        //     s.update(&bincode::serialize(&sigs).unwrap().to_vec());
-        //     let c = s.finalize();
-        //     let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&vec![pool]).unwrap(),bnum.to_le_bytes().to_vec(),last_name.clone(),c.to_vec(),bincode::serialize(&None::<([Signature;2],[Vec<u8>;2],u64)>).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
-        //     let mut s = Sha3_512::new();
-        //     s.update(&m);
-        //     let leader = Signature::sign(&key, &mut s,&location);
-            
-        //     return NextBlock{emptyness: None, validators: Some(sigs), leader, txs, last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned(), forker: None}
-        // }
-        println!("failed to make block");
+        }
+        println!("failed to make block :(");
         return NextBlock::default()
     }
     pub fn valimerge(key: &Scalar, location: &u64, leader: &CompressedRistretto, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, _mypoolnum: &u16) -> Signature {
