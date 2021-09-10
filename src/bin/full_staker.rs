@@ -158,7 +158,6 @@ fn main() -> Result<(), MainError> {
             sigs: vec![],
             bannedlist: HashSet::new(),
             points: HashMap::new(),
-            groupxnonce: 0,
             scalars: HashMap::new(),
             timekeeper: Instant::now(),
             waitingforentrybool: true,
@@ -264,7 +263,6 @@ struct StakerNode {
     sigs: Vec<NextBlock>,
     bannedlist: HashSet<NodeId>,
     points: HashMap<usize,RistrettoPoint>, // supplier, point
-    groupxnonce: u64,
     scalars: HashMap<usize,Scalar>,
     timekeeper: Instant,
     waitingforentrybool: bool,
@@ -339,7 +337,6 @@ impl StakerNode {
             points: HashMap::new(),
             scalars: HashMap::new(),
             laststkgossip: HashSet::new(),
-            groupxnonce: 0,
             clogging: 0,
             save_history: sn.save_history,
             me: sn.me,
@@ -380,7 +377,7 @@ impl Future for StakerNode {
         let mut did_something = true;
         while did_something {
             did_something = false;
-            print!(".");
+            // print!(".");
 
             /*\_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner|\
             \*/
@@ -405,7 +402,9 @@ impl Future for StakerNode {
                     self.points = HashMap::new();
                     self.scalars = HashMap::new();
                     let m = bincode::serialize(&self.txses).unwrap();
-                    let mut m = Signature::sign_message(&self.key, &m, &(self.comittee[self.headshard][0] as u64));
+                    // println!("bnum: {}",self.bnum);
+
+                    let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard][0] as u64),&self.bnum);
                     m.push(1u8);
                     self.inner.broadcast(m);
                     self.txses = vec![];
@@ -486,7 +485,8 @@ impl Future for StakerNode {
                             if mtype == 0 {
                                 self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
                             } else if mtype == 1 {
-                                if let Some(who) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
+                                // println!("bnum: {}",self.bnum);
+                                if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     if who == self.comittee[self.headshard][0] as u64 {
                                         let m: Vec<Vec<u8>> = bincode::deserialize(&m).unwrap(); // come up with something better
                                         let m = m.into_par_iter().map(|x| bincode::deserialize(&x).unwrap()).collect::<Vec<PolynomialTransaction>>();
@@ -503,8 +503,8 @@ impl Future for StakerNode {
                                                 }
                                             } else if (m.txs.len() == 0) & (m.emptyness.is_none()){
                                                 // self.groupxnonce += 1;
-                                                let m = MultiSignature::gen_group_x(&self.key, &self.groupxnonce, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
-                                                let mut m = Signature::sign_message(&self.key, &m, keylocation);
+                                                let m = MultiSignature::gen_group_x(&self.key, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
+                                                let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
                                                 m.push(4);
                                                 if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
                                                     println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
@@ -623,7 +623,7 @@ impl Future for StakerNode {
                                 // println!("{:?}",hash_to_scalar(&self.lastblock));
                             } else if mtype == 4 {
                                 if !self.points.contains_key(&usize::MAX) {
-                                    if let Some(pk) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
+                                    if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                         let pk = pk as usize;
                                         // println!("got sent from: {:?}",pk);
                                         if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
@@ -640,7 +640,7 @@ impl Future for StakerNode {
                                 // println!("from the me: {:?}",mess);
                                 println!("you're trying to send a scalar!");
                                 for keylocation in self.keylocation.iter() {
-                                    let mut m = Signature::sign_message(&self.key, &MultiSignature::try_get_y(&self.key, &self.groupxnonce, &self.bnum, &mess, &xt).as_bytes().to_vec(), keylocation);
+                                    let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &self.bnum, &mess, &xt).as_bytes().to_vec(), keylocation, &self.bnum);
                                     m.push(6u8);
                                     if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
                                         self.inner.broadcast(m.clone());
@@ -649,7 +649,7 @@ impl Future for StakerNode {
                                 self.waitingforleadertime = Instant::now();
                             } else if mtype == 6 {
                                 // println!("someone's trying to send you a scalar!");
-                                if let Some(pk) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
+                                if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     let pk = pk as usize;
                                     println!("someone's REALLY trying to send you a scalar!");
                                     if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
@@ -677,15 +677,16 @@ impl Future for StakerNode {
                         let lastblock = NextBlock::finish(&self.key, &self.keylocation.iter().next().unwrap(), &self.sigs.drain(..).collect::<Vec<_>>(), &self.comittee[self.headshard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(self.headshard as u16), &self.bnum, &self.lastname, &self.stkinfo);
         
                         if lastblock.validators.is_some() {
+                            lastblock.verify(&self.comittee[self.headshard].iter().map(|&x| x as u64).collect::<Vec<_>>(), &self.stkinfo).unwrap();
                             // self.lastblock = lastblock;
         
                             let mut m = bincode::serialize(&lastblock).unwrap();
-                            let l = bincode::serialize(&lastblock.tolightning()).unwrap();
+                            // let l = bincode::serialize(&lastblock.tolightning()).unwrap();
             
                             self.sigs = vec![];
         
-                            let mut hasher = Sha3_512::new();
-                            hasher.update(&l);
+                            // let mut hasher = Sha3_512::new();
+                            // hasher.update(&l);
                             // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                             // println!("{:?}",hash_to_scalar(&self.lastblock));
         
@@ -726,13 +727,14 @@ impl Future for StakerNode {
         
                         let keys = self.points.clone();
                         let mut keys = keys.keys().collect::<Vec<_>>();
-                        let mut s = Sha3_512::new();
                         let mut m = self.leader.as_bytes().to_vec();
                         m.extend(&self.lastname);
                         m.extend(&(self.headshard as u16).to_le_bytes().to_vec());
+                        let mut s = Sha3_512::new();
                         s.update(&m);
                         s.update(sumpt.compress().as_bytes());
                         let e = Scalar::from_hash(s);
+
                         // println!("keys: {:?}",keys);
                         let k = keys.len();
                         keys.retain(|&x|
@@ -750,6 +752,11 @@ impl Future for StakerNode {
                                     Some(i as u8)
                                 }
                             ).collect::<Vec<_>>();
+                            println!("e: {:?}",e);
+                            println!("y: {:?}",self.scalars.values().map(|x| *x).sum::<Scalar>());
+                            println!("x: {:?}",sumpt.compress());
+                            println!("not who: {:?}",failed_validators); // <-------this is fucked up somehow
+
                             let mut lastblock = NextBlock::default();
                             lastblock.bnum = self.bnum;
                             lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});
@@ -764,9 +771,9 @@ impl Future for StakerNode {
                             lastblock.leader = leader;
             
                             println!("sum of points is accurate: {}",sumpt == self.points.iter().map(|x| x.1).sum());
-                            let mut m = bincode::serialize(&lastblock).unwrap();
                             lastblock.verify(&self.comittee[self.headshard].iter().map(|x| *x as u64).collect(),&self.stkinfo).unwrap();
                             println!("block verified!");
+                            let mut m = bincode::serialize(&lastblock).unwrap();
                             println!("sending off block {}!!!",lastblock.bnum);
                             m.push(3u8);
                             self.inner.broadcast(m);
@@ -824,8 +831,8 @@ impl Future for StakerNode {
                             }
                         } else if (m.txs.len() == 0) & (m.emptyness.is_none()){
                             // self.groupxnonce += 1;
-                            let m = MultiSignature::gen_group_x(&self.key, &self.groupxnonce, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
-                            let mut m = Signature::sign_message(&self.key, &m, keylocation);
+                            let m = MultiSignature::gen_group_x(&self.key, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
+                            let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
                             m.push(4);
                             if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
                                 println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
@@ -878,7 +885,6 @@ impl Future for StakerNode {
                                         println!("=========================================================\nyay staker!");
                                         println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
 
-                                        // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
 
                                         for _ in self.bnum..self.lastblock.bnum { // add whole different scannings for empty blocks
                                             println!("I missed a block!");
@@ -890,7 +896,6 @@ impl Future for StakerNode {
                                                 select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                                             }
                                             self.bnum += 1;
-                                            // self.lastname = (Scalar::from_canonical_bytes(self.lastname.clone().try_into().unwrap()).unwrap() + Scalar::one()).as_bytes().to_vec();
                                         }
                                         println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                                         if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
@@ -921,7 +926,6 @@ impl Future for StakerNode {
                                             select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                                         }
                                         self.bnum += 1;
-                                        // self.lastname = (Scalar::from_canonical_bytes(self.lastname.clone().try_into().unwrap()).unwrap() + Scalar::one()).as_bytes().to_vec();
             
 
                                         if self.lastblock.emptyness.is_some() {

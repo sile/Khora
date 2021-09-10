@@ -78,11 +78,9 @@ pub struct MultiSignature{
     pub pk: Vec<u8>, // whose not in it... maybe this should be comitte index not stake index to save space? -7 bytes per sig not in -> 42 - 0 sigs -> 0 to 294 bytes saved per block
 }
 impl MultiSignature {
-    pub fn gen_group_x(key: &Scalar, nonce: &u64, bnum: &u64) -> CompressedRistretto { // WARNING: make a function to sign arbitrary messages when sending them for validators
-        let nonce = nonce.to_le_bytes();
+    pub fn gen_group_x(key: &Scalar, bnum: &u64) -> CompressedRistretto { // WARNING: make a function to sign arbitrary messages when sending them for validators
         let bnum = bnum.to_le_bytes();
         let mut s = Sha3_512::new();
-        s.update(&nonce);
         s.update(&bnum);
         s.update(&key.as_bytes()); // double think that this is secure because the x is known after sent for if it needs to be resent
         let m = ((Scalar::from_hash(s))*PEDERSEN_H()).compress();
@@ -91,11 +89,9 @@ impl MultiSignature {
     pub fn sum_group_x<'a, I: IntoParallelRefIterator<'a, Item = &'a RistrettoPoint>>(x: &'a I) -> CompressedRistretto {
         x.par_iter().sum::<RistrettoPoint>().compress()
     }
-    pub fn try_get_y(key: &Scalar, nonce: &u64, bnum: &u64, message: &Vec<u8>, xt: &CompressedRistretto) -> Scalar {
-        let nonce = nonce.to_le_bytes();
+    pub fn try_get_y(key: &Scalar, bnum: &u64, message: &Vec<u8>, xt: &CompressedRistretto) -> Scalar {
         let bnum = bnum.to_le_bytes();
         let mut s = Sha3_512::new();
-        s.update(&nonce);
         s.update(&bnum);
         s.update(&key.as_bytes());
         let r = Scalar::from_hash(s);
@@ -115,7 +111,11 @@ impl MultiSignature {
         s.update(&message);
         s.update(&xt.as_bytes());
         let e = Scalar::from_hash(s);
-        (yt*PEDERSEN_H()).compress() == (xt.decompress().unwrap() + e*who.into_par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>()).compress()
+        println!("e: {:?}",e);
+        println!("y: {:?}",yt);
+        println!("x: {:?}",xt);
+        println!("who: {:?}",who);
+        (yt*PEDERSEN_H()) == (xt.decompress().unwrap() + e*who.into_par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>())
     } // -------------this should fail on user validator leader codes because of this ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ which i added for full_staker.rs
 }
 
@@ -200,7 +200,40 @@ impl Signature {
         };
         
         let mut h = Sha3_512::new();
-        h.update(&signed_message);
+        h.update(signed_message);
+        if s.verify(&mut h, stkstate) {
+            Some(s.pk)
+        } else {
+            None
+        }
+    }
+
+
+    pub fn sign_message_nonced(key: &Scalar, message: &Vec<u8>, location: &u64, bnum: &u64) -> Vec<u8> {
+        let mut s = Sha3_512::new();
+        s.update(&message); // impliment non block check stuff for signatures
+        s.update(bnum.to_le_bytes());
+        let mut csprng = thread_rng();
+        let a = Scalar::random(&mut csprng);
+        s.update((a*PEDERSEN_H()).compress().to_bytes());
+        let c = Scalar::from_hash(s.to_owned());
+        let mut out = c.as_bytes().to_vec();
+        out.par_extend((a - c*key).as_bytes());
+        out.par_extend(location.to_le_bytes());
+        out.par_extend(message);
+        out
+    }
+    pub fn recieve_signed_message_nonced(signed_message: &mut Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, bnum: &u64) -> Option<u64> {
+        let sig = signed_message.par_drain(..72).collect::<Vec<_>>();
+        let s = Signature{
+            c: Scalar::from_bits(sig[..32].try_into().unwrap()),
+            r: Scalar::from_bits(sig[32..64].try_into().unwrap()),
+            pk: u64::from_le_bytes(sig[64..72].try_into().unwrap())
+        };
+        
+        let mut h = Sha3_512::new();
+        h.update(signed_message);
+        h.update(bnum.to_le_bytes());
         if s.verify(&mut h, stkstate) {
             Some(s.pk)
         } else {
@@ -280,13 +313,17 @@ impl NextBlock { // need to sign the staker inputs too
     pub fn finish(key: &Scalar, location: &u64, sigs: &Vec<NextBlock>, validator_pool: &Vec<u64>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock { // <----do i need to reference previous block explicitly?
         let leader = (key*PEDERSEN_H()).compress().as_bytes().to_vec();
         let mut sigs = sigs.into_par_iter().filter(|x| !validator_pool.into_par_iter().all(|y| x.leader.pk != *y)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
-        let mut txs: Vec<PolynomialTransaction>;
         let mut sigfinale: Vec<NextBlock>;
-        for _ in 0..(sigs.len() - 2*(NUMBER_OF_VALIDATORS/3)) {
+        // println!("looping until: {}",sigs.len() - SIGNING_CUTOFF);
+        // println!("txlens: {:?}",sigs.par_iter().map(|x| x.txs.len()).collect::<Vec<_>>());
+        // println!("txs: {:?}",sigs.par_iter().map(|x| hash_to_scalar(&x.txs)).collect::<Vec<_>>());
+        for _ in 0..=(sigs.len() - SIGNING_CUTOFF) {
             let b = sigs.pop().unwrap();
-            txs = b.txs;
-            sigfinale = sigs.par_iter().filter(|x| if let (Ok(z),Ok(y)) = (bincode::serialize(&x.txs),bincode::serialize(&txs)) {z==y} else {false}).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
-            if sigfinale.len() > 2*(NUMBER_OF_VALIDATORS/3) {
+            sigfinale = sigs.par_iter().filter(|x| if let (Ok(z),Ok(y)) = (bincode::serialize(&x.txs),bincode::serialize(&b.txs)) {z==y} else {false}).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
+            // println!("sigfanale len: {}",sigfinale.len());
+            if sigfinale.len() >= SIGNING_CUTOFF {
+                sigfinale.push(b);
+                println!("they agree on tx in block validation");
                 let sigfinale = sigfinale.par_iter().enumerate().filter_map(|(i,x)| if sigs[..i].par_iter().all(|y| x.leader.pk != y.leader.pk) {Some(x.to_owned())} else {None}).collect::<Vec<NextBlock>>();
                 // println!("{:?}",sigfinale.len());
                 let shortcut = Syncedtx::to_sign(&sigfinale[0].txs); /* moving this to after the for loop made this code 3x faster. this is just a reminder to optimize everything later. (i can use [0]) */
@@ -322,7 +359,7 @@ impl NextBlock { // need to sign the staker inputs too
                 // assert!(leader.verify(&mut s.clone(), &stkstate));
                 // println!("\n\nled: {:?}",leader.verify(&mut s.clone(), &stkstate));
 
-                return NextBlock{emptyness: None, validators: Some(sigs), leader, txs, last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned(), forker: None}
+                return NextBlock{emptyness: None, validators: Some(sigs), leader, txs: sigfinale[0].txs.to_owned(), last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned(), forker: None}
             }
         } /* based on the line below, a validator could send a ton of requests with fake tx and eliminate block making */
         // sigfinale = sigs.par_iter().filter(|x| if let (Ok(z),Ok(y)) = (bincode::serialize(&x.txs),bincode::serialize(&Vec::<PolynomialTransaction>::new())) {z==y} else {false}).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
@@ -347,7 +384,7 @@ impl NextBlock { // need to sign the staker inputs too
             
         //     return NextBlock{emptyness: None, validators: Some(sigs), leader, txs, last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned(), forker: None}
         // }
-
+        println!("failed to make block");
         return NextBlock::default()
     }
     pub fn valimerge(key: &Scalar, location: &u64, leader: &CompressedRistretto, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, _mypoolnum: &u16) -> Signature {
@@ -476,7 +513,7 @@ impl NextBlock { // need to sign the staker inputs too
             if !validators.par_iter().all(|x| !validator_pool.clone().into_par_iter().all(|y| x.pk != y)) {
                 return Err("at least 1 validator is not in the pool")
             }
-            if validator_pool.par_iter().filter(|x| !validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < (2*NUMBER_OF_VALIDATORS/3) {
+            if validator_pool.par_iter().filter(|x| !validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() <= SIGNING_CUTOFF {
                 return Err("there aren't enough validators")
             }
             let x = validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>();
@@ -509,7 +546,7 @@ impl NextBlock { // need to sign the staker inputs too
             // println!("who sum: {:?}",who.par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>().compress());
             // println!("leader pk: {:?}",self.leader);
             if !MultiSignature::verify_group(&emptyness.y,&emptyness.x,&m,&who) {
-                return Err("there's a problem with the multisignature")
+                return Err("multisignature can not be verified")
             }
             let m = vec![BLOCK_KEYWORD.to_vec(),self.shards[0].to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
             let mut s = Sha3_512::new();
@@ -855,7 +892,7 @@ impl LightningSyncBlock {
             if !validators.par_iter().all(|x| !validator_pool.into_par_iter().all(|y| x.pk != *y)) {
                 return Err("at least 1 validator is not in the pool")
             }
-            if validator_pool.par_iter().filter(|x| !validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < (2*NUMBER_OF_VALIDATORS/3) {
+            if validator_pool.par_iter().filter(|x| !validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < SIGNING_CUTOFF {
                 return Err("there aren't enough validators")
             }
             let x = validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>();
@@ -1208,9 +1245,9 @@ mod tests {
         let sk = (0..100).into_iter().map(|_| Scalar::from(rand::random::<u64>())).collect::<Vec<_>>();
         let pk = sk.iter().map(|x| x*PEDERSEN_H()).collect::<Vec<_>>();
 
-        let x = sk.iter().map(|k| MultiSignature::gen_group_x(&k,&1234u64,&0u64).decompress().unwrap()).collect::<Vec<_>>();
+        let x = sk.iter().map(|k| MultiSignature::gen_group_x(&k,&0u64).decompress().unwrap()).collect::<Vec<_>>();
         let xt = MultiSignature::sum_group_x(&x);
-        let y = sk.iter().map(|k| MultiSignature::try_get_y(&k,&1234u64,&0u64, &message, &xt)).collect::<Vec<_>>();
+        let y = sk.iter().map(|k| MultiSignature::try_get_y(&k,&0u64, &message, &xt)).collect::<Vec<_>>();
         let yt = MultiSignature::sum_group_y(&y);
 
 
@@ -1219,5 +1256,33 @@ mod tests {
         assert!(MultiSignature::verify_group(&yt, &xt, &message, &pk.iter().rev().map(|x| x.compress()).collect::<Vec<_>>()));
         assert!(!MultiSignature::verify_group(&yt, &xt, &message, &pk[..99].iter().map(|x| x.compress()).collect::<Vec<_>>()));
         assert!(!MultiSignature::verify_group(&yt, &xt, &"bye!!!".as_bytes().to_vec(), &pk.iter().map(|x| x.compress()).collect::<Vec<_>>()));
+    }
+
+    #[test]
+    fn message_signing_test() {
+        use curve25519_dalek::scalar::Scalar;
+        use crate::validation::Signature;
+
+        let message = "hi!!!".as_bytes().to_vec();
+        let sk = Scalar::from(rand::random::<u64>());
+        let pk = (sk*PEDERSEN_H()).compress();
+        let stkstate = vec![(pk,9012309183u64)];
+        let mut m = Signature::sign_message(&sk,&message,&0u64);
+        assert!(0 == Signature::recieve_signed_message(&mut m,&stkstate).unwrap());
+        assert!(m == message);
+    }
+
+    #[test]
+    fn message_signing_nonced_test() {
+        use curve25519_dalek::scalar::Scalar;
+        use crate::validation::Signature;
+
+        let message = "hi!!!".as_bytes().to_vec();
+        let sk = Scalar::from(rand::random::<u64>());
+        let pk = (sk*PEDERSEN_H()).compress();
+        let stkstate = vec![(pk,9012309183u64)];
+        let mut m = Signature::sign_message_nonced(&sk,&message,&0u64,&80u64);
+        assert!(0 == Signature::recieve_signed_message_nonced(&mut m,&stkstate,&80u64).unwrap());
+        assert!(m == message);
     }
 }
