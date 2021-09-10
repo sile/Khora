@@ -756,7 +756,7 @@ impl Future for StakerNode {
                             println!("y: {:?}",self.scalars.values().map(|x| *x).sum::<Scalar>());
                             println!("x: {:?}",sumpt.compress());
                             println!("not who: {:?}",failed_validators); // <-------this is fucked up somehow
-
+                            println!("comittee: {:?}",self.comittee[self.headshard]);
                             let mut lastblock = NextBlock::default();
                             lastblock.bnum = self.bnum;
                             lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});

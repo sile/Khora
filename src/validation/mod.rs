@@ -703,7 +703,7 @@ impl NextBlock { // need to sign the staker inputs too
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..QUEUE_LENGTH-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
+            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
             x.append(&mut y);
         });
 
