@@ -78,21 +78,21 @@ pub struct MultiSignature{
     pub pk: Vec<u8>, // whose not in it... maybe this should be comitte index not stake index to save space? -7 bytes per sig not in -> 42 - 0 sigs -> 0 to 294 bytes saved per block
 }
 impl MultiSignature {
-    pub fn gen_group_x(key: &Scalar, bnum: &u64) -> CompressedRistretto { // WARNING: make a function to sign arbitrary messages when sending them for validators
-        let bnum = bnum.to_le_bytes();
+    pub fn gen_group_x(key: &Scalar, nonce: &u64) -> CompressedRistretto { // this will give you some scalar to use that no one will use and is reproducable
+        let nonce = nonce.to_le_bytes();
         let mut s = Sha3_512::new();
-        s.update(&bnum);
-        s.update(&key.as_bytes()); // double think that this is secure because the x is known after sent for if it needs to be resent
+        s.update(&nonce);
+        s.update(&key.as_bytes());
         let m = ((Scalar::from_hash(s))*PEDERSEN_H()).compress();
         m
     }
     pub fn sum_group_x<'a, I: IntoParallelRefIterator<'a, Item = &'a RistrettoPoint>>(x: &'a I) -> CompressedRistretto {
         x.par_iter().sum::<RistrettoPoint>().compress()
     }
-    pub fn try_get_y(key: &Scalar, bnum: &u64, message: &Vec<u8>, xt: &CompressedRistretto) -> Scalar {
-        let bnum = bnum.to_le_bytes();
+    pub fn try_get_y(key: &Scalar, nonce: &u64, message: &Vec<u8>, xt: &CompressedRistretto) -> Scalar {
+        let nonce = nonce.to_le_bytes();
         let mut s = Sha3_512::new();
-        s.update(&bnum);
+        s.update(&nonce);
         s.update(&key.as_bytes());
         let r = Scalar::from_hash(s);
 
@@ -321,7 +321,7 @@ impl NextBlock { // need to sign the staker inputs too
             let b = sigs.pop().unwrap();
             sigfinale = sigs.par_iter().filter(|x| if let (Ok(z),Ok(y)) = (bincode::serialize(&x.txs),bincode::serialize(&b.txs)) {z==y} else {false}).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
             // println!("sigfanale len: {}",sigfinale.len());
-            if sigfinale.len() >= SIGNING_CUTOFF {
+            if validator_pool.par_iter().filter(|x| !sigfinale.par_iter().all(|y| x.to_owned() != &y.leader.pk)).count() >= SIGNING_CUTOFF {
                 sigfinale.push(b);
                 println!("they agree on tx in block validation");
                 let sigfinale = sigfinale.par_iter().enumerate().filter_map(|(i,x)| if sigs[..i].par_iter().all(|y| x.leader.pk != y.leader.pk) {Some(x.to_owned())} else {None}).collect::<Vec<NextBlock>>();
@@ -330,7 +330,7 @@ impl NextBlock { // need to sign the staker inputs too
                 let m = vec![leader.clone(),bincode::serialize(&vec![pool]).unwrap(),shortcut.to_owned(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
                 // println!("\n\nled: {:?}\n\n",hash_to_scalar(&leader));
                 // println!("\n\nled: {:?}\n\n",bnum);
-                // println!("{}",sigfinale.len()); // 1
+                // println!("{}",sigfinale.len());
                 let mut s = Sha3_512::new();
                 s.update(&m);
                 let sigfinale = sigfinale.into_par_iter().filter(|x| Signature::verify(&x.leader, &mut s.clone(),&stkstate)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
@@ -358,9 +358,10 @@ impl NextBlock { // need to sign the staker inputs too
                 // println!("\n\nled: {:?}",hash_to_scalar(&leader));
                 // assert!(leader.verify(&mut s.clone(), &stkstate));
                 // println!("\n\nled: {:?}",leader.verify(&mut s.clone(), &stkstate));
-                if sigfinale.len() > SIGNING_CUTOFF {
+                if validator_pool.par_iter().filter(|x| !sigfinale.par_iter().all(|y| x.to_owned() != &y.leader.pk)).count() > SIGNING_CUTOFF {
                     return NextBlock{emptyness: None, validators: Some(sigs), leader, txs: sigfinale[0].txs.to_owned(), last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned(), forker: None}
                 } else {
+                    print!("not enough sigs... ");
                     break
                 }
             }

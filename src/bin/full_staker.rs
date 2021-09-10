@@ -152,7 +152,7 @@ fn main() -> Result<(), MainError> {
             bnum: 0u64,
             lastbnum: 0u64,
             height: 0u64,
-            sheight: 1u64,
+            sheight: initial_history.len() as u64,
             alltagsever: vec![],
             txses: vec![],
             sigs: vec![],
@@ -487,7 +487,7 @@ impl Future for StakerNode {
                             } else if mtype == 1 {
                                 // println!("bnum: {}",self.bnum);
                                 if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
-                                    if who == self.comittee[self.headshard][0] as u64 {
+                                    if (who == self.comittee[self.headshard][0] as u64) | (self.stkinfo[who as usize].0 == self.leader) {
                                         if let Ok(m) = bincode::deserialize::<Vec<Vec<u8>>>(&m) {
                                             let m = m.into_par_iter().filter_map(|x|
                                                 if let Ok(x) = bincode::deserialize(&x) {
@@ -641,11 +641,16 @@ impl Future for StakerNode {
                                 }
                                 // println!("{:?}",hash_to_scalar(&self.lastblock));
                             } else if mtype == 4 {
+                                println!("recieving points phase: {}",!self.points.contains_key(&usize::MAX));
                                 if !self.points.contains_key(&usize::MAX) {
+                                    print!(".");
                                     if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
+                                        print!(".");
                                         let pk = pk as usize;
                                         if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
+                                            print!(".");
                                             if let Ok(m) = m.try_into() {
+                                                print!(".");
                                                 if let Some(m) = CompressedRistretto(m).decompress() {
                                                     println!("got sent point from {}",pk);
                                                     self.points.insert(pk,m);
@@ -673,6 +678,7 @@ impl Future for StakerNode {
                                     self.waitingforleadertime = Instant::now();
                                 }
                             } else if mtype == 6 {
+                                println!("recieving scalars phase: {}",self.points.contains_key(&usize::MAX));
                                 if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     let pk = pk as usize;
                                     if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
@@ -727,16 +733,25 @@ impl Future for StakerNode {
         
                             self.sigs = vec![];
         
-                            println!("made a block with {} transactions!",self.lastblock.txs.len());
-                            did_something = true;
+                            println!("made a block with {} transactions!",lastblock.txs.len());
                             self.timekeeper = Instant::now();
                         } else {
-                            self.sigs = self.sigs.iter().filter(|x| !self.comittee[self.headshard].par_iter().all(|y| x.leader.pk != *y as u64)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
                             println!("failed to make a block :(");
-                            did_something = false;
+
+                            self.sigs = vec![];
+                            let m = bincode::serialize(&lastblock.txs.par_iter().map(|x| bincode::serialize(&x).unwrap()).collect::<Vec<_>>()).unwrap();
+                            // println!("bnum: {}",self.bnum);
+        
+                            let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard][0] as u64),&self.bnum);
+                            m.push(1u8);
+                            self.inner.broadcast(m);
+
+                            // self.sigs = self.sigs.iter().filter(|x| !self.comittee[self.headshard].par_iter().all(|y| x.leader.pk != *y as u64)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
+                            // self.timekeeper = Instant::now();
                         }
+                        did_something = true;
                     }
-                    if self.points.get(&usize::MAX).is_none() & (self.timekeeper.elapsed().as_secs() > 1) & (self.comittee[self.headshard].iter().filter(|&x|self.points.contains_key(x)).count() > SIGNING_CUTOFF) {
+                    if self.points.get(&usize::MAX).is_none() & (self.timekeeper.elapsed().as_secs() > 1) & (self.comittee[self.headshard].iter().filter(|&x| self.points.contains_key(x)).count() > SIGNING_CUTOFF) {
                         // should prob check that validators are accurate here?
                         let points = self.points.par_iter().map(|x| *x.1).collect::<Vec<_>>();
                         let mut m = MultiSignature::sum_group_x(&points).as_bytes().to_vec();
@@ -744,6 +759,7 @@ impl Future for StakerNode {
                         self.inner.broadcast(m);
                         // self.points = HashMap::new();
                         self.points.insert(usize::MAX,MultiSignature::sum_group_x(&points).decompress().unwrap());
+                        println!("scalar time!");
                         did_something = true;
         
                     }
@@ -813,35 +829,31 @@ impl Future for StakerNode {
                             self.timekeeper = Instant::now();
                         } else { // need an extra round to weed out liers
                             let points = keys.iter().map(|x| self.points[x]).collect::<Vec<_>>();
-                            let p = MultiSignature::sum_group_x(&points);
-                            self.points.insert(usize::MAX,p.decompress().unwrap());
-                            let mut m = p.as_bytes().to_vec();
-                            m.push(5u8);
-                            self.inner.broadcast(m);
-                            self.points = keys.iter().map(|&x| (*x,self.points[x])).collect::<HashMap<_,_>>();
-                            self.scalars = HashMap::new();
+                            if keys.len() > SIGNING_CUTOFF {
+                                let p = MultiSignature::sum_group_x(&points);
+                                self.points.insert(usize::MAX,p.decompress().unwrap());
+                                let mut m = p.as_bytes().to_vec();
+                                m.push(5u8);
+                                self.inner.broadcast(m);
+                                self.points = keys.iter().map(|&x| (*x,self.points[x])).collect::<HashMap<_,_>>();
+                                self.scalars = HashMap::new();
+                                self.timekeeper -= Duration::from_secs(1);
+                            } else {
+                                let m = bincode::serialize(&self.txses).unwrap();
+                                let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard][0] as u64),&self.bnum);
+                                m.push(1u8);
+                                println!("a validator was corrupted I'm restarting this bitch");
+                                self.inner.broadcast(m);
+                                self.txses = vec![];
+                                self.timekeeper = Instant::now();
+                            }
         
-                            self.timekeeper -= Duration::from_secs(1);
                         }
                         did_something = true;
         
                     }
                 }
                 // }
-                if (self.waitingforleadertime.elapsed().as_secs() > 30) & self.waitingforleaderbool {
-                    self.waitingforleadertime = Instant::now();
-                    /* change the leader, also add something about only changing the leader if block is free */
-
-                    self.overthrown.insert(self.leader);
-                    self.leader = self.stkinfo[*self.comittee[0].iter().zip(self.votes.iter()).max_by_key(|(&x,&y)| { // i think it does make sense to not care about whose going to leave soon here
-                        let candidate = self.stkinfo[x];
-                        if self.overthrown.contains(&candidate.0) {
-                            i32::MIN
-                        } else {
-                            y
-                        }
-                    }).unwrap().0].0;
-                }
                 if (self.waitingforentrytime.elapsed().as_secs() > 5) & self.waitingforentrybool {
                     self.waitingforentrybool = false;
                     for keylocation in &self.keylocation {
@@ -912,7 +924,12 @@ impl Future for StakerNode {
                                                 println!("running a full block!");
                                                 self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
                                                 println!("scanning as stk!");
+                                                let mystkaccs = self.smine.clone();
                                                 self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
+                                                if self.smine != mystkaccs {
+                                                    self.inner.broadcast_now(m.clone());
+                                                    self.outer.broadcast_now(m.clone());
+                                                }
                                                 self.keylocation = self.smine.iter().map(|x| x[0]).collect();
                                                 println!("scanning as noone!");
                                                 self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
@@ -1059,6 +1076,20 @@ impl Future for StakerNode {
                     }
                     did_something = true;
                 }
+                if (self.waitingforleadertime.elapsed().as_secs() > 30) & self.waitingforleaderbool {
+                    self.waitingforleadertime = Instant::now();
+                    /* change the leader, also add something about only changing the leader if block is free */
+
+                    self.overthrown.insert(self.leader);
+                    self.leader = self.stkinfo[*self.comittee[0].iter().zip(self.votes.iter()).max_by_key(|(&x,&y)| { // i think it does make sense to not care about whose going to leave soon here
+                        let candidate = self.stkinfo[x];
+                        if self.overthrown.contains(&candidate.0) {
+                            i32::MIN
+                        } else {
+                            y
+                        }
+                    }).unwrap().0].0;
+                }
                 /*____________________________________________________________________________________________________________________________________________________________________________________________________________________________
                 RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION -------------------|
                 ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION|
@@ -1177,10 +1208,13 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             let me = self.me;
                             rlring.par_iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x.clone()) {*x = y;});
                             let tx = Transaction::spend_ring(&rlring, &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
-                            tx.verify().unwrap();
                             let tx = tx.polyform(&rname);
-                            tx.verify().unwrap();
-                            txbin = bincode::serialize(&tx).unwrap();
+                            if tx.verify().is_ok() {
+                                txbin = bincode::serialize(&tx).unwrap();
+                            } else {
+                                txbin = vec![];
+                                println!("you can't make that transaction!");
+                            }
                         } else {
                             let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.par_iter().map(|x|(x[0] as u64,x[1].clone())).unzip();
                             let i = txtype as usize - 97usize;
@@ -1192,20 +1226,25 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             println!("loc: {:?}",loc);
                             println!("amnt: {:?}",amnt);
                             let tx = tx.polyform(&loc[i].to_le_bytes().to_vec());
-                            tx.verifystk(&self.stkinfo).unwrap();
-                            txbin = bincode::serialize(&tx).unwrap();
-                        }
-                        txbin.push(0);
-
-                        // println!("----------------------------------------------------------------\n{:?}",txbin);
-                        self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
-                            if self.queue[self.headshard].contains(&(location as usize)) {
-                                Some((location,node))
+                            if tx.verifystk(&self.stkinfo).is_ok() {
+                                txbin = bincode::serialize(&tx).unwrap();
                             } else {
-                                None
+                                txbin = vec![];
+                                println!("you can't make that transaction!");
                             }
-                        }).collect::<HashMap<_,_>>();
-                        self.outer.broadcast(txbin);
+                        }
+
+                        if !txbin.is_empty() {
+                            txbin.push(0);
+                            self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
+                                if self.queue[self.headshard].contains(&(location as usize)) {
+                                    Some((location,node))
+                                } else {
+                                    None
+                                }
+                            }).collect::<HashMap<_,_>>();
+                            self.outer.broadcast(txbin);
+                        }
                     } else if istx == 42 /* * */ { // ips to talk to
                         // 192.168.000.101:09876 192.168.000.101:09875*
                         let addrs = String::from_utf8_lossy(&m);
@@ -1218,25 +1257,23 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         println!("\nmy staker name:\n---------------------------------------------\n{:?}\n",self.me.stake_acc().name());
                         let scalarmoney = self.mine.iter().map(|x|self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>();
                         println!("\nmy scalar money:\n---------------------------------------------\n{:?}\n",scalarmoney);
-                        let moniez = u64::from_le_bytes(scalarmoney.as_bytes()[..8].try_into().unwrap());
-                        println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
-                        println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
-                        println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
                         println!("\nstake state:\n---------------------------------------------\n{:?}\n",self.stkinfo);
                         println!("\nheight:\n---------------------------------------------\n{:?}\n",self.height);
                         println!("\nsheight:\n---------------------------------------------\n{:?}\n",self.sheight);
                         println!("\ncomittee:\n---------------------------------------------\n{:?}\n",self.comittee[self.headshard]);
                         println!("\nleadership:\n---------------------------------------------\nmyself: {:?}\nleader: {:?}\n",self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress().as_bytes(), self.leader.as_bytes());
                         println!("\ntime:\n---------------------------------------------\n{:?}s\n",self.timekeeper.elapsed().as_secs());
+                        println!("\nis validating:\n---------------------------------------------\n{:?}\n",self.is_validator);
+                        println!("\nis staking:\n---------------------------------------------\n{:?}\n",self.is_staker);
+                        println!("\nknown validators:\n---------------------------------------------\n{:?}\n",self.knownvalidators);
                         println!("\nblock number:\n---------------------------------------------\n{:?}\n",self.bnum);
                         println!("\nblock name:\n---------------------------------------------\n{:?}\n",self.lastname);
                         println!("\ninner friends:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().all_push_peers());
                         println!("\nouter friends:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().all_push_peers());
-                        // println!("\ninner eagers:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().eager_push_peers());
-                        // println!("\nouter eagers:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().eager_push_peers());
-                        println!("\nis validating:\n---------------------------------------------\n{:?}\n",self.is_validator);
-                        println!("\nis validating:\n---------------------------------------------\n{:?}\n",self.is_validator);
-                        println!("\nknown validators:\n---------------------------------------------\n{:?}\n",self.knownvalidators);
+                        let moniez = u64::from_le_bytes(scalarmoney.as_bytes()[..8].try_into().unwrap());
+                        println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
+                        println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
+                        println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
                     } else if istx == 115 /* s */ {
                         self.save();
                         // maybe do something else??? like save or load contacts???
