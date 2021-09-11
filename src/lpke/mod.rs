@@ -13,19 +13,25 @@ use aes_gcm_siv::aead::{Aead, NewAead};
 use hmac::{Hmac, Mac, NewMac};
 
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "std", derive(Error))]
 pub enum LpkeError{
     DecryptionError
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct Ciphertext { //used to be pub(crate)
-    pub R: RistrettoPoint, //used to be not put
+#[derive(Debug, Clone, Eq, Serialize, Deserialize, Default)]
+pub struct Ciphertext {
+    pub R: RistrettoPoint,
     pub e: Vec<u8>,
     pub nonce: [u8; 12],
     pub mac: Vec<u8>,
+}
+
+impl PartialEq for Ciphertext {
+    fn eq(&self, other: &Self) -> bool {
+        (self.R == other.R) && (self.e == other.e) && (self.nonce == other.nonce) && (self.mac == other.mac)
+    }
 }
 
 impl Ciphertext{

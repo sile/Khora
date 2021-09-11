@@ -4,6 +4,7 @@ use std::convert::TryInto;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::scalar::Scalar;
 use merlin::Transcript;
+use polynomial_over_finite_prime_field::PolynomialOverP;
 use serde::{Serialize, Deserialize};
 use rand::random;
 
@@ -163,13 +164,18 @@ pub fn get_test_ring(n: usize) -> Vec<OTAccount> {
 
 
 
-#[derive(Default, Clone, Serialize, Deserialize, Hash, Debug)]
+#[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
 pub struct PolynomialTransaction{
     pub inputs: Vec<u8>,
     pub outputs: Vec<OTAccount>,
     pub tags: Vec<Tag>,
     pub seal: SealSig,
     pub fee: u64,
+}
+impl PartialEq for PolynomialTransaction {
+    fn eq(&self, other: &Self) -> bool {
+        self.inputs == other.inputs && self.outputs == other.outputs  && self.tags == other.tags && self.seal == other.seal && self.fee == other.fee
+    }
 }
 impl PolynomialTransaction {
     pub fn verify_ram(&self,history:&Vec<OTAccount>) -> Result<(), TransactionError> {

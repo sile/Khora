@@ -21,7 +21,7 @@ use rayon::iter::IntoParallelRefIterator;
 
 
 
-#[derive(Debug, Default, Hash, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Hash, Eq, Clone, Serialize, Deserialize)]
 pub struct SealSig {
     pub A: CompressedRistretto,
     pub S: CompressedRistretto,
@@ -32,7 +32,11 @@ pub struct SealSig {
     pub ipp_proof: InnerProductProof,
     pub t: Scalar
 }
-
+impl PartialEq for SealSig {
+    fn eq(&self, other: &Self) -> bool {
+        self.A == other.A && self.S == other.S && self.T1 == other.T1 && self.T2 == other.T2 && self.tau == other.tau && self.r == other.r && self.ipp_proof == other.ipp_proof && self.t == other.t
+    }
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "std", derive(Error))]
 pub enum SealError{

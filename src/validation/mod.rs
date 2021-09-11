@@ -37,13 +37,19 @@ pub fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
     Scalar::from_hash(hasher)
 } /* this is for testing purposes. it is used to check if 2 long messages are identicle */
 
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+#[derive(Default, Clone, Serialize, Deserialize, Eq, Hash, Debug)]
 pub struct Syncedtx{
     pub stkout: Vec<u64>,
     pub stkin: Vec<(CompressedRistretto,u64)>,
     pub txout: Vec<OTAccount>, // they delete this part individually after they realize it's not for them
     pub tags: Vec<CompressedRistretto>,
     pub fees: u64,
+}
+
+impl PartialEq for Syncedtx {
+    fn eq(&self, other: &Self) -> bool {
+        self.stkout == other.stkout && self.stkin == other.stkin && self.txout == other.txout && self.tags == other.tags && self.fees == other.fees
+    }
 }
 
 impl Syncedtx {
@@ -71,12 +77,19 @@ impl Syncedtx {
 }
 
 
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+#[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
 pub struct MultiSignature{
     pub x: CompressedRistretto,
     pub y: Scalar,
     pub pk: Vec<u8>, // whose not in it... maybe this should be comitte index not stake index to save space? -7 bytes per sig not in -> 42 - 0 sigs -> 0 to 294 bytes saved per block
 }
+
+impl PartialEq for MultiSignature {
+    fn eq(&self, other: &Self) -> bool {
+        self.x == other.x && self.y == other.y && self.pk == other.pk
+    }
+}
+
 impl MultiSignature {
     pub fn gen_group_x(key: &Scalar, nonce: &u64) -> CompressedRistretto { // this will give you some scalar to use that no one will use and is reproducable
         let nonce = nonce.to_le_bytes();
@@ -120,11 +133,17 @@ impl MultiSignature {
 }
 
 
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+#[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
 pub struct ValidatorSignature{
     pub c: Scalar,
     pub r: Scalar,
     pub pk: u8,
+}
+
+impl PartialEq for ValidatorSignature {
+    fn eq(&self, other: &Self) -> bool {
+        self.c == other.c && self.r == other.r && self.pk == other.pk
+    }
 }
 
 impl ValidatorSignature { // THIS IS NOT IN USE YET
@@ -145,11 +164,17 @@ impl ValidatorSignature { // THIS IS NOT IN USE YET
         }
     }
 }
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+#[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
 pub struct Signature{
     pub c: Scalar,
     pub r: Scalar,
     pub pk: u64, // should i switch this to u8 and only validation squad is involved?
+}
+
+impl PartialEq for Signature {
+    fn eq(&self, other: &Self) -> bool {
+        self.c == other.c && self.r == other.r && self.pk == other.pk
+    }
 }
 
 impl Signature {
@@ -224,6 +249,7 @@ impl Signature {
         out
     }
     pub fn recieve_signed_message_nonced(signed_message: &mut Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, bnum: &u64) -> Option<u64> {
+        if signed_message.len() < 72 {return None}
         let sig = signed_message.par_drain(..72).collect::<Vec<_>>();
         let s = Signature{
             c: Scalar::from_bits(sig[..32].try_into().unwrap()),
@@ -247,7 +273,7 @@ impl Signature {
 
 
 
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+#[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
 pub struct NextBlock {
     pub emptyness: Option<MultiSignature>,
     pub validators: Option<Vec<Signature>>,
@@ -257,6 +283,11 @@ pub struct NextBlock {
     pub shards: Vec<u16>, // shard numbers involved
     pub bnum: u64,
     pub forker: Option<([Signature;2],[Vec<u8>;2],u64)>,
+}
+impl PartialEq for NextBlock {
+    fn eq(&self, other: &Self) -> bool {
+        bincode::serialize(self).unwrap() == bincode::serialize(other).unwrap()
+    }
 }
 impl NextBlock { // need to sign the staker inputs too
     pub fn valicreate(key: &Scalar, location: &u64, leader: &CompressedRistretto, txs: &Vec<PolynomialTransaction>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, bloom: &BloomFile,/* _history: &Vec<OTAccount>,*/ stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock {
@@ -786,11 +817,13 @@ impl NextBlock { // need to sign the staker inputs too
 
 
         for (i,m) in mine.clone().iter().enumerate().rev() {
-            for v in &stkout {
+            for v in stkout.iter() {
                 if m[0] == *v {
                     mine.remove(i as usize);
                 }
             }
+        }
+        for (i,m) in mine.clone().iter().enumerate().rev() {
             for n in stkout.iter() {
                 if *n < m[0] {
                     mine[i][0] -= 1;
@@ -822,7 +855,7 @@ impl NextBlock { // need to sign the staker inputs too
     }
 }
 
-#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+#[derive(Default, Clone, Serialize, Deserialize, Hash, Debug)]
 pub struct LightningSyncBlock {
     pub emptyness: Option<MultiSignature>,
     pub validators: Option<Vec<Signature>>,

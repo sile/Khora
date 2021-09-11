@@ -16,14 +16,18 @@ use serde::{Serialize, Deserialize};
 use super::error::ProofError;
 use super::transcript::TranscriptProtocol;
 
-#[derive(Clone, Hash, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Hash, Debug, Default, Eq, Serialize, Deserialize)]
 pub struct InnerProductProof {
     pub(crate) L_vec: Vec<CompressedRistretto>,
     pub(crate) R_vec: Vec<CompressedRistretto>,
     pub(crate) a: Scalar,
     pub(crate) b: Scalar,
 }
-
+impl PartialEq for InnerProductProof {
+    fn eq(&self, other: &Self) -> bool {
+        self.L_vec == other.L_vec && self.R_vec == other.R_vec && self.a == other.a && self.b == other.b
+    }
+}
 impl InnerProductProof {
     /// Create an inner-product proof.
     ///

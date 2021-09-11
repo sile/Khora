@@ -7,7 +7,7 @@ use std::ops::Add;
 use crate::constants::PEDERSEN_H;
 
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Serialize, Deserialize)]
 pub struct Commitment{
     pub com: RistrettoPoint,
     pub amount: Option<Scalar>,

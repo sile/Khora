@@ -94,7 +94,6 @@ fn main() -> Result<(), MainError> {
 
 
 
-
     let (message_tx, message_rx) = mpsc::channel();
 
 
@@ -176,6 +175,10 @@ fn main() -> Result<(), MainError> {
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
             leaderip: None,
+            blocktrust: HashMap::new(),
+            possibleblocks: HashSet::new(),
+            trustedsyncsource: vec![],
+            newest: 0u64,
         };
     } else {
         node = StakerNode::load(frontnode, backnode, message_rx);
@@ -282,6 +285,10 @@ struct StakerNode {
     knownvalidators: HashMap<u64,NodeId>,
     announcevalidationtime: Instant,
     leaderip: Option<NodeId>,
+    blocktrust: HashMap<Vec<u8>,Vec<usize>>, // would have Vec<u8> 1 be the block and Vec<usize> be the comittee but you remove members
+    possibleblocks: HashSet<NextBlock>,
+    trustedsyncsource: Vec<NodeId>,
+    newest: u64,
 }
 impl StakerNode {
     fn save(&self) {
@@ -369,6 +376,10 @@ impl StakerNode {
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
             leaderip: None,
+            blocktrust: HashMap::new(),
+            possibleblocks: HashSet::new(),
+            trustedsyncsource: vec![],
+            newest: 0u64,
         }
     }
     fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) {
@@ -391,11 +402,14 @@ impl StakerNode {
                 println!("=========================================================\nyay validator!");
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
 
+                self.overthrown.remove(&self.stkinfo[self.lastblock.leader.pk as usize].0);
+                if self.stkinfo[self.lastblock.leader.pk as usize].0 != self.leader {
+                    self.overthrown.insert(self.leader);
+                }
                 if self.is_validator { // maybe make if self in comittee?
                     let bhash = hash_to_scalar(&m).as_bytes().to_vec();
                     for k in self.keylocation.iter() {
-                        let mut b = bhash.clone();
-                        Signature::sign_message_nonced(&self.key, &mut b, k, &self.bnum);
+                        let mut b = Signature::sign_message_nonced(&self.key, &bhash, k, &self.bnum);
                         b.push(8u8);
                         self.outer.broadcast_now(b);
                     }
@@ -440,6 +454,7 @@ impl StakerNode {
                 }
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
+                self.newest = self.queue[self.headshard][0] as u64;
                 for i in 0..self.comittee.len() {
                     select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
                 }
@@ -464,10 +479,6 @@ impl StakerNode {
                 println!("exitqueue: {:?}",self.exitqueue[self.headshard]);
 
                 
-                self.overthrown.remove(&self.stkinfo[self.lastblock.leader.pk as usize].0);
-                if self.stkinfo[self.lastblock.leader.pk as usize].0 != self.leader {
-                    self.overthrown.insert(self.leader);
-                }
                 /* LEADER CHOSEN BY VOTES */
                 let mut abouttoleave = self.exitqueue[self.headshard].clone();
                 let abouttoleave = abouttoleave.drain(..10).collect::<Vec<_>>().into_iter().map(|z| self.comittee[self.headshard][z].clone()).collect::<HashSet<_>>();
@@ -538,14 +549,14 @@ impl Future for StakerNode {
             } else { // if you're in the comittee
                 self.is_staker = false;
                 self.is_validator = true;
-                if (self.timekeeper.elapsed().as_secs() > 5) & self.keylocation.contains(&(self.comittee[self.headshard][0] as u64)) { // make this a floating point function for variable time
+                if (self.timekeeper.elapsed().as_secs() > 5) & self.keylocation.contains(&(self.newest as u64)) { // make this a floating point function for variable time
                     self.sigs = vec![];
                     self.points = HashMap::new();
                     self.scalars = HashMap::new();
                     let m = bincode::serialize(&self.txses).unwrap();
                     // println!("bnum: {}",self.bnum);
 
-                    let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard][0] as u64),&self.bnum);
+                    let mut m = Signature::sign_message_nonced(&self.key, &m, &self.newest,&self.bnum);
                     m.push(1u8);
                     self.inner.broadcast(m);
                     self.txses = vec![];
@@ -558,7 +569,8 @@ impl Future for StakerNode {
                 self.knownvalidators = HashMap::new(); // need to test this
             }
             self.keylocation.clone().iter().for_each(|keylocation| { // get these numbers to be based on something
-                if !self.queue[self.headshard].range(WARNINGTIME-REPLACERATE..WARNINGTIME).collect::<Vec<_>>().iter().all(|&&x| x as u64 != *keylocation) {
+                let headqueue = self.queue[self.headshard].clone();
+                if !headqueue.range(WARNINGTIME-REPLACERATE..WARNINGTIME).collect::<Vec<_>>().iter().all(|&&x| x as u64 != *keylocation) {
                     self.is_staker = true;
                     let message = bincode::serialize(self.outer.plumtree_node().id()).unwrap();
                     if self.sent_onces.insert(message.clone().into_iter().chain(self.bnum.to_le_bytes().to_vec().into_iter()).collect::<Vec<_>>()) {
@@ -567,10 +579,10 @@ impl Future for StakerNode {
                         evidence.push(118); // v
                         self.outer.broadcast(evidence); // add a dm your transactions to this list section (also add them to your list of known validators if they are validators)
                     }
-                } else if !self.queue[self.headshard].range(REPLACERATE..WARNINGTIME-REPLACERATE).collect::<Vec<_>>().iter().all(|&&x| x as u64 != *keylocation) {
+                } else if !headqueue.range(REPLACERATE..WARNINGTIME-REPLACERATE).collect::<Vec<_>>().iter().all(|&&x| x as u64 != *keylocation) {
                     self.is_staker = true;
                 }
-                if !self.queue[self.headshard].range(0..REPLACERATE).collect::<Vec<_>>().iter().all(|&&x| x as u64 != *keylocation) {
+                if !headqueue.range(0..REPLACERATE).collect::<Vec<_>>().iter().enumerate().all(|(i,&&x)| x as u64 != *keylocation) {
                     self.is_staker = true;
                     self.is_validator = true;
                     if self.announcevalidationtime.elapsed().as_secs() > 10 {
@@ -628,8 +640,11 @@ impl Future for StakerNode {
                             } else if mtype == 1 {
                                 // println!("bnum: {}",self.bnum);
                                 if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
-                                    if (who == self.comittee[self.headshard][0] as u64) | (self.stkinfo[who as usize].0 == self.leader) {
+                                    print!(".");
+                                    if (who == self.newest) | (self.stkinfo[who as usize].0 == self.leader) {
+                                        print!(".");
                                         if let Ok(m) = bincode::deserialize::<Vec<Vec<u8>>>(&m) {
+                                            print!(".");
                                             let m = m.into_par_iter().filter_map(|x|
                                                 if let Ok(x) = bincode::deserialize(&x) {
                                                     Some(x)
@@ -652,7 +667,7 @@ impl Future for StakerNode {
                                                         }
                                                     }
                                                 } else if (m.txs.len() == 0) & (m.emptyness.is_none()){
-                                                    // self.groupxnonce += 1;
+                                                    println!("going for empty block");
                                                     let m = MultiSignature::gen_group_x(&self.key, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
                                                     let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
                                                     m.push(4);
@@ -789,7 +804,7 @@ impl Future for StakerNode {
                             let m = bincode::serialize(&lastblock.txs.par_iter().map(|x| bincode::serialize(&x).unwrap()).collect::<Vec<_>>()).unwrap();
                             // println!("bnum: {}",self.bnum);
         
-                            let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard][0] as u64),&self.bnum);
+                            let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum);
                             m.push(1u8);
                             self.inner.broadcast(m);
 
@@ -886,9 +901,9 @@ impl Future for StakerNode {
                                 self.scalars = HashMap::new();
                                 self.timekeeper -= Duration::from_secs(1);
                             } else {
-                                self.txses.push(bincode::serialize(&PolynomialTransaction::default()).unwrap()); // this would make them switch away from points (they dont have enough points anyways...)
-                                let m = bincode::serialize(&self.txses).unwrap(); // Is that good? I means we expect the validators to be willing to sign 2 blocks...? Leader could double spend until disproved path in next block
-                                let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard][0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
+                                // this would make them switch away from points (they dont have enough points anyways...)
+                                let m = bincode::serialize(&vec![bincode::serialize(&PolynomialTransaction::default()).unwrap()]).unwrap(); // Is that good? I means we expect the validators to be willing to sign 2 blocks...? Leader could double spend until disproved path in next block
+                                let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
                                 m.push(1u8);
                                 println!("a validator was corrupted I'm restarting this bitch");
                                 self.inner.broadcast(m);
@@ -939,9 +954,47 @@ impl Future for StakerNode {
                                 self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
                             } else if (mtype == 3) & !self.is_validator {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
-                                    self.readblock(lastblock, m);
+                                    // smsething about trust due to sender (you're syncing) or signatures (mtype 8)
+                                    if self.trustedsyncsource.contains(&msg.id().node()) {
+                                        let bname = hash_to_scalar(&m).as_bytes().to_vec();
+                                        self.blocktrust.remove(&bname); // you may be a little behind and the order of some stufff was swapped
+                                        self.possibleblocks.remove(&lastblock);
+                                        self.readblock(lastblock, m);
+                                    } else {
+                                        println!("3!");
+                                        let bname = hash_to_scalar(&m).as_bytes().to_vec();
+                                        if let Some(b) = self.blocktrust.get(&bname) {
+                                            if b.len() < NUMBER_OF_VALIDATORS/2 { // NUMBER_OF_VALIDATORS/2 here should be fine
+                                                self.readblock(lastblock, m);
+                                            } else {
+                                                self.possibleblocks.insert(lastblock);
+                                            }
+                                        } else {
+                                            self.blocktrust.insert(bname, self.comittee[self.headshard].clone());
+                                        }
+                                    }
                                 }
-                                // println!("{:?}",hash_to_scalar(&self.lastblock));
+                            } else if (mtype == 8) & !self.is_validator {
+                                println!("8!");
+                                if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
+                                    // if who in comittee do something where you trust the block hash more
+                                    println!("someone signed it: {}",who);
+                                    if let Some(x) = self.blocktrust.get_mut(&m) {
+                                        println!("got mut!");
+                                        *x = x.into_iter().filter(|x| **x != who as usize).map(|x| *x).collect::<Vec<_>>();
+                                        println!("{}",x.len());
+                                        if x.len() < NUMBER_OF_VALIDATORS/2 { // NUMBER_OF_VALIDATORS/2 here should be fine
+                                            println!("got enought sigs");
+                                            if let Some(lastblock) = self.possibleblocks.clone().into_iter().filter(|x| hash_to_scalar(x).as_bytes().to_vec() == m).collect::<Vec<_>>().get(0) {
+                                                self.readblock(lastblock.to_owned(), bincode::serialize(&lastblock).unwrap());
+                                            }
+                                        }
+                                    } else {
+                                        println!("insering!");
+                                        self.blocktrust.insert(m, self.comittee[self.headshard].clone().into_iter().filter(|x| *x != who as usize).collect::<Vec<_>>());
+                                    }
+                                    // maybe if ready scan the saved block?
+                                }
                             } else if (mtype == 105) & !self.is_validator /* i */ {
                                 if Signature::recieve_signed_message(&mut m, &self.stkinfo).is_some() {
                                     self.randomstakers.push_front(bincode::deserialize::<NodeId>(&m).unwrap());
@@ -1005,6 +1058,10 @@ impl Future for StakerNode {
                                         self.outer.dm(x,&vec![msg.id().node()],false);
                                     }
                                 }
+                                let mut x = bincode::serialize(&self.lastblock).unwrap();
+                                println!("sending block {} of {}\t{:?}",self.bnum,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
+                                x.push(3);
+                                self.outer.dm(x,&vec![msg.id().node()],false);
                             }
                         }
                     }
@@ -1242,11 +1299,12 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         self.stkinfo = initial_history.clone();
 
                     } else if istx == 121 /* y */ {
-                        let mut mynum = (self.bnum - 1).to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
+                        let mut mynum = (self.bnum - (self.bnum > 0) as u64).to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
                         mynum.push(121);
                         let mut friend = self.outer.hyparview_node().active_view().to_vec();
                         friend.extend(self.outer.hyparview_node().passive_view().to_vec());
-                        self.outer.dm(mynum, &friend, false); // you really dont need to send it to all your friends though
+                        self.trustedsyncsource = friend;
+                        self.outer.dm(mynum, &self.trustedsyncsource, false); // you really dont need to send it to all your friends though
                     } else if istx == 98 /* b */ {
                         println!("\nlast block:\n---------------------------------------------\n{:#?}\n",self.lastblock);
                     } else if istx == 97 /* a */ { // 9876 9875a   (just input the ports, only for testing on a single computer)

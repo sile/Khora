@@ -19,7 +19,7 @@ pub enum AccountError{
     NotPrivateAccount
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Eq, Serialize, Deserialize)]
 pub struct Account{
     sk: Scalar,
     pub pk: RistrettoPoint,
@@ -29,10 +29,15 @@ pub struct Account{
     pub vpk: RistrettoPoint,
 }
 
+impl PartialEq for Account{
+    fn eq(&self, other: &Self) -> bool {
+        self.sk == other.sk && self.ask == other.ask && self.vsk == other.vsk
+    }
+}
 
 pub type Tag = CompressedRistretto;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, Serialize, Deserialize)]
 pub struct OTAccount{ //i made all but first 2 public
     pub pk: RistrettoPoint,
     pub com: Commitment,
@@ -45,7 +50,6 @@ pub struct OTAccount{ //i made all but first 2 public
     pub tag: Option<Tag>, //made this public
 }
 
-impl Eq for OTAccount {}
 impl PartialEq for OTAccount{
     fn eq(&self, other: &Self) -> bool {
         self.pk == other.pk && self.com.com == other.com.com
