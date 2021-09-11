@@ -175,6 +175,7 @@ fn main() -> Result<(), MainError> {
             sent_onces: HashSet::new(),
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
+            leaderip: None,
         };
     } else {
         node = StakerNode::load(frontnode, backnode, message_rx);
@@ -280,6 +281,7 @@ struct StakerNode {
     sent_onces: HashSet<Vec<u8>>,
     knownvalidators: HashMap<u64,NodeId>,
     announcevalidationtime: Instant,
+    leaderip: Option<NodeId>,
 }
 impl StakerNode {
     fn save(&self) {
@@ -366,6 +368,145 @@ impl StakerNode {
             sent_onces: HashSet::new(), // maybe occasionally clear this or replace with vecdeq?
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
+            leaderip: None,
+        }
+    }
+    fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) {
+        if lastblock.bnum >= self.bnum {
+            let com = self.comittee.par_iter().map(|x| x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
+            println!("someone's sending block {} with name: {:?}",lastblock.bnum,lastblock.last_name);
+            println!("names match up: {}",lastblock.last_name == self.lastname);
+            if lastblock.last_name != self.lastname {
+                println!("{:?}\n{:?}",self.lastname,lastblock.last_name);
+            }
+            println!("stkinfo: {:?}",self.stkinfo);
+            match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
+                Ok(_) => println!("block verified..."),
+                Err(x) => println!("Error in block verification: {}",x),
+            };
+            if (lastblock.shards[0] as usize >= self.headshard) & (lastblock.last_name == self.lastname) & lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok() {
+                self.headshard = lastblock.shards[0] as usize;
+
+                self.lastblock = lastblock;
+                println!("=========================================================\nyay validator!");
+                // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
+
+                if self.is_validator { // maybe make if self in comittee?
+                    let bhash = hash_to_scalar(&m).as_bytes().to_vec();
+                    for k in self.keylocation.iter() {
+                        let mut b = bhash.clone();
+                        Signature::sign_message_nonced(&self.key, &mut b, k, &self.bnum);
+                        b.push(8u8);
+                        self.outer.broadcast_now(b);
+                    }
+                }
+
+                for _ in self.bnum..self.lastblock.bnum { // add whole different scannings for empty blocks
+                    println!("I missed a block!");
+                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
+                    NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
+
+                    self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
+                    for i in 0..self.comittee.len() {
+                        select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                    }
+                    self.bnum += 1;
+                }
+                // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
+                if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
+                    self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
+                    let mystkaccs = self.smine.clone();
+                    self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
+                    if self.smine != mystkaccs {
+                        self.inner.broadcast_now(m.clone());
+                        self.outer.broadcast_now(m.clone());
+                    }
+                    self.keylocation = self.smine.iter().map(|x| x[0]).collect();
+                    self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
+
+                    let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
+                    println!("saving block...");
+                    let mut f = File::create(format!("blocks/b{}",self.lastblock.bnum)).unwrap();
+                    f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
+                    let mut f = File::create(format!("blocks/l{}",self.lastblock.bnum)).unwrap();
+                    f.write_all(&lightning).unwrap(); // writing doesnt show up in blocks in vs code immediatly
+                    self.lastbnum = self.bnum;
+                    let mut hasher = Sha3_512::new();
+                    hasher.update(lightning);
+                    self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                } else {
+                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
+                    NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
+                }
+                // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
+                self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
+                for i in 0..self.comittee.len() {
+                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                }
+                self.bnum += 1;
+
+                if self.lastblock.emptyness.is_some() {
+                    self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z - self.lastblock.emptyness.clone().unwrap().pk.iter().filter(|&&y| self.comittee[self.headshard][y as usize] == x).count() as i32).collect::<Vec<_>>();
+                } else {
+                    self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z + self.lastblock.validators.clone().unwrap().iter().filter(|y| y.pk == x as u64).count() as i32).collect::<Vec<_>>();
+                }
+
+
+                if self.keylocation.contains(&(self.comittee[self.headshard][self.exitqueue[self.headshard][0]] as u64)) | self.keylocation.contains(&(self.comittee[self.headshard][self.exitqueue[self.headshard][1]] as u64)) {
+                    m.push(3);
+                    println!("-----------------------------------------------\nsending out the new block {}!\n-----------------------------------------------",self.lastblock.bnum);
+                    self.outer.broadcast_now(m.to_vec()); /* broadcast the block to the outside world */
+                }
+
+                
+                // println!("-----------------------------------------------\n{}\n--------------------------------",self.comittee[self.headshard][self.exitqueue[self.headshard][0]]);
+                // println!("{:?}",self.keylocation);
+                println!("exitqueue: {:?}",self.exitqueue[self.headshard]);
+
+                
+                self.overthrown.remove(&self.stkinfo[self.lastblock.leader.pk as usize].0);
+                if self.stkinfo[self.lastblock.leader.pk as usize].0 != self.leader {
+                    self.overthrown.insert(self.leader);
+                }
+                /* LEADER CHOSEN BY VOTES */
+                let mut abouttoleave = self.exitqueue[self.headshard].clone();
+                let abouttoleave = abouttoleave.drain(..10).collect::<Vec<_>>().into_iter().map(|z| self.comittee[self.headshard][z].clone()).collect::<HashSet<_>>();
+                self.leader = self.stkinfo[*self.comittee[self.headshard].iter().zip(self.votes.iter()).max_by_key(|(x,&y)| {
+                    if abouttoleave.contains(x) | self.overthrown.contains(&self.stkinfo[**x].0) {
+                        i32::MIN
+                    } else {
+                        y
+                    }
+                }).unwrap().0].0;
+                if let Some(&x) = self.knownvalidators.iter().filter(|&x| self.stkinfo[*x.0 as usize].0 == self.leader).map(|(_,&x)| x).collect::<Vec<_>>().get(0) {
+                    self.leaderip = Some(x.with_id(1u64));
+                }
+                /* LEADER CHOSEN BY VOTES */
+                
+
+                self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
+                    if self.queue[self.headshard].contains(&(location as usize)) | self.comittee[self.headshard].contains(&(location as usize)) {
+                        Some((location,node))
+                    } else {
+                        None
+                    }
+                }).collect::<HashMap<_,_>>();
+
+                println!("block {} name: {:?}",self.bnum, self.lastname);
+
+                if self.bnum % 128 == 0 {
+                    self.overthrown = HashSet::new();
+                }
+                self.sigs = vec![];
+                self.points = HashMap::new();
+                self.scalars = HashMap::new();
+                self.waitingforentrybool = true;
+                self.waitingforleaderbool = false;
+                self.waitingforleadertime = Instant::now();
+                self.waitingforentrytime = Instant::now();
+                self.timekeeper = Instant::now();
+                self.usurpingtime = Instant::now();
+            }
         }
     }
 }
@@ -504,8 +645,11 @@ impl Future for StakerNode {
                                                     let mut m = bincode::serialize(&m).unwrap();
                                                     m.push(2);
                                                     for _ in self.comittee[self.headshard].iter().filter(|&x|*x as u64 == *keylocation).collect::<Vec<_>>() {
-                                                        self.inner.broadcast(m.clone());
-                                                        std::thread::sleep(Duration::from_millis(10u64));
+                                                        if let Some(x) = self.leaderip {
+                                                            self.inner.dm(m.clone(), vec![&x], false);
+                                                        } else {
+                                                            self.inner.broadcast(m.clone());
+                                                        }
                                                     }
                                                 } else if (m.txs.len() == 0) & (m.emptyness.is_none()){
                                                     // self.groupxnonce += 1;
@@ -513,8 +657,14 @@ impl Future for StakerNode {
                                                     let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
                                                     m.push(4);
                                                     if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
-                                                        println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
-                                                        self.inner.broadcast(m.clone());
+                                                        // self.inner.broadcast(m.clone());
+                                                        if let Some(x) = self.leaderip {
+                                                            println!("I'm dm'ing a MESSAGE TYPE 4 to {:?}",x);
+                                                            self.inner.dm(m, vec![&x], false);
+                                                        } else {
+                                                            println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
+                                                            self.inner.broadcast(m);
+                                                        }
                                                     }
                                                 }
                                             }
@@ -530,114 +680,7 @@ impl Future for StakerNode {
                                 }
                             } else if mtype == 3 {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
-                                    if lastblock.bnum >= self.bnum {
-                                        let com = self.comittee.par_iter().map(|x| x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
-                                        println!("someone's sending block {} with name: {:?}",lastblock.bnum,lastblock.last_name);
-                                        println!("names match up: {}",lastblock.last_name == self.lastname);
-                                        if lastblock.last_name != self.lastname {
-                                            println!("{:?}\n{:?}",self.lastname,lastblock.last_name);
-                                        }
-                                        println!("stkinfo: {:?}",self.stkinfo);
-                                        match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
-                                            Ok(_) => println!("block verified..."),
-                                            Err(x) => println!("Error in block verification: {}",x),
-                                        };
-                                        if (lastblock.shards[0] as usize >= self.headshard) & (lastblock.last_name == self.lastname) & lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok() {
-                                            self.headshard = lastblock.shards[0] as usize;
-
-                                            self.lastblock = lastblock;
-                                            println!("=========================================================\nyay validator!");
-                                            // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
-
-                                            for _ in self.bnum..self.lastblock.bnum { // add whole different scannings for empty blocks
-                                                println!("I missed a block!");
-                                                NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
-                                                NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
-
-                                                self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
-                                                for i in 0..self.comittee.len() {
-                                                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                                                }
-                                                self.bnum += 1;
-                                            }
-                                            // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
-                                            if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
-                                                self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
-                                                self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
-                                                self.keylocation = self.smine.iter().map(|x| x[0]).collect();
-                                                self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
-
-                                                let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
-                                                println!("saving block...");
-                                                let mut f = File::create(format!("blocks/b{}",self.lastblock.bnum)).unwrap();
-                                                f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
-                                                let mut f = File::create(format!("blocks/l{}",self.lastblock.bnum)).unwrap();
-                                                f.write_all(&lightning).unwrap(); // writing doesnt show up in blocks in vs code immediatly
-                                                self.lastbnum = self.bnum;
-                                                let mut hasher = Sha3_512::new();
-                                                hasher.update(lightning);
-                                                self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                                            } else {
-                                                NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
-                                                NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
-                                            }
-                                            // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
-                                            self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
-                                            for i in 0..self.comittee.len() {
-                                                select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                                            }
-                                            self.bnum += 1;
-                                            
-
-                                            
-                                            // println!("-----------------------------------------------\n{}\n--------------------------------",self.comittee[self.headshard][self.exitqueue[self.headshard][0]]);
-                                            // println!("{:?}",self.keylocation);
-                                            println!("exitqueue: {:?}",self.exitqueue[self.headshard]);
-                                            if self.keylocation.contains(&(self.comittee[self.headshard][self.exitqueue[self.headshard][0]] as u64)) | self.keylocation.contains(&(self.comittee[self.headshard][self.exitqueue[self.headshard][1]] as u64)) {
-                                                m.push(3);
-                                                println!("-----------------------------------------------\nsending out the new block {}!\n-----------------------------------------------",self.lastblock.bnum);
-                                                self.outer.broadcast_now(m); /* broadcast the block to the outside world */
-                                            }
-                
-
-                                            if self.lastblock.emptyness.is_some() {
-                                                self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z - self.lastblock.emptyness.clone().unwrap().pk.iter().filter(|&&y| self.comittee[self.headshard][y as usize] == x).count() as i32).collect::<Vec<_>>();
-                                            } else {
-                                                self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z + self.lastblock.validators.clone().unwrap().iter().filter(|y| y.pk == x as u64).count() as i32).collect::<Vec<_>>();
-                                            }
-                                            
-                                            self.overthrown.remove(&self.stkinfo[self.lastblock.leader.pk as usize].0);
-                                            if self.stkinfo[self.lastblock.leader.pk as usize].0 != self.leader {
-                                                self.overthrown.insert(self.leader);
-                                            }
-                                            /* LEADER CHOSEN BY VOTES */
-                                            let mut abouttoleave = self.exitqueue[self.headshard].clone();
-                                            let abouttoleave = abouttoleave.drain(..10).collect::<Vec<_>>().into_iter().map(|z| self.comittee[self.headshard][z].clone()).collect::<HashSet<_>>();
-                                            self.leader = self.stkinfo[*self.comittee[self.headshard].iter().zip(self.votes.iter()).max_by_key(|(x,&y)| {
-                                                if abouttoleave.contains(x) | self.overthrown.contains(&self.stkinfo[**x].0) {
-                                                    i32::MIN
-                                                } else {
-                                                    y
-                                                }
-                                            }).unwrap().0].0;
-                                            /* LEADER CHOSEN BY VOTES */
-                                            
-                                            println!("block {} name: {:?}",self.bnum, self.lastname);
-
-                                            if self.bnum % 128 == 0 {
-                                                self.overthrown = HashSet::new();
-                                            }
-                                            self.sigs = vec![];
-                                            self.points = HashMap::new();
-                                            self.scalars = HashMap::new();
-                                            self.waitingforentrybool = true;
-                                            self.waitingforleaderbool = false;
-                                            self.waitingforleadertime = Instant::now();
-                                            self.waitingforentrytime = Instant::now();
-                                            self.timekeeper = Instant::now();
-                                            self.usurpingtime = Instant::now();
-                                        }
-                                    }
+                                    self.readblock(lastblock, m);
                                 }
                                 // println!("{:?}",hash_to_scalar(&self.lastblock));
                             } else if mtype == 4 {
@@ -672,7 +715,11 @@ impl Future for StakerNode {
                                         let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &self.bnum, &mess, &xt).as_bytes().to_vec(), keylocation, &self.bnum);
                                         m.push(6u8);
                                         if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
-                                            self.inner.broadcast(m);
+                                            if let Some(x) = self.leaderip {
+                                                self.inner.dm(m, vec![&x], false);
+                                            } else {
+                                                self.inner.broadcast(m);
+                                            }
                                         }
                                     }
                                     self.waitingforleadertime = Instant::now();
@@ -839,8 +886,9 @@ impl Future for StakerNode {
                                 self.scalars = HashMap::new();
                                 self.timekeeper -= Duration::from_secs(1);
                             } else {
-                                let m = bincode::serialize(&self.txses).unwrap();
-                                let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard][0] as u64),&self.bnum);
+                                self.txses.push(bincode::serialize(&PolynomialTransaction::default()).unwrap()); // this would make them switch away from points (they dont have enough points anyways...)
+                                let m = bincode::serialize(&self.txses).unwrap(); // Is that good? I means we expect the validators to be willing to sign 2 blocks...? Leader could double spend until disproved path in next block
+                                let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard][0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
                                 m.push(1u8);
                                 println!("a validator was corrupted I'm restarting this bitch");
                                 self.inner.broadcast(m);
@@ -891,121 +939,7 @@ impl Future for StakerNode {
                                 self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
                             } else if (mtype == 3) & !self.is_validator {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
-                                    if lastblock.bnum >= self.bnum {
-                                        let com = self.comittee.par_iter().map(|x|x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
-                                        println!("someone's sending block {} with name: {:?}",lastblock.bnum,lastblock.last_name);
-                                        println!("names match up: {}",lastblock.last_name == self.lastname);
-                                        println!("stkinfo: {:?}",self.stkinfo);
-                                        match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
-                                            Ok(_) => println!("block verified..."),
-                                            Err(x) => println!("Error in block verification: {}",x),
-                                        };
-                                        if (lastblock.shards[0] as usize >= self.headshard) & (lastblock.last_name == self.lastname) & lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok() {
-                                            self.headshard = lastblock.shards[0] as usize;
-
-                                            self.lastblock = lastblock;
-                                            println!("=========================================================\nyay staker!");
-                                            // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
-
-
-                                            for _ in self.bnum..self.lastblock.bnum { // add whole different scannings for empty blocks
-                                                println!("I missed a block!");
-                                                NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
-                                                NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
-
-                                                self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
-                                                for i in 0..self.comittee.len() {
-                                                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                                                }
-                                                self.bnum += 1;
-                                            }
-                                            // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
-                                            if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
-                                                println!("running a full block!");
-                                                self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
-                                                println!("scanning as stk!");
-                                                let mystkaccs = self.smine.clone();
-                                                self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
-                                                if self.smine != mystkaccs {
-                                                    self.inner.broadcast_now(m.clone());
-                                                    self.outer.broadcast_now(m.clone());
-                                                }
-                                                self.keylocation = self.smine.iter().map(|x| x[0]).collect();
-                                                println!("scanning as noone!");
-                                                self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
-
-                                                let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
-                                                println!("saving block...");
-                                                let mut f = File::create(format!("blocks/b{}",self.lastblock.bnum)).unwrap();
-                                                f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
-                                                let mut f = File::create(format!("blocks/l{}",self.lastblock.bnum)).unwrap();
-                                                f.write_all(&lightning).unwrap(); // writing doesnt show up in blocks in vs code immediatly
-                                                self.lastbnum = self.bnum;
-                                                let mut hasher = Sha3_512::new();
-                                                hasher.update(lightning);
-                                                self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
-                                            } else {
-                                                println!("running an empty block!");
-                                                NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
-                                                NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
-                                            }
-                                            // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
-                                            self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
-                                            for i in 0..self.comittee.len() {
-                                                select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
-                                            }
-                                            self.bnum += 1;
-                
-
-                                            if self.lastblock.emptyness.is_some() {
-                                                self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z - self.lastblock.emptyness.clone().unwrap().pk.iter().filter(|&&y| self.comittee[self.headshard][y as usize] == x).count() as i32).collect::<Vec<_>>();
-                                            } else {
-                                                self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z + self.lastblock.validators.clone().unwrap().iter().filter(|y| y.pk == x as u64).count() as i32).collect::<Vec<_>>();
-                                            }
-                                            
-
-                                            self.overthrown.remove(&self.stkinfo[self.lastblock.leader.pk as usize].0);
-                                            if self.stkinfo[self.lastblock.leader.pk as usize].0 != self.leader {
-                                                self.overthrown.insert(self.leader);
-                                            }
-                                            /* LEADER CHOSEN BY VOTES */
-                                            let mut abouttoleave = self.exitqueue[self.headshard].clone();
-                                            let abouttoleave = abouttoleave.drain(..10).collect::<Vec<_>>().into_iter().map(|z| self.comittee[self.headshard][z].clone()).collect::<HashSet<_>>();
-                                            self.leader = self.stkinfo[*self.comittee[self.headshard].iter().zip(self.votes.iter()).max_by_key(|(x,&y)| {
-                                                if abouttoleave.contains(x) | self.overthrown.contains(&self.stkinfo[**x].0) {
-                                                    i32::MIN
-                                                } else {
-                                                    y
-                                                }
-                                            }).unwrap().0].0;
-                                            /* LEADER CHOSEN BY VOTES */
-                                            
-
-
-                                            self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
-                                                if self.queue[self.headshard].contains(&(location as usize)) | self.comittee[self.headshard].contains(&(location as usize)) {
-                                                    Some((location,node))
-                                                } else {
-                                                    None
-                                                }
-                                            }).collect::<HashMap<_,_>>();
-                                            println!("block {} name: {:?}",self.bnum, self.lastname);
-
-
-                                            if self.bnum % 128 == 0 {
-                                                self.overthrown = HashSet::new();
-                                            }
-                                            self.sigs = vec![];
-                                            self.points = HashMap::new();
-                                            self.scalars = HashMap::new();
-                                            self.waitingforentrybool = true;
-                                            self.waitingforleaderbool = false;
-                                            self.waitingforleadertime = Instant::now();
-                                            self.waitingforentrytime = Instant::now();
-                                            self.timekeeper = Instant::now();
-                                            self.usurpingtime = Instant::now();
-                                        }
-                                    }
+                                    self.readblock(lastblock, m);
                                 }
                                 // println!("{:?}",hash_to_scalar(&self.lastblock));
                             } else if (mtype == 105) & !self.is_validator /* i */ {
@@ -1089,6 +1023,9 @@ impl Future for StakerNode {
                             y
                         }
                     }).unwrap().0].0;
+                    if let Some(&x) = self.knownvalidators.iter().filter(|&x| self.stkinfo[*x.0 as usize].0 == self.leader).map(|(_,&x)| x).collect::<Vec<_>>().get(0) {
+                        self.leaderip = Some(x.with_id(1u64));
+                    }
                 }
                 /*____________________________________________________________________________________________________________________________________________________________________________________________________________________________
                 RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION -------------------|

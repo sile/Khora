@@ -450,7 +450,7 @@ impl NextBlock { // need to sign the staker inputs too
         NextBlock{emptyness: None, validators: Some(sigs), leader, txs: blk.txs, last_name: last_name.clone(), shards: blk.shards, bnum: bnum.to_owned(), forker: None}
     }
     pub fn verify(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
-        if let Some((s,v,b)) = &self.forker {
+        if let Some((s,v,b)) = &self.forker { // this is mostly here to instill fear i dont think we'd ever use it even if someone did try to fork us
             if s[0].pk != s[1].pk { /* leader could cause a fork by messing with fork section or which members sign */
                 return Err("forker is not 1 person")
             }
