@@ -159,7 +159,7 @@ fn main() -> Result<(),std::io::Error> {
     let iterations = 2;
 
     let mut bnum = 0u64;
-    let mut txvec = vec![];
+    let mut txvec: Vec<PolynomialTransaction>;
 
     for _ in 0..iterations { /* there's a lot less new money the random number generator is fine */
         let shards = 2u64.pow(bnum as u32) as usize; /* max of 512 shard without lazyness because number of validators fits inside a u16 */

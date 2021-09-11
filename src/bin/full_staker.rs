@@ -582,7 +582,7 @@ impl Future for StakerNode {
                 } else if !headqueue.range(REPLACERATE..WARNINGTIME-REPLACERATE).collect::<Vec<_>>().iter().all(|&&x| x as u64 != *keylocation) {
                     self.is_staker = true;
                 }
-                if !headqueue.range(0..REPLACERATE).collect::<Vec<_>>().iter().enumerate().all(|(i,&&x)| x as u64 != *keylocation) {
+                if !headqueue.range(0..REPLACERATE).collect::<Vec<_>>().iter().all(|&&x| x as u64 != *keylocation) {
                     self.is_staker = true;
                     self.is_validator = true;
                     if self.announcevalidationtime.elapsed().as_secs() > 10 {

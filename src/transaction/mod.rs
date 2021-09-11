@@ -4,7 +4,6 @@ use std::convert::TryInto;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::scalar::Scalar;
 use merlin::Transcript;
-use polynomial_over_finite_prime_field::PolynomialOverP;
 use serde::{Serialize, Deserialize};
 use rand::random;
 
@@ -14,7 +13,7 @@ use crate::ringmaker::*;
 use crate::commitment::{Commitment};
 
 
-use curve25519_dalek::ristretto::{RistrettoPoint, CompressedRistretto};
+use curve25519_dalek::ristretto::{CompressedRistretto};
 
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator};
 use rayon::iter::ParallelIterator;

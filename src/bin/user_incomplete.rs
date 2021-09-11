@@ -7,7 +7,7 @@ use clap::Arg;
 use fibers::sync::mpsc;
 use fibers::{Executor, Spawn, ThreadPoolExecutor};
 use futures::{Async, Future, Poll, Stream};
-use plumcast::node::{LocalNodeId, Node, NodeBuilder, NodeId, SerialLocalNodeIdGenerator, UnixtimeLocalNodeIdGenerator};
+use plumcast::node::{LocalNodeId, Node, NodeBuilder, NodeId, SerialLocalNodeIdGenerator};
 use plumcast::service::ServiceBuilder;
 use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::Build;
@@ -25,7 +25,6 @@ use curve25519_dalek::ristretto::CompressedRistretto;
 use sha3::{Digest, Sha3_512};
 use rayon::prelude::*;
 use kora::validation::*;
-use kora::constants::PEDERSEN_H;
 use kora::ringmaker::*;
 
 
