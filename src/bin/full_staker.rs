@@ -489,12 +489,15 @@ impl StakerNode {
                         y
                     }
                 }).unwrap().0].0;
-                if let Some(&x) = self.knownvalidators.iter().filter(|&x| self.stkinfo[*x.0 as usize].0 == self.leader).map(|(_,&x)| x).collect::<Vec<_>>().get(0) {
-                    self.leaderip = Some(x.with_id(1u64));
-                }
-                /* LEADER CHOSEN BY VOTES */
-                
-
+                let stkout = self.lastblock.tolightning().info.stkout;
+                self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
+                    if stkout.contains(&location) {
+                        None
+                    } else {
+                        let location = location - stkout.iter().map(|x| (*x < location) as u64).sum::<u64>();
+                        Some((location,node))
+                    }
+                }).collect::<HashMap<_,_>>();
                 self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
                     if self.queue[self.headshard].contains(&(location as usize)) | self.comittee[self.headshard].contains(&(location as usize)) {
                         Some((location,node))
@@ -502,6 +505,12 @@ impl StakerNode {
                         None
                     }
                 }).collect::<HashMap<_,_>>();
+
+                if let Some(&x) = self.knownvalidators.iter().filter(|&x| self.stkinfo[*x.0 as usize].0 == self.leader).map(|(_,&x)| x).collect::<Vec<_>>().get(0) {
+                    self.leaderip = Some(x.with_id(1u64));
+                }
+                /* LEADER CHOSEN BY VOTES */
+                
 
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
@@ -734,7 +743,7 @@ impl Future for StakerNode {
                                         m.push(6u8);
                                         if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
                                             if let Some(x) = self.leaderip {
-                                                self.inner.dm(m, vec![&x], false);
+                                                self.inner.dm(m, vec![&x], true);
                                             } else {
                                                 self.inner.broadcast(m);
                                             }
