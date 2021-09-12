@@ -583,6 +583,9 @@ impl Future for StakerNode {
                     self.is_staker = true;
                 }
                 if !headqueue.range(0..REPLACERATE).collect::<Vec<_>>().iter().all(|&&x| x as u64 != *keylocation) {
+                    if !self.is_validator {
+                        self.save(); // in case the leader tries to fork you to ruin your profits you can just reload and sync
+                    }
                     self.is_staker = true;
                     self.is_validator = true;
                     if self.announcevalidationtime.elapsed().as_secs() > 10 {
