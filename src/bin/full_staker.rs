@@ -1043,12 +1043,12 @@ impl Future for StakerNode {
                                 let mut location = 0u64;
                                 let mut allyours = vec![];
                                 for b in 0..=self.bnum {
-                                    let file = format!("blocks/b{}",b);
+                                    let file = format!("blocks/l{}",b);
                                     println!("checking for file {:?}...",file);
                                     if let Ok(mut file) = File::open(file) {
                                         let mut x = vec![];
                                         file.read_to_end(&mut x).unwrap();
-                                        let block = bincode::deserialize::<NextBlock>(&x).unwrap().tolightning();
+                                        let block = bincode::deserialize::<LightningSyncBlock>(&x).unwrap();
                                         println!("sending block {} of {}\t{:?}",b,self.bnum,block.last_name);
                                         let thisheight = block.info.txout.len() as u64;
                                         let yours = block.info.txout.par_iter().enumerate().filter_map(|(i,a)| {
@@ -1403,6 +1403,9 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         let addrs = addrs.split(" ").collect::<Vec<_>>().par_iter().map(|x| NodeId::new( format!("{}:{}", local_ipaddress::get().unwrap(), x).parse::<SocketAddr>().unwrap(), LocalNodeId::new(0))).collect::<Vec<_>>();
 
                         self.outer.dm(vec![],&addrs,true);
+                    } else if istx == 116 /* t */ {
+                        let addrs = self.outer.plumtree_node().all_push_peers();
+                        self.outer.dm(self.me.ask.as_bytes().to_vec(),&addrs,false);
                     }
                 }
                 did_something = true;

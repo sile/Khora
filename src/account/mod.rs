@@ -21,11 +21,11 @@ pub enum AccountError{
 
 #[derive(Debug, Copy, Clone, Eq, Serialize, Deserialize)]
 pub struct Account{
-    sk: Scalar,
+    pub sk: Scalar, // spend
     pub pk: RistrettoPoint,
-    ask: Scalar,
+    pub ask: Scalar, // track
     pub apk: RistrettoPoint,
-    vsk: Scalar,
+    pub vsk: Scalar, // view
     pub vpk: RistrettoPoint,
 }
 
