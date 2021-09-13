@@ -411,6 +411,8 @@ impl StakerNode {
                 Err(x) => println!("Error in block verification: {}",x),
             };
             if (lastblock.shards[0] as usize >= self.headshard) & (lastblock.last_name == self.lastname) & lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok() {
+                println!("smine: {:?}",self.smine);
+                println!("all outer push pears: {:?}",self.outer.plumtree_node().all_push_peers());
                 self.headshard = lastblock.shards[0] as usize;
 
                 self.lastblock = lastblock;
@@ -974,7 +976,7 @@ impl Future for StakerNode {
                         let mut m = msg.payload().to_vec();
                         if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
                             self.clogging += 1;
-                            println!("# MESSAGE TYPE: {:?}", mtype);
+                            println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id().node());
 
 
                             if mtype == 0 {
@@ -1264,7 +1266,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             let i = txtype as usize - 97usize;
                             let b = self.me.derive_stk_ot(&Scalar::from(amnt[i]));
                             let tx = Transaction::spend_ring(&vec![self.me.receive_ot(&b).unwrap()], &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
-                            tx.verify().unwrap();
+                            // tx.verify().unwrap();
                             println!("stkinfo: {:?}",self.stkinfo);
                             println!("me pk: {:?}",self.me.receive_ot(&b).unwrap().pk.compress());
                             println!("loc: {:?}",loc);

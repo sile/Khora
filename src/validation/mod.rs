@@ -199,6 +199,7 @@ impl Signature {
         Signature{c, r: (a - c*key), pk: *location}
     }
     pub fn verify(&self, message: &mut Sha3_512, stkstate: &Vec<(CompressedRistretto,u64)>) -> bool { // the inputs are the hashed messages you are checking for signatures on because it's faster for many messages.
+        if self.pk as usize >= stkstate.len() {return false}
         message.update((self.r*PEDERSEN_H() + self.c*stkstate[self.pk as usize].0.decompress().unwrap()).compress().to_bytes());
         self.c == Scalar::from_hash(message.to_owned())
     }
@@ -550,6 +551,9 @@ impl NextBlock { // need to sign the staker inputs too
             if who.len() <= 2*NUMBER_OF_VALIDATORS/3 {
                 return Err("there's not enough validators for the empty block")
             }
+            if self.leader.pk as usize >= stkstate.len() {
+                return Err("you're probably behind on blocks")
+            }
             let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
             m.extend(&self.last_name);
             m.extend(&self.shards[0].to_le_bytes().to_vec());
@@ -754,14 +758,6 @@ impl NextBlock { // need to sign the staker inputs too
         x
     }
     pub fn scanstk(&self, me: &Account, mine: &mut Vec<[u64;2]>, height: &mut u64, comittee: &Vec<Vec<usize>>, valinfo: &Vec<(CompressedRistretto,u64)>) {
-        let stkin = self.txs.par_iter().map(|x|
-            x.outputs.par_iter().filter_map(|y| 
-                if let Ok(z) = stakereader_acc().read_ot(y) {Some(z)} else {None}
-            ).collect::<Vec<_>>()
-        ).flatten().collect::<Vec<OTAccount>>();
-        mine.par_extend(stkin.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.stake_acc().receive_ot(x) {Some([i as u64+*height,u64::from_le_bytes(y.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())])} else {None}).collect::<Vec<[u64;2]>>());
-
-
 
         let info = Syncedtx::from(&self.txs);
         let winners: Vec<usize>;
@@ -833,9 +829,15 @@ impl NextBlock { // need to sign the staker inputs too
                 }
             }
         }
-        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
-        *height += stkin.len() as u64;
         *height -= stkout.len() as u64;
+        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
+        let stkin = self.txs.par_iter().map(|x|
+            x.outputs.par_iter().filter_map(|y| 
+                if let Ok(z) = stakereader_acc().read_ot(y) {Some(z)} else {None}
+            ).collect::<Vec<_>>()
+        ).flatten().collect::<Vec<OTAccount>>();
+        mine.par_extend(stkin.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.stake_acc().receive_ot(x) {Some([i as u64+*height,u64::from_le_bytes(y.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())])} else {None}).collect::<Vec<[u64;2]>>());
+        *height += stkin.len() as u64;
 
     }
     pub fn update_bloom(&self,bloom:&BloomFile) {
