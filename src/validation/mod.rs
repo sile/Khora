@@ -1021,8 +1021,7 @@ impl LightningSyncBlock {
                 ).collect::<VecDeque<_>>();
                 if z.len() == 0 {
                     VecDeque::from_iter([0usize])
-                }
-                else {
+                } else {
                     z
                 }
             }).collect::<Vec<_>>();
@@ -1034,8 +1033,7 @@ impl LightningSyncBlock {
                 ).collect::<Vec<_>>();
                 if z.len() == 0 {
                     vec![0usize]
-                }
-                else {
+                } else {
                     z
                 }
             }).collect::<Vec<_>>();
