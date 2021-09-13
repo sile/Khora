@@ -930,7 +930,7 @@ impl LightningSyncBlock {
                     None
                 }
             ).collect::<Vec<_>>();
-            if who.len() <= 2*NUMBER_OF_VALIDATORS/3 {
+            if who.len() < SIGNING_CUTOFF {
                 return Err("there's not enough validators for the empty block")
             }
             let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
@@ -1077,7 +1077,7 @@ impl LightningSyncBlock {
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
             s.update(&bincode::serialize(&x).unwrap());
             v.append(&mut Scalar::from_hash(s.clone()).as_bytes().to_vec());
-            let mut y = (0..QUEUE_LENGTH-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
+            let mut y = (0..NUMBER_OF_VALIDATORS-x.len()).map(|i| x[v[i] as usize%x.len()]).collect::<Vec<usize>>();
             x.append(&mut y);
         });
 
