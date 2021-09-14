@@ -1,47 +1,61 @@
+use std::{sync::mpsc, thread};
 
-use druid::widget::{Button, Flex, Label};
-use druid::{AppLauncher, LocalizedString, PlatformError, Widget, WidgetExt, WindowDesc, Data};
+use macroquad::prelude::*;
 
-#[derive(Clone, Data)]
-struct Counter(i32);
 
-fn main() -> Result<(), PlatformError> {
-    // Window builder. We set title and size
-    let main_window = WindowDesc::new(ui_builder)
-        .title("Hello, Druid!")
-        .window_size((200.0, 100.0));
-
-    // Data to be used in the app (=state)
-    let data: Counter = Counter(0);
-
-    // Run the app
-    AppLauncher::with_window(main_window)
-        .use_simple_logger() // Neat!
-        .launch(data)
+fn ui_counter(ui: &mut egui::Ui, counter: &mut i32) {
+    // Put the buttons and label on the same row:
+    ui.horizontal(|ui| {
+        if ui.button("-").clicked() {
+            *counter -= 1;
+        }
+        ui.label(counter.to_string());
+        if ui.button("+").clicked() {
+            *counter += 1;
+        }
+    });
 }
 
-fn ui_builder() -> impl Widget<Counter> {
-    // The label text will be computed dynamically based on the current locale and count
-    let text = LocalizedString::new("hello-counter")
-        .with_arg("count", |data: &Counter, _env| (*data).0.into());
-    let label = Label::new(text).padding(5.0).center();
+#[macroquad::main("egui with macroquad")]
+async fn main() {
 
-    // Two buttons with on_click callback
-    let button_plus = Button::new("+1")
-        .on_click(|_ctx, data: &mut Counter, _env| (*data).0 += 1)
-        .padding(5.0);
-    let button_minus = Button::new("-1")
-        .on_click(|_ctx, data: &mut Counter, _env| (*data).0 -= 1)
-        .padding(5.0);
+    let (s,r) = mpsc::channel::<i32>();
 
-    // Container for the two buttons
-    let flex = Flex::row()
-        .with_child(button_plus)
-        .with_spacer(1.0)
-        .with_child(button_minus);
+    thread::spawn(move || {
+        let mut amnt = 0;
+        while let Ok(x) = r.recv() {
+            amnt += x;
+            println!("{}",amnt);
+        };
+    });
+    loop {
+        clear_background(WHITE);
 
-    // Container for the whole UI
-    Flex::column()
-        .with_child(label)
-        .with_child(flex)
+        // Process keys, mouse etc.
+
+        egui_macroquad::ui(|egui_ctx| {
+            egui::Window::new("egui ❤ macroquad")
+                .show(egui_ctx, |ui| {
+                    ui.label("Test");
+                    ui.horizontal(|ui| {
+                        if ui.button("-").clicked() {
+                            s.send(-1).unwrap();
+                            println!("click!");
+                        }
+                        if ui.button("+").clicked() {
+                            s.send(1).unwrap();
+                            println!("clonk!");
+                        }
+                    });
+                });
+        });
+
+        // Draw things before egui
+
+        egui_macroquad::draw();
+        
+        // Draw things after egui
+
+        next_frame().await;
+    }
 }

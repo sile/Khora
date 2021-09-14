@@ -49,4 +49,9 @@ slog = "2"
 trackable = "0.2"
 
 
-druid = "0.7.0"
+# druid = "0.7.0"
+
+egui = "0.14.0"
+egui-miniquad = "0.6.0"
+macroquad = "0.3.6"
+egui-macroquad = "0.6.0"
