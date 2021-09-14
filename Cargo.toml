@@ -55,3 +55,4 @@ egui = "0.14.0"
 egui-miniquad = "0.6.0"
 macroquad = "0.3.6"
 egui-macroquad = "0.6.0"
+tokio = { version = "1.11.0" , features = ["full"] }
