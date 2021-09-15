@@ -188,11 +188,15 @@ fn main() -> Result<(), MainError> {
     }
 
 
-    executor.spawn(service.map_err(|e| panic!("{}", e)));
-    executor.spawn(node);
-
-
     std::thread::spawn(move || {
+        executor.spawn(service.map_err(|e| panic!("{}", e)));
+        executor.spawn(node);
+
+
+        track_any_err!(executor.run()).unwrap();
+    });
+
+    std::thread::spawn(move || { // replace this thread and the loop with gui in the main thread
         use std::io::BufRead;
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
@@ -208,8 +212,7 @@ fn main() -> Result<(), MainError> {
             }
         }
     });
-
-    track_any_err!(executor.run())?;
+    loop{};
     Ok(())
 }
 
