@@ -9,3 +9,4 @@ pub mod ringmaker;
 pub mod randblock;
 pub mod bloom;
 pub mod validation;
+pub mod gui;

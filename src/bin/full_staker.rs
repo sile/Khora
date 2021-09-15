@@ -17,7 +17,7 @@ use std::net::SocketAddr;
 use trackable::error::MainError;
 
 
-use kora::account::*;
+use kora::{account::*, gui};
 use curve25519_dalek::scalar::Scalar;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::TryInto;
@@ -212,7 +212,13 @@ fn main() -> Result<(), MainError> {
             }
         }
     });
-    loop{};
+    println!("starting!");
+    let app = gui::TemplateApp::default();
+    println!("starting!");
+    let native_options = eframe::NativeOptions::default();
+    println!("starting!");
+    eframe::run_native(Box::new(app), native_options);
+    println!("ending!");
     Ok(())
 }
 
