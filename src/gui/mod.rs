@@ -59,7 +59,7 @@ impl epi::App for TemplateApp {
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
         if let Ok(i) = self.reciever.try_recv() {
-            self.info = String::from_utf8_lossy(&i).to_string();
+            self.info = String::from_utf8_lossy(&i).to_string(); // this is how you get info from the program.
         }
 
         let Self { label, value, reciever: _, sender, info } = self;
@@ -94,7 +94,7 @@ impl epi::App for TemplateApp {
             if ui.button("Increment").clicked() {
                 *value += 1.0;
             }
-            if ui.button("print info in terminal").clicked() {
+            if ui.button("print info in terminal").clicked() { // this is how you send info to the program. fill vec with different stuff depending on what you want
                 sender.send(vec![]);
             }
 

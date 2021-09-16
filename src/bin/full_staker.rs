@@ -999,7 +999,7 @@ impl Future for StakerNode {
 
                             if mtype == 0 {
                                 self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
-                            } else if (mtype == 3) && !self.is_validator {
+                            } else if (mtype == 3) /*&& !self.is_validator*/ {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
                                     // smsething about trust due to sender (you're syncing) or signatures (mtype 8)
                                     if self.trustedsyncsource.contains(&msg.id().node()) {
@@ -1021,7 +1021,7 @@ impl Future for StakerNode {
                                         }
                                     }
                                 }
-                            } else if (mtype == 8) && !self.is_validator {
+                            } else if (mtype == 8) /*&& !self.is_validator*/ {
                                 println!("8!");
                                 if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     // if who in comittee do something where you trust the block hash more
@@ -1203,7 +1203,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
             USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF |||||||||||||
             ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF
             */
-            while let Async::Ready(Some(m)) = self.gui_reciever.poll().expect("Never fails") { // this would be for gui
+            while let Async::Ready(Some(m)) = self.gui_reciever.poll().expect("Never fails") { // this would be for gui (what happens depending on the message you recieve)
                 println!("\nmy name:\n---------------------------------------------\n{:?}\n",self.me.name());
                 println!("\nmy outer addr:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().id());
                 println!("\nmy inner addr:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().id());
@@ -1229,7 +1229,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                 println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
 
             }
-            while let Async::Ready(Some(m)) = self.message_rx.poll().expect("Never fails") { // this would be for terminal
+            while let Async::Ready(Some(m)) = self.message_rx.poll().expect("Never fails") { // this would be for terminal (all the messages here are good)
                 if m.len() > 0 {
                     println!("# MESSAGE (sent): {:?}", m);
                     let mut m = str::to_ascii_lowercase(&m).as_bytes().to_vec();
@@ -1404,7 +1404,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
                         println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
 
-                        self.gui_sender.send(format!("address:\n{}",self.me.name()).as_bytes().to_vec());
+                        self.gui_sender.send(format!("address:\n{}",self.me.name()).as_bytes().to_vec()); // this is how you send info to the gui
                     } else if istx == 115 /* s */ {
                         self.save();
                         // maybe do something else??? like save or load contacts???
