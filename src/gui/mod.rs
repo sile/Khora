@@ -1,4 +1,6 @@
 use eframe::{egui, epi};
+use crossbeam::channel;
+use fibers::sync::mpsc;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
@@ -10,21 +12,25 @@ pub struct TemplateApp {
     // this how you opt-out of serialization of a member
     #[cfg_attr(feature = "persistence", serde(skip))]
     value: f32,
-}
 
-impl Default for TemplateApp {
-    fn default() -> Self {
-        Self {
-            // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
-        }
+    // this how you opt-out of serialization of a member
+    #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for reciever i think
+    reciever: channel::Receiver<Vec<u8>>,
+
+    // this how you opt-out of serialization of a member
+    #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for reciever i think
+    sender: mpsc::Sender<Vec<u8>>,
+
+    info: String
+}
+impl TemplateApp {
+    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>) -> Self {
+        TemplateApp{label: "Hi New User!".to_string(), value: 1.5, reciever, sender, info: "hi newbee!".to_string()}
     }
 }
-
 impl epi::App for TemplateApp {
     fn name(&self) -> &str {
-        "Kora"
+        "Kora" // saved as ~/.local/share/kora
     }
 
     /// Called once before the first frame.
@@ -52,7 +58,13 @@ impl epi::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
-        let Self { label, value } = self;
+        if let Ok(i) = self.reciever.try_recv() {
+            self.info = String::from_utf8_lossy(&i).to_string();
+        }
+
+        let Self { label, value, reciever: _, sender, info } = self;
+
+ 
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -82,6 +94,9 @@ impl epi::App for TemplateApp {
             if ui.button("Increment").clicked() {
                 *value += 1.0;
             }
+            if ui.button("print info in terminal").clicked() {
+                sender.send(vec![]);
+            }
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                 ui.add(
@@ -99,6 +114,7 @@ impl epi::App for TemplateApp {
                 "https://github.com/emilk/egui_template/blob/master/",
                 "Source code."
             ));
+            ui.label(&*info);
             egui::warn_if_debug_build(ui);
         });
 

@@ -15,6 +15,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use trackable::error::MainError;
+use crossbeam::channel;
 
 
 use kora::{account::*, gui};
@@ -95,6 +96,8 @@ fn main() -> Result<(), MainError> {
 
 
     let (message_tx, message_rx) = mpsc::channel();
+    let (ui_sender, urecv) = mpsc::channel();
+    let (usend, ui_reciever) = channel::unbounded();
 
 
 
@@ -182,9 +185,11 @@ fn main() -> Result<(), MainError> {
             rmems: HashMap::new(),
             rname: vec![],
             is_user: false,
+            gui_sender: usend,
+            gui_reciever: urecv,
         };
     } else {
-        node = StakerNode::load(frontnode, backnode, message_rx);
+        node = StakerNode::load(frontnode, backnode, message_rx, usend, urecv);
     }
 
 
@@ -213,7 +218,7 @@ fn main() -> Result<(), MainError> {
         }
     });
     println!("starting!");
-    let app = gui::TemplateApp::default();
+    let app = gui::TemplateApp::new(ui_reciever, ui_sender);
     println!("starting!");
     let native_options = eframe::NativeOptions::default();
     println!("starting!");
@@ -257,6 +262,8 @@ struct StakerNode {
     inner: Node<Vec<u8>>, // for sending and recieving messages as a validator (as in inner sanctum)
     outer: Node<Vec<u8>>, // for sending and recieving messages as a non validator (as in not inner)
     message_rx: mpsc::Receiver<String>,
+    gui_sender: channel::Sender<Vec<u8>>,
+    gui_reciever: mpsc::Receiver<Vec<u8>>,
     save_history: bool, //just testing. in real code this is true; but i need to pretend to be different people on the same computer
     me: Account,
     mine: Vec<(u64, OTAccount)>,
@@ -342,7 +349,7 @@ impl StakerNode {
         let mut f = File::create("myNode").unwrap();
         f.write_all(&mut sn).unwrap();
     }
-    fn load(inner: Node<Vec<u8>>, outer: Node<Vec<u8>>, message_rx: mpsc::Receiver<String>,) -> StakerNode {
+    fn load(inner: Node<Vec<u8>>, outer: Node<Vec<u8>>, message_rx: mpsc::Receiver<String>, gui_sender: channel::Sender<Vec<u8>>, gui_reciever: mpsc::Receiver<Vec<u8>>) -> StakerNode {
         let mut buf = Vec::<u8>::new();
         let mut f = File::open("myNode").unwrap();
         f.read_to_end(&mut buf).unwrap();
@@ -354,6 +361,8 @@ impl StakerNode {
             inner: inner,
             outer: outer,
             message_rx,
+            gui_sender,
+            gui_reciever,
             timekeeper: Instant::now(),
             waitingforentrybool: true,
             waitingforleaderbool: false,
@@ -1194,7 +1203,33 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
             USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF |||||||||||||
             ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF
             */
-            while let Async::Ready(Some(m)) = self.message_rx.poll().expect("Never fails") {
+            while let Async::Ready(Some(m)) = self.gui_reciever.poll().expect("Never fails") { // this would be for gui
+                println!("\nmy name:\n---------------------------------------------\n{:?}\n",self.me.name());
+                println!("\nmy outer addr:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().id());
+                println!("\nmy inner addr:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().id());
+                println!("\nmy staker name:\n---------------------------------------------\n{:?}\n",self.me.stake_acc().name());
+                let scalarmoney = self.mine.iter().map(|x|self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>();
+                println!("\nmy scalar money:\n---------------------------------------------\n{:?}\n",scalarmoney);
+                println!("\nstake state:\n---------------------------------------------\n{:?}\n",self.stkinfo);
+                println!("\nheight:\n---------------------------------------------\n{:?}\n",self.height);
+                println!("\nsheight:\n---------------------------------------------\n{:?}\n",self.sheight);
+                println!("\ncomittee:\n---------------------------------------------\n{:?}\n",self.comittee[self.headshard]);
+                println!("\nleadership:\n---------------------------------------------\nmyself: {:?}\nleader: {:?}\n",self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress().as_bytes(), self.leader.as_bytes());
+                println!("\ntime:\n---------------------------------------------\n{:?}s\n",self.timekeeper.elapsed().as_secs());
+                println!("\nis validating:\n---------------------------------------------\n{:?}\n",self.is_validator);
+                println!("\nis staking:\n---------------------------------------------\n{:?}\n",self.is_staker);
+                println!("\nknown validators:\n---------------------------------------------\n{:?}\n",self.knownvalidators);
+                println!("\nblock number:\n---------------------------------------------\n{:?}\n",self.bnum);
+                println!("\nblock name:\n---------------------------------------------\n{:?}\n",self.lastname);
+                println!("\ninner friends:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().all_push_peers());
+                println!("\nouter friends:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().all_push_peers());
+                let moniez = u64::from_le_bytes(scalarmoney.as_bytes()[..8].try_into().unwrap());
+                println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
+                println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
+                println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
+
+            }
+            while let Async::Ready(Some(m)) = self.message_rx.poll().expect("Never fails") { // this would be for terminal
                 if m.len() > 0 {
                     println!("# MESSAGE (sent): {:?}", m);
                     let mut m = str::to_ascii_lowercase(&m).as_bytes().to_vec();
@@ -1368,6 +1403,8 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
                         println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
                         println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
+
+                        self.gui_sender.send(format!("address:\n{}",self.me.name()).as_bytes().to_vec());
                     } else if istx == 115 /* s */ {
                         self.save();
                         // maybe do something else??? like save or load contacts???
