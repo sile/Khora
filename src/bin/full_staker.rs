@@ -191,6 +191,7 @@ fn main() -> Result<(), MainError> {
     } else {
         node = StakerNode::load(frontnode, backnode, message_rx, usend, urecv);
     }
+    let info = format!("name:\n{}\nstaker name:\n{}\n",node.me.name(),node.me.stake_acc().name());
 
 
     std::thread::spawn(move || {
@@ -218,7 +219,11 @@ fn main() -> Result<(), MainError> {
         }
     });
     println!("starting!");
-    let app = gui::TemplateApp::new(ui_reciever, ui_sender);
+    let app = gui::TemplateApp::new(
+        ui_reciever,
+        ui_sender,
+        info,
+    );
     println!("starting!");
     let native_options = eframe::NativeOptions::default();
     println!("starting!");
@@ -545,8 +550,10 @@ impl StakerNode {
                     self.leaderip = Some(x.with_id(1u64));
                 }
                 /* LEADER CHOSEN BY VOTES */
-                
-
+                let mut mymoney = self.mine.iter().map(|x|self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
+                mymoney.extend(self.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
+                mymoney.push(0);
+                self.gui_sender.send(mymoney); // this is how you send info to the gui
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
                 if self.bnum % 128 == 0 {
@@ -1227,7 +1234,6 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                 println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
                 println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
                 println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
-
             }
             while let Async::Ready(Some(m)) = self.message_rx.poll().expect("Never fails") { // this would be for terminal (all the messages here are good)
                 if m.len() > 0 {
@@ -1403,8 +1409,6 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
                         println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
                         println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
-
-                        self.gui_sender.send(format!("address:\n{}",self.me.name()).as_bytes().to_vec()); // this is how you send info to the gui
                     } else if istx == 115 /* s */ {
                         self.save();
                         // maybe do something else??? like save or load contacts???
