@@ -191,7 +191,12 @@ fn main() -> Result<(), MainError> {
     } else {
         node = StakerNode::load(frontnode, backnode, message_rx, usend, urecv);
     }
-    let info = format!("name:\n{}\nstaker name:\n{}\n",node.me.name(),node.me.stake_acc().name());
+    let info: String;
+    if let Some(founder) = node.smine.get(0) {
+        info = format!("{}",founder[1]);
+    } else {
+        info = "0".to_string();
+    }
 
 
     std::thread::spawn(move || {
@@ -307,7 +312,7 @@ struct StakerNode {
     usurpingtime: Instant,
     randomstakers: VecDeque<NodeId>,
     is_validator: bool,
-    is_staker: bool,
+    is_staker: bool, // modify this depending on if staking??? is that already done?
     sent_onces: HashSet<Vec<u8>>,
     knownvalidators: HashMap<u64,NodeId>,
     announcevalidationtime: Instant,
@@ -1284,22 +1289,23 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             }
                         }
                     } else {
+                        println!("unstaking!");
                         let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.par_iter().map(|x|(x[0] as u64,x[1].clone())).unzip();
-                        let i = txtype as usize - 97usize;
-                        let b = self.me.derive_stk_ot(&Scalar::from(amnt[i]));
-                        let tx = Transaction::spend_ring(&vec![self.me.receive_ot(&b).unwrap()], &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
-                        // tx.verify().unwrap();
-                        println!("stkinfo: {:?}",self.stkinfo);
-                        println!("me pk: {:?}",self.me.receive_ot(&b).unwrap().pk.compress());
-                        println!("loc: {:?}",loc);
-                        println!("amnt: {:?}",amnt);
-                        let tx = tx.polyform(&loc[i].to_le_bytes().to_vec());
+                        let inps = amnt.into_iter().map(|x| self.me.receive_ot(&self.me.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
+                        let tx = Transaction::spend_ring(&inps, &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
+                        println!("about to verify!");
+                        tx.verify().unwrap();
+                        println!("finished to verify!");
+                        let mut loc = loc.into_par_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
+                        loc.push(1);
+                        let tx = tx.polyform(&loc); // push 0
                         if tx.verifystk(&self.stkinfo).is_ok() {
                             txbin = bincode::serialize(&tx).unwrap();
                         } else {
                             txbin = vec![];
                             println!("you can't make that transaction!");
                         }
+
                     }
 
                     if !txbin.is_empty() {

@@ -27,8 +27,6 @@ pub struct TemplateApp {
 
     fee: String,
 
-    info: String,
-
     unstaked: String,
 
     staked: String,
@@ -46,6 +44,10 @@ pub struct TemplateApp {
     stake: String,
 
     unstake: String,
+
+    addr: String,
+
+    stkaddr: String,
 }
 impl Default for TemplateApp {
     fn default() -> Self {
@@ -58,7 +60,6 @@ impl Default for TemplateApp {
             fee: "0".to_string(),
             reciever: r,
             sender: s,
-            info: "hi newbee!".to_string(),
             unstaked: "0".to_string(),
             staked: "0".to_string(),
             friends: vec![],
@@ -66,6 +67,8 @@ impl Default for TemplateApp {
             friend_adding: "add_friends_here".to_string(),
             name_adding: "add_real_life_names_here".to_string(),
             staking: false,
+            addr: "".to_string(),
+            stkaddr: "".to_string(),
         }
     }
 }
@@ -73,11 +76,11 @@ impl TemplateApp {
     pub fn new_minimal(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>) -> Self {
         TemplateApp{reciever, sender, ..Default::default()}
     }
-    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, info: String) -> Self {
+    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String) -> Self {
         TemplateApp{
             reciever,
             sender,
-            info,
+            staked,
             ..Default::default()
         }
     }
@@ -126,7 +129,6 @@ impl epi::App for TemplateApp {
             fee,
             reciever: _,
             sender,
-            info,
             unstaked,
             staked,
             friends,
@@ -136,6 +138,8 @@ impl epi::App for TemplateApp {
             staking,
             stake,
             unstake,
+            addr,
+            stkaddr,
         } = self;
 
  
@@ -173,7 +177,10 @@ impl epi::App for TemplateApp {
                 "https://github.com/constantine1024/Kora",
                 "Source code."
             ));
-            ui.label(&*info);
+            ui.horizontal(|ui| {
+                ui.label("address");
+                ui.small(&*addr);
+            });
 
             ui.horizontal(|ui| {
                 ui.label("Unstaked Money");
@@ -187,13 +194,27 @@ impl epi::App for TemplateApp {
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(stake);
                 if ui.button("Stake").clicked() {
-
+                    let mut m = vec![];
+                    m.extend(stkaddr.as_bytes().to_vec());
+                    m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
+                    m.extend((unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap()).to_le_bytes().to_vec());
+                    m.push(33);
+                    m.push(33);
+                    sender.send(m).expect("something's wrong with communication from the gui");
                 }
             });
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(unstake);
                 if ui.button("Unstake").clicked() {
-
+                    println!("unstaking!");
+                    let mut m = vec![];
+                    m.extend(addr.as_bytes().to_vec());
+                    m.extend(unstake.parse::<u64>().unwrap().to_le_bytes().to_vec());
+                    m.extend((staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap()).to_le_bytes().to_vec());
+                    m.push(1);
+                    m.push(33);
+                    println!("{}",String::from_utf8_lossy(&m));
+                    sender.send(m).expect("something's wrong with communication from the gui");
                 }
             });
             // ui.label(&*info);
@@ -203,25 +224,29 @@ impl epi::App for TemplateApp {
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             egui::ScrollArea::auto_sized().show(ui,|ui| {
                 ui.heading("Side Panel");
+                ui.label("Add Friend:");
                 ui.horizontal(|ui| {
-                    ui.label("Add Friend: ");
+                    ui.small("name");
                     ui.text_edit_singleline(friend_adding);
-                    ui.text_edit_singleline(name_adding);
-                    if ui.button("Add Friend").clicked() {
-                        friends.push(friend_adding.clone());
-                        friend_names.push(name_adding.clone());
-                        send_amount.push("0".to_string());
-                        *friend_adding = "".to_string();
-                        *name_adding = "".to_string();
-                    }
                 });
+                ui.horizontal(|ui| {
+                    ui.small("address");
+                    ui.text_edit_singleline(name_adding);
+                });
+                if ui.button("Add Friend").clicked() {
+                    friends.push(friend_adding.clone());
+                    friend_names.push(name_adding.clone());
+                    send_amount.push("0".to_string());
+                    *friend_adding = "".to_string();
+                    *name_adding = "".to_string();
+                }
                 ui.label("Transaction Fee:");
                 ui.text_edit_singleline(fee);
                 let mut friend_deleted = usize::MAX;
                 ui.label("Friends: ");
                 for (i,((addr,name),amnt)) in friends.iter_mut().zip(friend_names.iter_mut()).zip(send_amount.iter_mut()).enumerate() {
                     ui.text_edit_singleline(name);
-                    ui.text_edit_singleline(addr);
+                    ui.small(&*addr);
                     ui.horizontal(|ui| {
                         if ui.button("Delete Friend").clicked() {
                             friend_deleted = i;
