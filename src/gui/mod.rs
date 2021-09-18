@@ -23,9 +23,9 @@ pub struct TemplateApp {
     sender: mpsc::Sender<Vec<u8>>,
 
     // Example stuff:
-    send_amount: String,
+    send_amount: Vec<String>,
 
-    tx_recipient: String,
+    fee: String,
 
     // this how you opt-out of serialization of a member
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -40,14 +40,20 @@ pub struct TemplateApp {
     friends: Vec<String>,
 
     friend_adding: String,
+
+    name_adding: String,
+
+    friend_names: Vec<String>,
+
+    staking: bool,
 }
 impl Default for TemplateApp {
     fn default() -> Self {
         let (_,r) = channel::bounded::<Vec<u8>>(0);
         let (s,_) = mpsc::channel::<Vec<u8>>();
         TemplateApp{
-            send_amount: "".to_string(),
-            tx_recipient: "".to_string(),
+            send_amount: vec![],
+            fee: "0".to_string(),
             value: 1.2,
             reciever: r,
             sender: s,
@@ -55,7 +61,10 @@ impl Default for TemplateApp {
             unstaked: "0".to_string(),
             staked: "0".to_string(),
             friends: vec![],
-            friend_adding: "add_friends_here!".to_string(),
+            friend_names: vec![],
+            friend_adding: "add_friends_here".to_string(),
+            name_adding: "add_real_life_names_here".to_string(),
+            staking: false,
         }
     }
 }
@@ -111,7 +120,21 @@ impl epi::App for TemplateApp {
             }
         }
 
-        let Self { send_amount, tx_recipient, value, reciever: _, sender, info, unstaked, staked, friends, friend_adding } = self;
+        let Self {
+            send_amount,
+            fee,
+            value,
+            reciever: _,
+            sender,
+            info,
+            unstaked,
+            staked,
+            friends,
+            friend_names,
+            friend_adding,
+            name_adding,
+            staking,
+        } = self;
 
  
 
@@ -129,48 +152,70 @@ impl epi::App for TemplateApp {
                     }
                 });
             });
+            // egui::util::undoer::default(); // there's some undo button
         });
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.heading("Side Panel");
-            ui.label(&*info);
-            ui.label(&*unstaked);
-            ui.label(&*staked);
-            ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                *value += 1.0;
-            }
-            if ui.button("print info in terminal").clicked() { // this is how you send info to the program. fill vec with different stuff depending on what you want
-                sender.send(vec![]);
-            }
-
-            ui.horizontal(|ui| {
-                ui.label("Reciever: ");
-                ui.text_edit_singleline(tx_recipient);
-                ui.label("Amount: ");
-                ui.text_edit_singleline(send_amount);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Add Friend: ");
-                ui.text_edit_singleline(friend_adding);
-                if ui.button("Add Friend and Clear Blank Friends").clicked() {
-                    friends.push(friend_adding.clone());
-                    friends.retain(|x| !x.is_empty());
-                    *friend_adding = "".to_string();
+            egui::ScrollArea::auto_sized().show(ui,|ui| {
+                ui.heading("Side Panel");
+                ui.label(&*info);
+                ui.label(&*unstaked);
+                ui.label(&*staked);
+                ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
+                if ui.button("Increment").clicked() {
+                    *value += 1.0;
                 }
-            });
-            ui.label("Friends: ");
-            for f in friends {
-                ui.text_edit_singleline(f);
-            }
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-                ui.add(
-                    egui::Hyperlink::new("https://github.com/emilk/egui/").text("powered by egui"),
-                );
+
+                ui.horizontal(|ui| {
+                    ui.label("Add Friend: ");
+                    ui.text_edit_singleline(friend_adding);
+                    ui.text_edit_singleline(name_adding);
+                    if ui.button("Add Friend").clicked() {
+                        friends.push(friend_adding.clone());
+                        friend_names.push(name_adding.clone());
+                        send_amount.push("0".to_string());
+                        *friend_adding = "".to_string();
+                        *name_adding = "".to_string();
+                    }
+                });
+                ui.label("Friends: ");
+                let mut friend_deleted = usize::MAX;
+                for (i,((addr,name),amnt)) in friends.iter_mut().zip(friend_names.iter_mut()).zip(send_amount.iter_mut()).enumerate() {
+                    ui.text_edit_singleline(name);
+                    ui.text_edit_singleline(addr);
+                    ui.horizontal(|ui| {
+                        if ui.button("Delete Friend").clicked() {
+                            friend_deleted = i;
+                        }
+                        ui.text_edit_singleline(amnt);
+                    });
+                }
+                ui.label("Transaction Fee:");
+                ui.text_edit_singleline(fee);
+                if friend_deleted != usize::MAX {
+                    friend_names.remove(friend_deleted);
+                    friends.remove(friend_deleted);
+                    send_amount.remove(friend_deleted);
+                }
+                if ui.button("Send Transaction").clicked() {
+                    let mut m = vec![];
+                    for (who,amnt) in friend_names.iter_mut().zip(send_amount.iter_mut()) {
+                        m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
+                        m.extend(amnt.parse::<u64>().unwrap().to_le_bytes().to_vec());
+                    }
+                    m.push(33);
+                    m.push(33);
+                    sender.send(m).expect("something's wrong with communication from the gui");
+                }
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+                    ui.add(
+                        egui::Hyperlink::new("https://github.com/emilk/egui/").text("powered by egui"),
+                    );
+                });
             });
         });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
+    
+        egui::CentralPanel::default().show(ctx, |ui| { // the only option for staker stuff should be to send x of money to self (starting with smallest accs)
             // The central panel the region left after adding TopPanel's and SidePanel's
 
             ui.heading("egui template");
@@ -183,7 +228,7 @@ impl epi::App for TemplateApp {
             egui::warn_if_debug_build(ui);
         });
 
-        if false {
+        if *staking {
             egui::Window::new("Window").show(ctx, |ui| {
                 ui.label("Windows can be moved by dragging them.");
                 ui.label("They are automatically sized based on contents.");
