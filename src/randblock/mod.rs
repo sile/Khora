@@ -60,7 +60,7 @@ pub fn random_polytx_set(n: &usize, y: &Vec<OTAccount>, oldheight: &u64) -> Vec<
 
         let ringsize = 5;
         let rname = generate_ring(&vec![((x+n-1)%n)+*oldheight as usize], &ringsize, &height);
-        let ring = recieve_ring(&rname);
+        let ring = recieve_ring(&rname).unwrap();
         /* vvv this is where people send you the ring members  vvv */ 
         let mut rlring = ring.par_iter().map(|x| y[*x as usize].to_owned()).collect::<Vec<OTAccount>>();
         /* ^^^ this is where people send you the ring members  ^^^ */ 

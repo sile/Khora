@@ -1238,7 +1238,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
 
                         if self.is_user {
                             // let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &15, &self.height);
-                            let ring = recieve_ring(&self.rname);
+                            let ring = recieve_ring(&self.rname).expect("shouldn't fail");
                             /* this is where people send you the ring members */ 
                             // let mut rlring = ring.into_par_iter().map(|x| OTAccount::summon_ota(&History::get(&x))).collect::<Vec<OTAccount>>();
                             let rmems = &self.rmems;
@@ -1257,7 +1257,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             }
                         } else {
                             let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &5, &self.height);
-                            let ring = recieve_ring(&rname);
+                            let ring = recieve_ring(&rname).expect("shouldn't fail");
                             println!("ring: {:?}",ring);
                             println!("mine: {:?}",acc.iter().map(|x|x.pk.compress()).collect::<Vec<_>>());
                             println!("ring: {:?}",ring.iter().map(|x|OTAccount::summon_ota(&History::get(&x)).pk.compress()).collect::<Vec<_>>());
@@ -1347,7 +1347,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
 
                             if self.is_user {
                                 // let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &15, &self.height);
-                                let ring = recieve_ring(&self.rname);
+                                let ring = recieve_ring(&self.rname).expect("shouldn't fail");
                                 /* this is where people send you the ring members */ 
                                 // let mut rlring = ring.into_par_iter().map(|x| OTAccount::summon_ota(&History::get(&x))).collect::<Vec<OTAccount>>();
                                 let rmems = &self.rmems;
@@ -1366,7 +1366,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                                 }
                             } else {
                                 let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &5, &self.height);
-                                let ring = recieve_ring(&rname);
+                                let ring = recieve_ring(&rname).expect("shouldn't fail");
                                 println!("ring: {:?}",ring);
                                 println!("mine: {:?}",acc.iter().map(|x|x.pk.compress()).collect::<Vec<_>>());
                                 println!("ring: {:?}",ring.iter().map(|x|OTAccount::summon_ota(&History::get(&x)).pk.compress()).collect::<Vec<_>>());
@@ -1394,21 +1394,35 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             }
                         } else {
                             let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.par_iter().map(|x|(x[0] as u64,x[1].clone())).unzip();
-                            let i = txtype as usize - 97usize;
-                            let b = self.me.derive_stk_ot(&Scalar::from(amnt[i]));
-                            let tx = Transaction::spend_ring(&vec![self.me.receive_ot(&b).unwrap()], &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
-                            // tx.verify().unwrap();
-                            println!("stkinfo: {:?}",self.stkinfo);
-                            println!("me pk: {:?}",self.me.receive_ot(&b).unwrap().pk.compress());
-                            println!("loc: {:?}",loc);
-                            println!("amnt: {:?}",amnt);
-                            let tx = tx.polyform(&loc[i].to_le_bytes().to_vec());
+                            // let i = txtype as usize - 97usize;
+                            // let b = self.me.derive_stk_ot(&Scalar::from(amnt[i]));
+                            // let tx = Transaction::spend_ring(&vec![self.me.receive_ot(&b).unwrap()], &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
+                            // // tx.verify().unwrap();
+                            // println!("stkinfo: {:?}",self.stkinfo);
+                            // println!("me pk: {:?}",self.me.receive_ot(&b).unwrap().pk.compress());
+                            // println!("loc: {:?}",loc);
+                            // println!("amnt: {:?}",amnt);
+                            // let tx = tx.polyform(&loc[i].to_le_bytes().to_vec()); // push 0
+                            // if tx.verifystk(&self.stkinfo).is_ok() {
+                            //     txbin = bincode::serialize(&tx).unwrap();
+                            // } else {
+                            //     txbin = vec![];
+                            //     println!("you can't make that transaction!");
+                            // }
+
+                            let inps = amnt.into_iter().map(|x| self.me.receive_ot(&self.me.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
+                            let tx = Transaction::spend_ring(&inps, &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
+                            tx.verify().unwrap();
+                            let mut loc = loc.into_par_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
+                            loc.push(1);
+                            let tx = tx.polyform(&loc); // push 0
                             if tx.verifystk(&self.stkinfo).is_ok() {
                                 txbin = bincode::serialize(&tx).unwrap();
                             } else {
                                 txbin = vec![];
                                 println!("you can't make that transaction!");
                             }
+
                         }
 
                         if !txbin.is_empty() {
@@ -1450,7 +1464,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         // maybe have bigger rings than 5? it's a choice i dont forbid anything
                         self.rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &11, &self.height);
                         // println!("rname: {:?}",self.rname);
-                        let ring = recieve_ring(&self.rname);
+                        let ring = recieve_ring(&self.rname).expect("shouldn't fail");
                         let ring = ring.into_par_iter().filter(|x| loc.par_iter().all(|y|x!=y)).collect::<Vec<_>>();
                         println!("ring:----------------------------------\n{:?}",ring);
                         // 192.168.000.101:09876

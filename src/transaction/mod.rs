@@ -1,9 +1,11 @@
 #![allow(dead_code)]
+use std::collections::HashSet;
 use std::convert::TryInto;
 
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::scalar::Scalar;
 use merlin::Transcript;
+use rayon::slice::ParallelSlice;
 use serde::{Serialize, Deserialize};
 use rand::random;
 
@@ -180,32 +182,40 @@ impl PolynomialTransaction {
     pub fn verify_ram(&self,history:&Vec<OTAccount>) -> Result<(), TransactionError> {
         let mut tr = Transcript::new(b"seal tx");
         let tags: Vec<&Tag> = self.tags.par_iter().map(|a| a).collect();
-        let inputs: Vec<&OTAccount> = recieve_ring(&self.inputs).par_iter().map(|x| &history[*x as usize]).collect();        
-        let mut outputs = self.outputs.clone();
-        outputs.push(fee_ota(&Scalar::from(self.fee)));
-        let outputs: Vec<&OTAccount> = outputs.par_iter().map(|a|a).collect();
-        
-        let b = self.seal.verify(&mut tr, &inputs, &tags, &outputs);
+        if let Ok(i) = recieve_ring(&self.inputs) {
+            let inputs: Vec<&OTAccount> = i.par_iter().map(|x| &history[*x as usize]).collect();        
+            let mut outputs = self.outputs.clone();
+            outputs.push(fee_ota(&Scalar::from(self.fee)));
+            let outputs: Vec<&OTAccount> = outputs.par_iter().map(|a|a).collect();
+            
+            let b = self.seal.verify(&mut tr, &inputs, &tags, &outputs);
 
-        match b {
-            Ok(()) => Ok(()),
-            Err(_) => Err(TransactionError::InvalidTransaction)
+            match b {
+                Ok(()) => Ok(()),
+                Err(_) => Err(TransactionError::InvalidTransaction)
+            }
+        } else {
+            Err(TransactionError::InvalidTransaction)
         }
     }
 
     pub fn verify(&self) -> Result<(), TransactionError> {
         let mut tr = Transcript::new(b"seal tx");
         let tags: Vec<&Tag> = self.tags.par_iter().map(|a| a).collect();
-        let inputs = recieve_ring(&self.inputs).par_iter().map(|x| OTAccount::summon_ota(&History::get(x))).collect::<Vec<OTAccount>>();        
-        let mut outputs = self.outputs.clone();
-        outputs.push(fee_ota(&Scalar::from(self.fee)));
-        let outputs: Vec<&OTAccount> = outputs.par_iter().map(|a|a).collect();
-        
-        let b = self.seal.verify(&mut tr, &inputs.par_iter().collect::<Vec<_>>(), &tags, &outputs);
+        if let Ok(i) = recieve_ring(&self.inputs) {
+            let inputs = i.par_iter().map(|x| OTAccount::summon_ota(&History::get(x))).collect::<Vec<OTAccount>>();        
+            let mut outputs = self.outputs.clone();
+            outputs.push(fee_ota(&Scalar::from(self.fee)));
+            let outputs: Vec<&OTAccount> = outputs.par_iter().map(|a|a).collect();
+            
+            let b = self.seal.verify(&mut tr, &inputs.par_iter().collect::<Vec<_>>(), &tags, &outputs);
 
-        match b {
-            Ok(()) => Ok(()),
-            Err(_) => Err(TransactionError::InvalidTransaction)
+            match b {
+                Ok(()) => Ok(()),
+                Err(_) => Err(TransactionError::InvalidTransaction)
+            }
+        } else {
+            Err(TransactionError::InvalidTransaction)
         }
     }
 
@@ -213,21 +223,34 @@ impl PolynomialTransaction {
         let mut tr = Transcript::new(b"seal tx");
         let tags: Vec<&Tag> = self.tags.par_iter().map(|a| a).collect();
         println!("history {}: {:?}",history.len(),history);
-        let (pk,amnt) = match history.get(u64::from_le_bytes(self.inputs.to_owned().try_into().unwrap()) as usize) {
-            Some(x) => x,
-            None => return Err(TransactionError::InvalidTransaction),
-        };
-        let com = Commitment::commit(&Scalar::from(*amnt),&Scalar::zero());
-        let input = OTAccount{pk: pk.decompress().unwrap(),com,..Default::default()};
-        let mut outputs = self.outputs.clone();
-        outputs.push(fee_ota(&Scalar::from(self.fee)));
-        let outputs: Vec<&OTAccount> = outputs.par_iter().map(|a|a).collect();
-        
-        let b = self.seal.verify(&mut tr, &vec![&input], &tags, &outputs);
+        let mut i = self.inputs.clone();
+        if i.pop() == Some(1) {
+            let places = i.par_chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap()) as usize).collect::<Vec<_>>();
+            if !places.par_iter().enumerate().all(|(i,&x)| x < places[i]) {
+                return Err(TransactionError::InvalidTransaction)
+            }
+            let mut input = vec![];
+            for i in places {
+                let (pk,amnt) = match history.get(i) {
+                    Some(x) => x,
+                    None => return Err(TransactionError::InvalidTransaction),
+                };
+                let com = Commitment::commit(&Scalar::from(*amnt),&Scalar::zero());
+                input.push(OTAccount{pk: pk.decompress().unwrap(),com,..Default::default()});
+            }
 
-        match b {
-            Ok(()) => Ok(()),
-            Err(_) => Err(TransactionError::InvalidTransaction)
+            let mut outputs = self.outputs.clone();
+            outputs.push(fee_ota(&Scalar::from(self.fee)));
+            let outputs: Vec<&OTAccount> = outputs.par_iter().map(|a|a).collect();
+            
+            let b = self.seal.verify(&mut tr, &input.par_iter().collect::<Vec<_>>(), &tags, &outputs);
+
+            match b {
+                Ok(()) => Ok(()),
+                Err(_) => Err(TransactionError::InvalidTransaction)
+            }
+        } else {
+            Err(TransactionError::InvalidTransaction)
         }
     }
 

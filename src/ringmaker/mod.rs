@@ -9,9 +9,8 @@ use sha3::{Digest, Sha3_512};
 
 
 
-pub fn key_hash(key: &u32, t: &u32) -> i128 {
+pub fn hash(t: &u32) -> i128 {
     let mut s = Sha3_512::new();
-    s.update(&key.to_le_bytes());
     s.update(&t.to_le_bytes());
     let c = s.finalize();
     i128::from_le_bytes(c.to_vec()[..16].try_into().unwrap())
@@ -28,16 +27,15 @@ pub fn generate_ring(s: &Vec<usize>, r: &u16, now: &u64) -> Vec<u8> {
     let r = *r as i128;
 
 
-    let mut rng = rand::thread_rng();
-    let key: u32 = rng.gen();
 
     /* h is the random number */
     let h: Vec<_> = (0..r).collect();
     let h: Vec<_> = h.par_iter().map(|x| {
-        key_hash(&key, &(*x as u32)) as u64 
+        hash(&(*x as u32)) as u64 
         % P as u64} ).collect();
     let ringmems_init = Uniform::new(0,r);
     /* indeces I want to be at */
+    let mut rng = rand::thread_rng();
     let mut j = Vec::<usize>::new();
     while j.len() < s.len() {
         let a = rng.sample(&ringmems_init) as usize;
@@ -102,6 +100,8 @@ pub fn generate_ring(s: &Vec<usize>, r: &u16, now: &u64) -> Vec<u8> {
     //     )
     // ).collect();
     // println!("{:?}",a);
+    // places.sort();
+    // places.dedup();
     // println!("me values: {:?}",s);
     // println!("me places: {:?}",j);
     // println!("**************************");
@@ -121,72 +121,72 @@ pub fn generate_ring(s: &Vec<usize>, r: &u16, now: &u64) -> Vec<u8> {
 
     let mut send = Vec::<u8>::new();
     send.extend((r as u16).to_le_bytes());
-    send.extend(key.to_le_bytes());
     send.extend(now.to_le_bytes());
     for i in coefficients.clone() {
         send.extend(i.to_le_bytes());
     }
-
+    send.push(0);
     /* send ring size, key, now, polynomial */
 
     send
 }
 
-pub fn recieve_ring(recieved: &Vec<u8>) -> Vec<u64> {
+pub fn recieve_ring(recieved: &Vec<u8>) -> Result<Vec<u64>,&'static str> {
     /* errors are spit out for non primes */
     // println!("{:?}",u64::MAX); //
 
-    /* send the info over */
     let mut recieved = recieved.to_owned();
-    let r_bytes: Vec<u8> = recieved.par_drain(..2).collect(); //u16
-    let r_bytes: Result<[u8;2],_> = r_bytes.try_into();
-    let r = u16::from_le_bytes(r_bytes.unwrap());
+    /* send the info over */
+    if recieved.pop() == Some(0) {
+        let r_bytes: Vec<u8> = recieved.par_drain(..2).collect(); //u16
+        let r_bytes: Result<[u8;2],_> = r_bytes.try_into();
+        let r = u16::from_le_bytes(r_bytes.unwrap());
 
-    let key_bytes: Vec<u8> = recieved.par_drain(..4).collect(); //u32
-    let key_bytes: Result<[u8;4],_> = key_bytes.try_into();
-    let key = u32::from_le_bytes(key_bytes.unwrap());
-
-    let now_bytes: Vec<u8> = recieved.par_drain(..8).collect(); //u32
-    let now_bytes: Result<[u8;8],_> = now_bytes.try_into();
-    let now = u64::from_le_bytes(now_bytes.unwrap()) as i128;
+        let now_bytes: Vec<u8> = recieved.par_drain(..8).collect(); //u32
+        let now_bytes: Result<[u8;8],_> = now_bytes.try_into();
+        let now = u64::from_le_bytes(now_bytes.unwrap()) as i128;
 
 
 
-    let mut coefficients = Vec::<u64>::new();
-    while recieved.len() > 0 {
-        let ci: Vec<u8> = recieved.par_drain(..8).collect();
-        let ci: [u8;8] = ci.try_into().unwrap();
-        coefficients.push(u64::from_le_bytes(ci));
+        let mut coefficients = Vec::<u64>::new();
+        while recieved.len() > 0 {
+            let ci: Vec<u8> = recieved.par_drain(..8).collect();
+            let ci: [u8;8] = ci.try_into().unwrap();
+            coefficients.push(u64::from_le_bytes(ci));
+        }
+
+
+        let coefficients = coefficients.par_iter().map(|x| *x as i128).collect();
+        let poly = PolynomialOverP::<i128>::new(coefficients, P);
+        /* these next 2 paragraphs of comments are good */
+        let throwaway: Vec<_> = (0..r).collect();
+        let h: Vec<_> = throwaway.par_iter().map(|x| {hash(&(*x as u32)) as u64 % P as u64} ).collect();
+        let mut places = Vec::<i128>::new();
+        for x in 0..r {
+            let mut throwaway = poly.eval(&(x as i128));
+            if throwaway < 0 {
+                throwaway = throwaway + P;
+            }
+            let y = PolynomialOverP::<i128>::new(vec![throwaway], P);
+            let lpos = PolynomialOverP::<i128>::new(vec![h[x as usize] as i128], P) - y;
+            
+            if  lpos.clone().coefs().len() > 0 {
+                let mut lpos = lpos.coefs()[0];
+                if lpos < 0 {lpos = lpos + P;}
+                places.push(lpos%now as i128);
+            }
+            else {
+                places.push(0);
+            }
+
+        }
+
+        places.sort();
+        places.dedup();
+        Ok(places.into_iter().map(|x| x as u64).collect())
+    } else {
+        Err("this is not a regular transaction")
     }
-
-
-    let coefficients = coefficients.par_iter().map(|x| *x as i128).collect();
-    let poly = PolynomialOverP::<i128>::new(coefficients, P);
-    /* these next 2 paragraphs of comments are good */
-    let throwaway: Vec<_> = (0..r).collect();
-    let h: Vec<_> = throwaway.par_iter().map(|x| {key_hash(&(key as u32), &(*x as u32)) as u64 % P as u64} ).collect();
-    let mut places = Vec::<i128>::new();
-    for x in 0..r {
-        let mut throwaway = poly.eval(&(x as i128));
-        if throwaway < 0 {
-            throwaway = throwaway + P;
-        }
-        let y = PolynomialOverP::<i128>::new(vec![throwaway], P);
-        let lpos = PolynomialOverP::<i128>::new(vec![h[x as usize] as i128], P) - y;
-        
-        if  lpos.clone().coefs().len() > 0 {
-            let mut lpos = lpos.coefs()[0];
-            if lpos < 0 {lpos = lpos + P;}
-            places.push(lpos%now as i128);
-        }
-        else {
-            places.push(0);
-        }
-
-    }
-
-    
-    places.par_iter().enumerate().filter_map(|(i,x)| if places[..i].par_iter().all(|y| y!=x) {Some(*x as u64)} else {None}).collect()
 }
 
 

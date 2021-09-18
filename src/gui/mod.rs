@@ -27,10 +27,6 @@ pub struct TemplateApp {
 
     fee: String,
 
-    // this how you opt-out of serialization of a member
-    #[cfg_attr(feature = "persistence", serde(skip))]
-    value: f32,
-
     info: String,
 
     unstaked: String,
@@ -46,6 +42,10 @@ pub struct TemplateApp {
     friend_names: Vec<String>,
 
     staking: bool,
+
+    stake: String,
+
+    unstake: String,
 }
 impl Default for TemplateApp {
     fn default() -> Self {
@@ -53,8 +53,9 @@ impl Default for TemplateApp {
         let (s,_) = mpsc::channel::<Vec<u8>>();
         TemplateApp{
             send_amount: vec![],
+            stake: "0".to_string(),
+            unstake: "0".to_string(),
             fee: "0".to_string(),
-            value: 1.2,
             reciever: r,
             sender: s,
             info: "hi newbee!".to_string(),
@@ -123,7 +124,6 @@ impl epi::App for TemplateApp {
         let Self {
             send_amount,
             fee,
-            value,
             reciever: _,
             sender,
             info,
@@ -134,17 +134,32 @@ impl epi::App for TemplateApp {
             friend_adding,
             name_adding,
             staking,
+            stake,
+            unstake,
         } = self;
 
  
 
-        // Examples of how to create different panels and windows.
-        // Pick whichever suits you.
-        // Tip: a good default choice is to just keep the `CentralPanel`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
+        // // Examples of how to create different panels and windows.
+        // // Pick whichever suits you.
+        // // Tip: a good default choice is to just keep the `CentralPanel`.
+        // // For inspiration and more examples, go to https://emilk.github.io/egui
 
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
+        // egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        //     // The top panel is often a good place for a menu bar:
+        //     egui::menu::bar(ui, |ui| {
+        //         egui::menu::menu(ui, "File", |ui| {
+        //             if ui.button("Quit").clicked() {
+        //                 frame.quit();
+        //             }
+        //         });
+        //     });
+        //     // egui::util::undoer::default(); // there's some undo button
+        // });
+
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| { // the only option for staker stuff should be to send x of money to self (starting with smallest accs)
+            // The central panel the region left after adding TopPanel's and SidePanel's
+
             egui::menu::bar(ui, |ui| {
                 egui::menu::menu(ui, "File", |ui| {
                     if ui.button("Quit").clicked() {
@@ -152,20 +167,42 @@ impl epi::App for TemplateApp {
                     }
                 });
             });
-            // egui::util::undoer::default(); // there's some undo button
+            ui.heading("Kora");
+            ui.hyperlink("https://github.com/constantine1024/Kora");
+            ui.add(egui::github_link_file!(
+                "https://github.com/constantine1024/Kora",
+                "Source code."
+            ));
+            ui.label(&*info);
+
+            ui.horizontal(|ui| {
+                ui.label("Unstaked Money");
+                ui.label(&*unstaked);
+            });
+            ui.horizontal(|ui| {
+                ui.label("Staked Money");
+                ui.label(&*staked);
+            });
+
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(stake);
+                if ui.button("Stake").clicked() {
+
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(unstake);
+                if ui.button("Unstake").clicked() {
+
+                }
+            });
+            // ui.label(&*info);
+            egui::warn_if_debug_build(ui);
         });
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             egui::ScrollArea::auto_sized().show(ui,|ui| {
                 ui.heading("Side Panel");
-                ui.label(&*info);
-                ui.label(&*unstaked);
-                ui.label(&*staked);
-                ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
-                if ui.button("Increment").clicked() {
-                    *value += 1.0;
-                }
-
                 ui.horizontal(|ui| {
                     ui.label("Add Friend: ");
                     ui.text_edit_singleline(friend_adding);
@@ -178,8 +215,10 @@ impl epi::App for TemplateApp {
                         *name_adding = "".to_string();
                     }
                 });
-                ui.label("Friends: ");
+                ui.label("Transaction Fee:");
+                ui.text_edit_singleline(fee);
                 let mut friend_deleted = usize::MAX;
+                ui.label("Friends: ");
                 for (i,((addr,name),amnt)) in friends.iter_mut().zip(friend_names.iter_mut()).zip(send_amount.iter_mut()).enumerate() {
                     ui.text_edit_singleline(name);
                     ui.text_edit_singleline(addr);
@@ -190,8 +229,6 @@ impl epi::App for TemplateApp {
                         ui.text_edit_singleline(amnt);
                     });
                 }
-                ui.label("Transaction Fee:");
-                ui.text_edit_singleline(fee);
                 if friend_deleted != usize::MAX {
                     friend_names.remove(friend_deleted);
                     friends.remove(friend_deleted);
@@ -215,19 +252,6 @@ impl epi::App for TemplateApp {
             });
         });
     
-        egui::CentralPanel::default().show(ctx, |ui| { // the only option for staker stuff should be to send x of money to self (starting with smallest accs)
-            // The central panel the region left after adding TopPanel's and SidePanel's
-
-            ui.heading("egui template");
-            ui.hyperlink("https://github.com/emilk/egui_template");
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/egui_template/blob/master/",
-                "Source code."
-            ));
-            // ui.label(&*info);
-            egui::warn_if_debug_build(ui);
-        });
-
         if *staking {
             egui::Window::new("Window").show(ctx, |ui| {
                 ui.label("Windows can be moved by dragging them.");
