@@ -309,19 +309,13 @@ impl NextBlock { // need to sign the staker inputs too
         let mut txs =
             txs.clone().into_par_iter().enumerate().filter_map(|(i,x)| {
                 if 
-                x.tags.par_iter().all(|&x|
-                    txs[..i].par_iter().flat_map(|x| x.tags.clone()).collect::<Vec<CompressedRistretto>>()
-                    .par_iter().all(|&y|
-                    x != y)) /* should i replace this with a bloom filter or hashset??? and not parallelize it? */
+                x.tags.par_iter().all(|&x| !txs[..i].iter().flat_map(|x| x.tags.clone()).collect::<HashSet<CompressedRistretto>>().contains(&x))
                 &&
-                x.tags.par_iter().all(|y| {!bloom.contains(&y.to_bytes())})
+                x.tags.iter().all(|y| {!bloom.contains(&y.to_bytes())})
                 &&
-                x.tags.par_iter().enumerate().all(|(i,y)|
-                    x.tags[..i].par_iter().all(|z| {y!=z}
-                ))
+                x.tags.len() == x.tags.iter().collect::<HashSet<_>>().len()
                 &&
                 x.verify().is_ok()
-                // x.verify_ram(&history).is_ok()
                 {//println!("{:?}",x.tags);
                     Some(x.to_owned())
                 }
@@ -847,7 +841,7 @@ impl NextBlock { // need to sign the staker inputs too
 
     }
     pub fn update_bloom(&self,bloom:&BloomFile) {
-        self.txs.par_iter().map(|x| x.tags.par_iter().map(|y| bloom.insert(y.as_bytes())).collect::<Vec<_>>()).collect::<Vec<_>>();
+        self.txs.par_iter().for_each(|x| x.tags.iter().for_each(|x| bloom.insert(&x.as_bytes())));
     }
     pub fn tolightning(&self) -> LightningSyncBlock {
         LightningSyncBlock {

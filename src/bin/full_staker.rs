@@ -104,11 +104,11 @@ fn main() -> Result<(), MainError> {
     let node: StakerNode;
     if pswrd != "load" {
         let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let initial_history = vec![(leader,1u64)];
-        // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        // let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        // let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        // let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
+        // let initial_history = vec![(leader,1u64)];
+        let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
 
 
         let me = Account::new(&format!("{}",pswrd));
@@ -118,7 +118,7 @@ fn main() -> Result<(), MainError> {
 
         History::initialize();
         BloomFile::initialize_bloom_file();
-        let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this
+        let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this IMPORTANT TO CHANGR
 
         let mut smine = vec![];
         for i in 0..initial_history.len() {
@@ -483,6 +483,9 @@ impl StakerNode {
                     }
                     self.keylocation = self.smine.iter().map(|x| x[0]).collect();
                     self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
+                    if !self.is_user {
+                        self.lastblock.update_bloom(&mut self.bloom);
+                    }
 
                     let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
                     println!("saving block...");
@@ -1015,47 +1018,48 @@ impl Future for StakerNode {
                                 self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
                             } else if (mtype == 3) /*&& !self.is_validator*/ {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
-                                    // smsething about trust due to sender (you're syncing) or signatures (mtype 8)
-                                    if self.trustedsyncsource.contains(&msg.id().node()) {
-                                        let bname = hash_to_scalar(&m).as_bytes().to_vec();
-                                        self.blocktrust.remove(&bname); // you may be a little behind and the order of some stufff was swapped
-                                        self.possibleblocks.remove(&lastblock);
-                                        self.readblock(lastblock, m);
-                                    } else {
-                                        println!("3!");
-                                        let bname = hash_to_scalar(&m).as_bytes().to_vec();
-                                        if let Some(b) = self.blocktrust.get(&bname) {
-                                            if b.len() < NUMBER_OF_VALIDATORS/2 { // NUMBER_OF_VALIDATORS/2 here should be fine
-                                                self.readblock(lastblock, m);
-                                            } else {
-                                                self.possibleblocks.insert(lastblock);
-                                            }
-                                        } else {
-                                            self.blocktrust.insert(bname, self.comittee[self.headshard].clone());
-                                        }
-                                    }
+                                    self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
+                                    // // smsething about trust due to sender (you're syncing) or signatures (mtype 8)
+                                    // if self.trustedsyncsource.contains(&msg.id().node()) {
+                                    //     let bname = hash_to_scalar(&m).as_bytes().to_vec();
+                                    //     self.blocktrust.remove(&bname); // you may be a little behind and the order of some stufff was swapped
+                                    //     self.possibleblocks.remove(&lastblock);
+                                    //     self.readblock(lastblock, m);
+                                    // } else {
+                                    //     println!("3!");
+                                    //     let bname = hash_to_scalar(&m).as_bytes().to_vec();
+                                    //     if let Some(b) = self.blocktrust.get(&bname) {
+                                    //         if b.len() < NUMBER_OF_VALIDATORS/2 { // NUMBER_OF_VALIDATORS/2 here should be fine
+                                    //             self.readblock(lastblock, m);
+                                    //         } else {
+                                    //             self.possibleblocks.insert(lastblock);
+                                    //         }
+                                    //     } else {
+                                    //         self.blocktrust.insert(bname, self.comittee[self.headshard].clone());
+                                    //     }
+                                    // }
                                 }
                             } else if (mtype == 8) /*&& !self.is_validator*/ {
                                 println!("8!");
-                                if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
-                                    // if who in comittee do something where you trust the block hash more
-                                    println!("someone signed it: {}",who);
-                                    if let Some(x) = self.blocktrust.get_mut(&m) {
-                                        println!("got mut!");
-                                        *x = x.into_iter().filter(|x| **x != who as usize).map(|x| *x).collect::<Vec<_>>();
-                                        println!("{}",x.len());
-                                        if x.len() < NUMBER_OF_VALIDATORS/2 { // NUMBER_OF_VALIDATORS/2 here should be fine
-                                            println!("got enought sigs");
-                                            if let Some(lastblock) = self.possibleblocks.clone().into_iter().filter(|x| hash_to_scalar(x).as_bytes().to_vec() == m).collect::<Vec<_>>().get(0) {
-                                                self.readblock(lastblock.to_owned(), bincode::serialize(&lastblock).unwrap());
-                                            }
-                                        }
-                                    } else {
-                                        println!("insering!");
-                                        self.blocktrust.insert(m, self.comittee[self.headshard].clone().into_iter().filter(|x| *x != who as usize).collect::<Vec<_>>());
-                                    }
-                                    // maybe if ready scan the saved block?
-                                }
+                                // if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
+                                //     // if who in comittee do something where you trust the block hash more
+                                //     println!("someone signed it: {}",who);
+                                //     if let Some(x) = self.blocktrust.get_mut(&m) {
+                                //         println!("got mut!");
+                                //         *x = x.into_iter().filter(|x| **x != who as usize).map(|x| *x).collect::<Vec<_>>();
+                                //         println!("{}",x.len());
+                                //         if x.len() < NUMBER_OF_VALIDATORS/2 { // NUMBER_OF_VALIDATORS/2 here should be fine
+                                //             println!("got enought sigs");
+                                //             if let Some(lastblock) = self.possibleblocks.clone().into_iter().filter(|x| hash_to_scalar(x).as_bytes().to_vec() == m).collect::<Vec<_>>().get(0) {
+                                //                 self.readblock(lastblock.to_owned(), bincode::serialize(&lastblock).unwrap());
+                                //             }
+                                //         }
+                                //     } else {
+                                //         println!("insering!");
+                                //         self.blocktrust.insert(m, self.comittee[self.headshard].clone().into_iter().filter(|x| *x != who as usize).collect::<Vec<_>>());
+                                //     }
+                                //     // maybe if ready scan the saved block?
+                                // }
                             } else if (mtype == 105) && !self.is_validator /* i */ {
                                 if Signature::recieve_signed_message(&mut m, &self.stkinfo).is_some() {
                                     self.randomstakers.push_front(bincode::deserialize::<NodeId>(&m).unwrap());
