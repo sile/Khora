@@ -236,7 +236,7 @@ impl epi::App for TemplateApp {
 
         egui::Window::new("Window").show(ctx, |ui| {
             egui::ScrollArea::auto_sized().show(ui,|ui| {
-                ui.heading("Side Panel");
+                ui.heading("Friends");
                 ui.label("Add Friend:");
                 ui.horizontal(|ui| {
                     ui.small("name");
