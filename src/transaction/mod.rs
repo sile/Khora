@@ -226,7 +226,7 @@ impl PolynomialTransaction {
         let mut i = self.inputs.clone();
         if i.pop() == Some(1) {
             let places = i.par_chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap()) as usize).collect::<Vec<_>>();
-            if !places.par_iter().enumerate().all(|(i,&x)| x < places[i]) {
+            if !places[1..].par_iter().enumerate().all(|(i,&x)| x > places[i]) {
                 return Err(TransactionError::InvalidTransaction)
             }
             let mut input = vec![];

@@ -381,7 +381,7 @@ impl StakerNode {
             waitingforentrytime: Instant::now(),
             emitmessage: Instant::now(),
             usurpingtime: Instant::now(),
-            txses: vec![],
+            txses: vec![], // if someone is not a leader for a really long time they'll have a wrongly long list of tx
             sigs: vec![],
             bannedlist: HashSet::new(),
             points: HashMap::new(),
@@ -556,9 +556,10 @@ impl StakerNode {
                     self.leaderip = Some(x.with_id(1u64));
                 }
                 /* LEADER CHOSEN BY VOTES */
-                let mut mymoney = self.mine.iter().map(|x|self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
+                let mut mymoney = self.mine.iter().map(|x| self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
                 mymoney.extend(self.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
                 mymoney.push(0);
+                println!("my money:\n---------------------------------\n{:?}",mymoney);
                 self.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui");; // this is how you send info to the gui
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
@@ -612,7 +613,7 @@ impl Future for StakerNode {
                     self.scalars = HashMap::new();
                     let m = bincode::serialize(&self.txses).unwrap();
                     // println!("bnum: {}",self.bnum);
-
+                    println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
                     let mut m = Signature::sign_message_nonced(&self.key, &m, &self.newest,&self.bnum);
                     m.push(1u8);
                     self.inner.broadcast(m);
@@ -1258,6 +1259,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                                 let tx = tx.polyform(&self.rname);
                                 // tx.verify().unwrap(); // as a user you won't be able to check this
                                 txbin = bincode::serialize(&tx).unwrap();
+                                println!("transaction made!");
                             } else {
                                 txbin = vec![];
                                 println!("you can't make that transaction, user!");
@@ -1267,7 +1269,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             let ring = recieve_ring(&rname).expect("shouldn't fail");
                             println!("ring: {:?}",ring);
                             println!("mine: {:?}",acc.iter().map(|x|x.pk.compress()).collect::<Vec<_>>());
-                            println!("ring: {:?}",ring.iter().map(|x|OTAccount::summon_ota(&History::get(&x)).pk.compress()).collect::<Vec<_>>());
+                            // println!("ring: {:?}",ring.iter().map(|x|OTAccount::summon_ota(&History::get(&x)).pk.compress()).collect::<Vec<_>>());
                             let mut rlring = ring.into_iter().map(|x| {
                                 let x = OTAccount::summon_ota(&History::get(&x));
                                 if acc.par_iter().all(|a| a.pk != x.pk) {
@@ -1285,6 +1287,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             let tx = tx.polyform(&rname);
                             if tx.verify().is_ok() {
                                 txbin = bincode::serialize(&tx).unwrap();
+                                println!("transaction made!");
                             } else {
                                 txbin = vec![];
                                 println!("you can't make that transaction!");
@@ -1303,14 +1306,15 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         let tx = tx.polyform(&loc); // push 0
                         if tx.verifystk(&self.stkinfo).is_ok() {
                             txbin = bincode::serialize(&tx).unwrap();
+                            println!("sending tx!");
                         } else {
                             txbin = vec![];
                             println!("you can't make that transaction!");
                         }
 
                     }
-
                     if !txbin.is_empty() {
+                        self.txses.push(txbin.clone());
                         txbin.push(0);
                         self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
                             if self.queue[self.headshard].contains(&(location as usize)) {
@@ -1319,7 +1323,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                                 None
                             }
                         }).collect::<HashMap<_,_>>();
-                        self.outer.broadcast(txbin);
+                        self.outer.broadcast_now(txbin);
                     }
                 }
 
@@ -1489,29 +1493,30 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         let addrs = addrs.split(" ").collect::<Vec<_>>().par_iter().map(|x| NodeId::new(x.parse::<SocketAddr>().unwrap(), LocalNodeId::new(0))).collect::<Vec<_>>();
                         self.outer.dm(vec![],&addrs,true);
                     } else if istx == 105 /* i */ {
-                        println!("\nmy name:\n---------------------------------------------\n{:?}\n",self.me.name());
-                        println!("\nmy outer addr:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().id());
-                        println!("\nmy inner addr:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().id());
-                        println!("\nmy staker name:\n---------------------------------------------\n{:?}\n",self.me.stake_acc().name());
-                        let scalarmoney = self.mine.iter().map(|x|self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>();
-                        println!("\nmy scalar money:\n---------------------------------------------\n{:?}\n",scalarmoney);
-                        println!("\nstake state:\n---------------------------------------------\n{:?}\n",self.stkinfo);
-                        println!("\nheight:\n---------------------------------------------\n{:?}\n",self.height);
-                        println!("\nsheight:\n---------------------------------------------\n{:?}\n",self.sheight);
-                        println!("\ncomittee:\n---------------------------------------------\n{:?}\n",self.comittee[self.headshard]);
-                        println!("\nleadership:\n---------------------------------------------\nmyself: {:?}\nleader: {:?}\n",self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress().as_bytes(), self.leader.as_bytes());
-                        println!("\ntime:\n---------------------------------------------\n{:?}s\n",self.timekeeper.elapsed().as_secs());
-                        println!("\nis validating:\n---------------------------------------------\n{:?}\n",self.is_validator);
-                        println!("\nis staking:\n---------------------------------------------\n{:?}\n",self.is_staker);
-                        println!("\nknown validators:\n---------------------------------------------\n{:?}\n",self.knownvalidators);
+                        // println!("\nmy name:\n---------------------------------------------\n{:?}\n",self.me.name());
+                        // println!("\nmy outer addr:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().id());
+                        // println!("\nmy inner addr:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().id());
+                        // println!("\nmy staker name:\n---------------------------------------------\n{:?}\n",self.me.stake_acc().name());
+                        // let scalarmoney = self.mine.iter().map(|x|self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>();
+                        // println!("\nmy scalar money:\n---------------------------------------------\n{:?}\n",scalarmoney);
+                        // println!("\nstake state:\n---------------------------------------------\n{:?}\n",self.stkinfo);
+                        // println!("\ncomittee:\n---------------------------------------------\n{:?}\n",self.comittee[self.headshard]);
+                        // println!("\nleadership:\n---------------------------------------------\nmyself: {:?}\nleader: {:?}\n",self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress().as_bytes(), self.leader.as_bytes());
+                        // println!("\ntime:\n---------------------------------------------\n{:?}s\n",self.timekeeper.elapsed().as_secs());
+                        // println!("\nis validating:\n---------------------------------------------\n{:?}\n",self.is_validator);
+                        // println!("\nis staking:\n---------------------------------------------\n{:?}\n",self.is_staker);
+                        // println!("\nknown validators:\n---------------------------------------------\n{:?}\n",self.knownvalidators);
+                        // let moniez = u64::from_le_bytes(scalarmoney.as_bytes()[..8].try_into().unwrap());
+                        // println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
+                        // println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
+                        // println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
+                        // println!("\nsheight:\n---------------------------------------------\n{:?}\n",self.sheight);
                         println!("\nblock number:\n---------------------------------------------\n{:?}\n",self.bnum);
                         println!("\nblock name:\n---------------------------------------------\n{:?}\n",self.lastname);
                         println!("\ninner friends:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().all_push_peers());
                         println!("\nouter friends:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().all_push_peers());
-                        let moniez = u64::from_le_bytes(scalarmoney.as_bytes()[..8].try_into().unwrap());
-                        println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
-                        println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
-                        println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
+                        println!("\ntxs known: {:?}\n",self.txses.len());
+                        println!("\nheight: {:?}\n",self.height);
                     } else if istx == 115 /* s */ {
                         self.save();
                         // maybe do something else??? like save or load contacts???

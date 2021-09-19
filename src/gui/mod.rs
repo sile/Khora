@@ -67,8 +67,8 @@ impl Default for TemplateApp {
             friends: vec![],
             edit_names: vec![],
             friend_names: vec![],
-            friend_adding: "add_friends_here".to_string(),
-            name_adding: "add_real_life_names_here".to_string(),
+            friend_adding: "".to_string(),
+            name_adding: "".to_string(),
             staking: false,
             addr: "".to_string(),
             stkaddr: "".to_string(),
@@ -124,8 +124,8 @@ impl epi::App for TemplateApp {
             let modify = i.pop().unwrap();
             if modify == 0 {
                 let u = i.drain(..8).collect::<Vec<_>>();
-                self.unstaked = format!("unstaked: {}",u64::from_le_bytes(u.try_into().unwrap()));
-                self.staked = format!("staked: {}",u64::from_le_bytes(i.try_into().unwrap()));
+                self.unstaked = format!("{}",u64::from_le_bytes(u.try_into().unwrap()));
+                self.staked = format!("{}",u64::from_le_bytes(i.try_into().unwrap()));
             }
         }
 
@@ -197,9 +197,17 @@ impl epi::App for TemplateApp {
                 ui.label(&*unstaked);
             });
             ui.horizontal(|ui| {
-                ui.label("Staked Money");
+                ui.label("Staked Money ");
                 ui.label(&*staked);
+                // let bytes: Vec<_> = s.bytes().rev().collect(); // something like this maybe? (would need to handle tx differently though)
+                // let chunks: Vec<_> = bytes.chunks(3).map(|chunk| str::from_utf8(chunk).unwrap()).collect();
+                // let result: Vec<_> = chunks.connect(" ").bytes().rev().collect();
+                // String::from_utf8(result).unwrap()
             });
+            // ui.horizontal(|ui| {
+            //     ui.label("Maximum Money");
+            //     ui.label(format!("{}",2u64.pow(41)));
+            // });
 
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(stake);
@@ -208,6 +216,7 @@ impl epi::App for TemplateApp {
                     m.extend(stkaddr.as_bytes().to_vec());
                     m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
                     m.extend(addr.as_bytes().to_vec());
+                    println!("------------------------------------------------------{},{},{}",unstaked,fee,stake);
                     m.extend((unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap()).to_le_bytes().to_vec());
                     m.push(33);
                     m.push(33);
@@ -222,6 +231,7 @@ impl epi::App for TemplateApp {
                     m.extend(addr.as_bytes().to_vec());
                     m.extend(unstake.parse::<u64>().unwrap().to_le_bytes().to_vec());
                     m.extend(stkaddr.as_bytes().to_vec());
+                    println!("------------------------------------------------------{},{},{}",staked,fee,unstake);
                     m.extend((staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap()).to_le_bytes().to_vec());
                     m.push(63);
                     m.push(33);
@@ -237,7 +247,7 @@ impl epi::App for TemplateApp {
 
 
 
-        egui::Window::new("Window").show(ctx, |ui| {
+        egui::SidePanel::right("Right Panel").show(ctx, |ui| {
             egui::ScrollArea::auto_sized().show(ui,|ui| {
                 ui.heading("Friends");
                 ui.label("Add Friend:");
@@ -271,10 +281,14 @@ impl epi::App for TemplateApp {
                         ui.small(&*addr);
                     }
                     ui.horizontal(|ui| {
-                        if ui.button("Delete Friend").clicked() {
-                            friend_deleted = i;
+                        if *e {
+                            if ui.button("Delete Friend").clicked() {
+                                friend_deleted = i;
+                            }
+                        } else {
+                            ui.label("Send:");
+                            ui.text_edit_singleline(amnt);
                         }
-                        ui.text_edit_singleline(amnt);
                     });
                 }
                 if friend_deleted != usize::MAX {
@@ -284,10 +298,17 @@ impl epi::App for TemplateApp {
                 }
                 if ui.button("Send Transaction").clicked() {
                     let mut m = vec![];
-                    for (who,amnt) in friend_names.iter_mut().zip(send_amount.iter_mut()) {
-                        m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
-                        m.extend(amnt.parse::<u64>().unwrap().to_le_bytes().to_vec());
+                    let mut tot = 0u64;
+                    for (who,amnt) in friends.iter_mut().zip(send_amount.iter_mut()) {
+                        let x = amnt.parse::<u64>().unwrap();
+                        if x > 0 {
+                            m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
+                            m.extend(x.to_le_bytes().to_vec());
+                            tot += x;
+                        }
                     }
+                    m.extend(str::to_ascii_lowercase(&addr).as_bytes());
+                    m.extend((unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap()).to_le_bytes());
                     m.push(33);
                     m.push(33);
                     sender.send(m).expect("something's wrong with communication from the gui");
