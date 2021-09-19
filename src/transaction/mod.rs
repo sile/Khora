@@ -222,7 +222,7 @@ impl PolynomialTransaction {
     pub fn verifystk(&self,history:&Vec<(CompressedRistretto,u64)>) -> Result<(), TransactionError> {
         let mut tr = Transcript::new(b"seal tx");
         let tags: Vec<&Tag> = self.tags.par_iter().map(|a| a).collect();
-        println!("history {}: {:?}",history.len(),history);
+        // println!("history {}: {:?}",history.len(),history);
         let mut i = self.inputs.clone();
         if i.pop() == Some(1) {
             let places = i.par_chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap()) as usize).collect::<Vec<_>>();

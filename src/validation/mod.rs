@@ -124,10 +124,10 @@ impl MultiSignature {
         s.update(&message);
         s.update(&xt.as_bytes());
         let e = Scalar::from_hash(s);
-        println!("e: {:?}",e);
-        println!("y: {:?}",yt);
-        println!("x: {:?}",xt);
-        println!("who: {:?}",who);
+        // println!("e: {:?}",e);
+        // println!("y: {:?}",yt);
+        // println!("x: {:?}",xt);
+        // println!("who: {:?}",who);
         (yt*PEDERSEN_H()) == (xt.decompress().unwrap() + e*who.into_par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>())
     } // -------------this should fail on user validator leader codes because of this ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ which i added for full_staker.rs
 }
@@ -292,9 +292,15 @@ impl PartialEq for NextBlock {
 }
 impl NextBlock { // need to sign the staker inputs too
     pub fn valicreate(key: &Scalar, location: &u64, leader: &CompressedRistretto, txs: &Vec<PolynomialTransaction>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, bloom: &BloomFile,/* _history: &Vec<OTAccount>,*/ stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock {
-        let mut stks = txs.par_iter().filter_map(|x| 
+        let stks = txs.par_iter().filter_map(|x| 
             if x.inputs.last() == Some(&1) {if x.verifystk(&stkstate).is_ok() {Some(x.to_owned())} else {None}} else {None}
         ).collect::<Vec<PolynomialTransaction>>(); /* i would use drain_filter but its unstable */
+        let (_,mut stks): (Vec<_>, Vec<_>) = stks.clone().into_par_iter().enumerate().filter(|(i,x)| {
+            x.inputs.par_chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>().par_iter().all(|&x|
+                !stks[..*i].par_iter().flat_map(|x| x.inputs.par_chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>()).collect::<Vec<u64>>()
+                .contains(&x)
+            )
+        }).unzip();
         let txs = txs.into_par_iter().filter_map(|x| 
             if x.inputs.last() != Some(&0) {Some(x.to_owned())} else {None}
         ).collect::<Vec<PolynomialTransaction>>();

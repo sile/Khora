@@ -104,11 +104,11 @@ fn main() -> Result<(), MainError> {
     let node: StakerNode;
     if pswrd != "load" {
         let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        // let initial_history = vec![(leader,1u64)];
-        let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
+        let initial_history = vec![(leader,1u64)];
+        // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        // let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        // let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        // let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
 
 
         let me = Account::new(&format!("{}",pswrd));
@@ -138,7 +138,7 @@ fn main() -> Result<(), MainError> {
             save_history: (matches.value_of("SAVE_HISTORY").unwrap() != "0"),
             me: me,
             mine: vec![],
-            smine: smine, // [location, amount]
+            smine: smine.clone(), // [location, amount]
             key: key,
             keylocation: keylocation,
             leader: leader,
@@ -184,7 +184,7 @@ fn main() -> Result<(), MainError> {
             newest: 0u64,
             rmems: HashMap::new(),
             rname: vec![],
-            is_user: false,
+            is_user: smine.is_empty(),
             gui_sender: usend,
             gui_reciever: urecv,
         };
@@ -917,11 +917,11 @@ impl Future for StakerNode {
                                     Some(i as u8)
                                 }
                             ).collect::<Vec<_>>();
-                            println!("e: {:?}",e);
-                            println!("y: {:?}",self.scalars.values().map(|x| *x).sum::<Scalar>());
-                            println!("x: {:?}",sumpt.compress());
-                            println!("not who: {:?}",failed_validators); // <-------this is fucked up somehow
-                            println!("comittee: {:?}",self.comittee[self.headshard]);
+                            // println!("e: {:?}",e);
+                            // println!("y: {:?}",self.scalars.values().map(|x| *x).sum::<Scalar>());
+                            // println!("x: {:?}",sumpt.compress());
+                            // println!("not who: {:?}",failed_validators); // <-------this is fucked up somehow
+                            // println!("comittee: {:?}",self.comittee[self.headshard]);
                             let mut lastblock = NextBlock::default();
                             lastblock.bnum = self.bnum;
                             lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});
@@ -935,7 +935,7 @@ impl Future for StakerNode {
                             let leader = Signature::sign(&self.key, &mut s,&self.keylocation.iter().next().unwrap());
                             lastblock.leader = leader;
 
-                            println!("sum of points is accurate: {}",sumpt == self.points.iter().map(|x| x.1).sum());
+                            // println!("sum of points is accurate: {}",sumpt == self.points.iter().map(|x| x.1).sum());
                             if lastblock.verify(&self.comittee[self.headshard].iter().map(|x| *x as u64).collect(),&self.stkinfo).is_ok() {
                                 println!("block verified!");
                                 let mut m = bincode::serialize(&lastblock).unwrap();
@@ -1497,7 +1497,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         // println!("\nmy outer addr:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().id());
                         // println!("\nmy inner addr:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().id());
                         // println!("\nmy staker name:\n---------------------------------------------\n{:?}\n",self.me.stake_acc().name());
-                        // let scalarmoney = self.mine.iter().map(|x|self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>();
+                        let scalarmoney = self.mine.iter().map(|x|self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>();
                         // println!("\nmy scalar money:\n---------------------------------------------\n{:?}\n",scalarmoney);
                         // println!("\nstake state:\n---------------------------------------------\n{:?}\n",self.stkinfo);
                         // println!("\ncomittee:\n---------------------------------------------\n{:?}\n",self.comittee[self.headshard]);
@@ -1506,10 +1506,10 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         // println!("\nis validating:\n---------------------------------------------\n{:?}\n",self.is_validator);
                         // println!("\nis staking:\n---------------------------------------------\n{:?}\n",self.is_staker);
                         // println!("\nknown validators:\n---------------------------------------------\n{:?}\n",self.knownvalidators);
-                        // let moniez = u64::from_le_bytes(scalarmoney.as_bytes()[..8].try_into().unwrap());
-                        // println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
-                        // println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
-                        // println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
+                        let moniez = u64::from_le_bytes(scalarmoney.as_bytes()[..8].try_into().unwrap());
+                        println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
+                        println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x|x.0 as u64).collect::<Vec<_>>());
+                        println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
                         // println!("\nsheight:\n---------------------------------------------\n{:?}\n",self.sheight);
                         println!("\nblock number:\n---------------------------------------------\n{:?}\n",self.bnum);
                         println!("\nblock name:\n---------------------------------------------\n{:?}\n",self.lastname);

@@ -215,9 +215,12 @@ impl epi::App for TemplateApp {
                     let mut m = vec![];
                     m.extend(stkaddr.as_bytes().to_vec());
                     m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
-                    m.extend(addr.as_bytes().to_vec());
-                    println!("------------------------------------------------------{},{},{}",unstaked,fee,stake);
-                    m.extend((unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap()).to_le_bytes().to_vec());
+                    println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",unstaked,fee,stake);
+                    let x = unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap();
+                    if x > 0 {
+                        m.extend(addr.as_bytes().to_vec());
+                        m.extend(x.to_le_bytes().to_vec());
+                    }
                     m.push(33);
                     m.push(33);
                     sender.send(m).expect("something's wrong with communication from the gui");
@@ -226,13 +229,16 @@ impl epi::App for TemplateApp {
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(unstake);
                 if ui.button("Unstake").clicked() {
-                    // println!("unstaking!");
+                    // println!("unstaking {:?}!",unstake.parse::<u64>());
                     let mut m = vec![];
                     m.extend(addr.as_bytes().to_vec());
-                    m.extend(unstake.parse::<u64>().unwrap().to_le_bytes().to_vec());
-                    m.extend(stkaddr.as_bytes().to_vec());
-                    println!("------------------------------------------------------{},{},{}",staked,fee,unstake);
-                    m.extend((staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap()).to_le_bytes().to_vec());
+                    m.extend(unstake.parse::<u64>().unwrap().to_le_bytes());
+                    // println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",staked,fee,unstake);
+                    let x = staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap();
+                    if x > 0 {
+                        m.extend(stkaddr.as_bytes());
+                        m.extend(x.to_le_bytes());
+                    }
                     m.push(63);
                     m.push(33);
                     println!("{}",String::from_utf8_lossy(&m));
@@ -296,23 +302,31 @@ impl epi::App for TemplateApp {
                     friends.remove(friend_deleted);
                     send_amount.remove(friend_deleted);
                 }
-                if ui.button("Send Transaction").clicked() {
-                    let mut m = vec![];
-                    let mut tot = 0u64;
-                    for (who,amnt) in friends.iter_mut().zip(send_amount.iter_mut()) {
-                        let x = amnt.parse::<u64>().unwrap();
-                        if x > 0 {
-                            m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
-                            m.extend(x.to_le_bytes().to_vec());
-                            tot += x;
-                        }
+                ui.horizontal(|ui| {
+                    if ui.button("Clear Transaction").clicked() {
+                        send_amount.iter_mut().for_each(|x| *x = "0".to_string());
                     }
-                    m.extend(str::to_ascii_lowercase(&addr).as_bytes());
-                    m.extend((unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap()).to_le_bytes());
-                    m.push(33);
-                    m.push(33);
-                    sender.send(m).expect("something's wrong with communication from the gui");
-                }
+                    if ui.button("Send Transaction").clicked() {
+                        let mut m = vec![];
+                        let mut tot = 0u64;
+                        for (who,amnt) in friends.iter_mut().zip(send_amount.iter_mut()) {
+                            let x = amnt.parse::<u64>().unwrap();
+                            if x > 0 {
+                                m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
+                                m.extend(x.to_le_bytes().to_vec());
+                                tot += x;
+                            }
+                        }
+                        let x = unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
+                        if x > 0 {
+                            m.extend(str::to_ascii_lowercase(&addr).as_bytes());
+                            m.extend(x.to_le_bytes());
+                        }
+                        m.push(33);
+                        m.push(33);
+                        sender.send(m).expect("something's wrong with communication from the gui");
+                    }
+                });
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                     ui.add(
                         egui::Hyperlink::new("https://github.com/emilk/egui/").text("powered by egui"),
