@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use eframe::{egui, epi};
+use eframe::{egui::{self, Label, Sense}, epi};
 use crossbeam::channel;
 use fibers::sync::mpsc;
 
@@ -48,6 +48,8 @@ pub struct TemplateApp {
     addr: String,
 
     stkaddr: String,
+
+    edit_names: Vec<bool>,
 }
 impl Default for TemplateApp {
     fn default() -> Self {
@@ -63,6 +65,7 @@ impl Default for TemplateApp {
             unstaked: "0".to_string(),
             staked: "0".to_string(),
             friends: vec![],
+            edit_names: vec![],
             friend_names: vec![],
             friend_adding: "add_friends_here".to_string(),
             name_adding: "add_real_life_names_here".to_string(),
@@ -76,11 +79,13 @@ impl TemplateApp {
     pub fn new_minimal(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>) -> Self {
         TemplateApp{reciever, sender, ..Default::default()}
     }
-    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String) -> Self {
+    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String, addr: String, stkaddr: String) -> Self {
         TemplateApp{
             reciever,
             sender,
             staked,
+            addr,
+            stkaddr,
             ..Default::default()
         }
     }
@@ -132,6 +137,7 @@ impl epi::App for TemplateApp {
             unstaked,
             staked,
             friends,
+            edit_names,
             friend_names,
             friend_adding,
             name_adding,
@@ -161,7 +167,7 @@ impl epi::App for TemplateApp {
         //     // egui::util::undoer::default(); // there's some undo button
         // });
 
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| { // the only option for staker stuff should be to send x of money to self (starting with smallest accs)
+        egui::CentralPanel::default().show(ctx, |ui| { // the only option for staker stuff should be to send x of money to self (starting with smallest accs)
             // The central panel the region left after adding TopPanel's and SidePanel's
 
             egui::menu::bar(ui, |ui| {
@@ -178,8 +184,9 @@ impl epi::App for TemplateApp {
                 "Source code."
             ));
             ui.horizontal(|ui| {
-                ui.label("address");
-                ui.small(&*addr);
+                if ui.add(Label::new("address").sense(Sense::hover())).hovered() {
+                    ui.small(&*addr);
+                }
             });
 
             ui.horizontal(|ui| {
@@ -197,7 +204,8 @@ impl epi::App for TemplateApp {
                     let mut m = vec![];
                     m.extend(stkaddr.as_bytes().to_vec());
                     m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
-                    m.extend((unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap()).to_le_bytes().to_vec());
+                    m.extend(addr.as_bytes().to_vec());
+                    m.extend((unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap()).to_le_bytes().to_vec());
                     m.push(33);
                     m.push(33);
                     sender.send(m).expect("something's wrong with communication from the gui");
@@ -206,22 +214,27 @@ impl epi::App for TemplateApp {
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(unstake);
                 if ui.button("Unstake").clicked() {
-                    println!("unstaking!");
+                    // println!("unstaking!");
                     let mut m = vec![];
                     m.extend(addr.as_bytes().to_vec());
                     m.extend(unstake.parse::<u64>().unwrap().to_le_bytes().to_vec());
-                    m.extend((staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap()).to_le_bytes().to_vec());
-                    m.push(1);
+                    m.extend(stkaddr.as_bytes().to_vec());
+                    m.extend((staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap()).to_le_bytes().to_vec());
+                    m.push(63);
                     m.push(33);
                     println!("{}",String::from_utf8_lossy(&m));
                     sender.send(m).expect("something's wrong with communication from the gui");
                 }
             });
-            // ui.label(&*info);
+            ui.label("Transaction Fee:");
+            ui.text_edit_singleline(fee);
             egui::warn_if_debug_build(ui);
         });
 
-        egui::SidePanel::left("side_panel").show(ctx, |ui| {
+
+
+
+        egui::Window::new("Window").show(ctx, |ui| {
             egui::ScrollArea::auto_sized().show(ui,|ui| {
                 ui.heading("Side Panel");
                 ui.label("Add Friend:");
@@ -236,17 +249,24 @@ impl epi::App for TemplateApp {
                 if ui.button("Add Friend").clicked() {
                     friends.push(friend_adding.clone());
                     friend_names.push(name_adding.clone());
+                    edit_names.push(false);
                     send_amount.push("0".to_string());
                     *friend_adding = "".to_string();
                     *name_adding = "".to_string();
                 }
-                ui.label("Transaction Fee:");
-                ui.text_edit_singleline(fee);
                 let mut friend_deleted = usize::MAX;
                 ui.label("Friends: ");
-                for (i,((addr,name),amnt)) in friends.iter_mut().zip(friend_names.iter_mut()).zip(send_amount.iter_mut()).enumerate() {
-                    ui.text_edit_singleline(name);
-                    ui.small(&*addr);
+                for ((i,((addr,name),amnt)),e) in friends.iter_mut().zip(friend_names.iter_mut()).zip(send_amount.iter_mut()).enumerate().zip(edit_names.iter_mut()) {
+                    if ui.button("edit").clicked() {
+                        *e = !*e;
+                    }
+                    if *e {
+                        ui.text_edit_singleline(name);
+                        ui.text_edit_singleline(addr);
+                    } else {
+                        ui.label(&*name);
+                        ui.small(&*addr);
+                    }
                     ui.horizontal(|ui| {
                         if ui.button("Delete Friend").clicked() {
                             friend_deleted = i;

@@ -191,21 +191,13 @@ fn main() -> Result<(), MainError> {
     } else {
         node = StakerNode::load(frontnode, backnode, message_rx, usend, urecv);
     }
-    let info: String;
+    let staked: String;
     if let Some(founder) = node.smine.get(0) {
-        info = format!("{}",founder[1]);
+        staked = format!("{}",founder[1]);
     } else {
-        info = "0".to_string();
+        staked = "0".to_string();
     }
 
-
-    std::thread::spawn(move || {
-        executor.spawn(service.map_err(|e| panic!("{}", e)));
-        executor.spawn(node);
-
-
-        track_any_err!(executor.run()).unwrap();
-    });
 
     std::thread::spawn(move || { // replace this thread and the loop with gui in the main thread
         use std::io::BufRead;
@@ -227,11 +219,20 @@ fn main() -> Result<(), MainError> {
     let app = gui::TemplateApp::new(
         ui_reciever,
         ui_sender,
-        info,
+        staked,
+        node.me.name(),
+        node.me.stake_acc().name(),
     );
     println!("starting!");
     let native_options = eframe::NativeOptions::default();
     println!("starting!");
+    std::thread::spawn(move || {
+        executor.spawn(service.map_err(|e| panic!("{}", e)));
+        executor.spawn(node);
+
+
+        track_any_err!(executor.run()).unwrap();
+    });
     eframe::run_native(Box::new(app), native_options);
     println!("ending!");
     Ok(())
@@ -1216,6 +1217,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
             ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF
             */
             while let Async::Ready(Some(mut m)) = self.gui_reciever.poll().expect("Never fails") {
+                println!("got message from gui!\n{}",String::from_utf8_lossy(&m));
                 let istx = m.pop().unwrap();
                 if istx == 33 /* ! */ {
                     let txtype = m.pop().unwrap();
