@@ -302,7 +302,7 @@ impl NextBlock { // need to sign the staker inputs too
             )
         }).unzip();
         let txs = txs.into_par_iter().filter_map(|x| 
-            if x.inputs.last() != Some(&0) {Some(x.to_owned())} else {None}
+            if x.inputs.last() == Some(&0) {Some(x.to_owned())} else {None}
         ).collect::<Vec<PolynomialTransaction>>();
         
         // let txscopy = txs; // maybe make this Arc<RwLock> to allow multiple reads without cloning?
@@ -313,13 +313,13 @@ impl NextBlock { // need to sign the staker inputs too
                     txs[..i].par_iter().flat_map(|x| x.tags.clone()).collect::<Vec<CompressedRistretto>>()
                     .par_iter().all(|&y|
                     x != y)) /* should i replace this with a bloom filter or hashset??? and not parallelize it? */
-                &
+                &&
                 x.tags.par_iter().all(|y| {!bloom.contains(&y.to_bytes())})
-                &
+                &&
                 x.tags.par_iter().enumerate().all(|(i,y)|
                     x.tags[..i].par_iter().all(|z| {y!=z}
                 ))
-                &
+                &&
                 x.verify().is_ok()
                 // x.verify_ram(&history).is_ok()
                 {//println!("{:?}",x.tags);
