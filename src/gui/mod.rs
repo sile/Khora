@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use eframe::{egui::{self, Label, Sense}, epi};
+use eframe::{egui::{self, Label, Output, Sense}, epi};
 use crossbeam::channel;
 use fibers::sync::mpsc;
 
@@ -184,6 +184,9 @@ impl epi::App for TemplateApp {
                 "Source code."
             ));
             ui.horizontal(|ui| {
+                if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
+                    ui.output().copied_text = addr.clone();
+                }
                 if ui.add(Label::new("address").sense(Sense::hover())).hovered() {
                     ui.small(&*addr);
                 }
@@ -240,11 +243,11 @@ impl epi::App for TemplateApp {
                 ui.label("Add Friend:");
                 ui.horizontal(|ui| {
                     ui.small("name");
-                    ui.text_edit_singleline(friend_adding);
+                    ui.text_edit_singleline(name_adding);
                 });
                 ui.horizontal(|ui| {
                     ui.small("address");
-                    ui.text_edit_singleline(name_adding);
+                    ui.text_edit_singleline(friend_adding);
                 });
                 if ui.button("Add Friend").clicked() {
                     friends.push(friend_adding.clone());
@@ -297,13 +300,5 @@ impl epi::App for TemplateApp {
             });
         });
     
-        if *staking {
-            egui::Window::new("Window").show(ctx, |ui| {
-                ui.label("Windows can be moved by dragging them.");
-                ui.label("They are automatically sized based on contents.");
-                ui.label("You can turn on resizing and scrolling if you like.");
-                ui.label("You would normally chose either panels OR windows.");
-            });
-        }
     }
 }
