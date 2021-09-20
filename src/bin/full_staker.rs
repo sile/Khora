@@ -428,6 +428,7 @@ impl StakerNode {
     }
     fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) {
         if lastblock.bnum >= self.bnum {
+            self.save();
             let com = self.comittee.par_iter().map(|x| x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
             println!("someone's sending block {} with name: {:?}",lastblock.bnum,lastblock.last_name);
             println!("names match up: {}",lastblock.last_name == self.lastname);
