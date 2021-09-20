@@ -55,8 +55,8 @@ impl PartialEq for Syncedtx {
 impl Syncedtx {
     pub fn from(txs: &Vec<PolynomialTransaction>)->Syncedtx {
         let stkout = txs.par_iter().filter_map(|x|
-            if x.inputs.len() == 8 {Some(u64::from_le_bytes(x.inputs.to_owned().try_into().unwrap()))} else {None}
-        ).collect::<Vec<u64>>();
+            if x.inputs.last() == Some(&1) {Some(x.inputs.par_chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>())} else {None}
+        ).flatten().collect::<Vec<u64>>();
         let stkin = txs.par_iter().map(|x|
             x.outputs.par_iter().filter_map(|y| 
                 if let Ok(z) = stakereader_acc().read_ot(y) {Some((z.pk.compress(),u64::from_le_bytes(z.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())))} else {None}
@@ -583,13 +583,16 @@ impl NextBlock { // need to sign the staker inputs too
             valinfo[i].1 += inflation;
         }
     }
-    pub fn pay_self_empty(bnum: &u64, shard: &usize, comittee: &Vec<Vec<usize>>, mine: &mut Vec<[u64;2]>) {
+    pub fn pay_self_empty(bnum: &u64, shard: &usize, comittee: &Vec<Vec<usize>>, mine: &mut Vec<[u64;2]>) -> bool {
 
         let winners = comittee[*shard].iter();
         let inflation = (INFLATION_CONSTANT/2f64.powf(*bnum as f64/INFLATION_EXPONENT)) as u64/winners.len() as u64;
+        let changed = std::sync::Arc::new(std::sync::Mutex::new(false));
         for &i in winners {
-            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] += inflation;});
+            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {*changed.lock().unwrap() = true; x[1] += inflation;});
         }
+        let changed = *changed.lock().unwrap();
+        changed
     }
     pub fn scan_as_noone(&self, valinfo: &mut Vec<(CompressedRistretto,u64)>, queue: &mut Vec<VecDeque<usize>>, exitqueue: &mut Vec<VecDeque<usize>>, comittee: &mut Vec<Vec<usize>>, save_history: bool) {        
         let mut info = Syncedtx::from(&self.txs);
@@ -742,7 +745,7 @@ impl NextBlock { // need to sign the staker inputs too
         let info = Syncedtx::from(&self.txs);
         history.extend(info.txout);
     }
-    pub fn scan(&self, me: &Account, mine: &mut Vec<(u64,OTAccount)>, height: &mut u64, alltagsever: &mut Vec<CompressedRistretto>) -> Syncedtx {
+    pub fn scan(&self, me: &Account, mine: &mut Vec<(u64,OTAccount)>, height: &mut u64, alltagsever: &mut Vec<CompressedRistretto>) -> bool {
         let x = Syncedtx::from(&self.txs);
         let newmine = x.txout.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.receive_ot(x) {Some((i as u64+*height,y))} else {None}).collect::<Vec<(u64,OTAccount)>>();
         let newtags = newmine.par_iter().map(|x|x.1.tag.unwrap()).collect::<Vec<CompressedRistretto>>();
@@ -750,14 +753,15 @@ impl NextBlock { // need to sign the staker inputs too
             println!("you got burnt (someone sent you faerie gold!)"); // i want this in a seperate function
         }
         alltagsever.par_extend(&newtags);
-
-        *mine = mine.into_par_iter().filter_map(|(j,a)| if x.tags.par_iter().all(|x| x != &a.tag.unwrap()) {Some((*j,a.clone()))} else {None} ).collect::<Vec<(u64,OTAccount)>>();
+        let changed = std::sync::Arc::new(std::sync::RwLock::new(newtags.len() != 0));
+        *mine = mine.into_par_iter().filter_map(|(j,a)| if x.tags.par_iter().all(|x| x != &a.tag.unwrap()) {*changed.write().unwrap() = true; Some((*j,a.clone()))} else {None} ).collect::<Vec<(u64,OTAccount)>>();
         *height += x.txout.len() as u64;
         mine.par_extend(newmine);
 
-        x
+        let changed = *changed.read().unwrap();
+        changed
     }
-    pub fn scanstk(&self, me: &Account, mine: &mut Vec<[u64;2]>, height: &mut u64, comittee: &Vec<Vec<usize>>, valinfo: &Vec<(CompressedRistretto,u64)>) {
+    pub fn scanstk(&self, me: &Account, mine: &mut Vec<[u64;2]>, height: &mut u64, comittee: &Vec<Vec<usize>>, valinfo: &Vec<(CompressedRistretto,u64)>) -> bool {
 
         let info = Syncedtx::from(&self.txs);
         let winners: Vec<usize>;
@@ -786,28 +790,28 @@ impl NextBlock { // need to sign the staker inputs too
         let fees = info.fees/(feelovers.len() as u64);
         let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64/winners.len() as u64;
 
-
+        let changed = std::sync::Arc::new(std::sync::RwLock::new(false));
         for i in winners {
-            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] += inflation;});
+            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {*changed.write().unwrap() = true; x[1] += inflation;});
         }
         for i in feelovers {
-            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] += fees;});
+            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {*changed.write().unwrap() = true; x[1] += fees;});
         }
         let mut punishments = 0u64;
         for i in masochists {
             punishments += valinfo[i].1/PUNISHMENT_FRACTION;
-            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] -= valinfo[i].1/PUNISHMENT_FRACTION;});
+            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {*changed.write().unwrap() = true; x[1] -= valinfo[i].1/PUNISHMENT_FRACTION;});
         }
         punishments = punishments/lucky.len() as u64;
         for i in lucky {
-            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {x[1] += punishments;});
+            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {*changed.write().unwrap() = true; x[1] += punishments;});
         }
 
 
     
         let stkout = self.txs.par_iter().filter_map(|x|
-            if x.inputs.len() == 8 {Some(u64::from_le_bytes(x.inputs.to_owned().try_into().unwrap()))} else {None}
-        ).collect::<Vec<u64>>();
+            if x.inputs.last() == Some(&1) {Some(x.inputs.par_chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>())} else {None}
+        ).flatten().collect::<Vec<u64>>();
 
 
 
@@ -815,6 +819,7 @@ impl NextBlock { // need to sign the staker inputs too
         for (i,m) in mine.clone().iter().enumerate().rev() {
             for v in stkout.iter() {
                 if m[0] == *v {
+                    *changed.write().unwrap() = true;
                     mine.remove(i as usize);
                 }
             }
@@ -822,6 +827,7 @@ impl NextBlock { // need to sign the staker inputs too
         for (i,m) in mine.clone().iter().enumerate().rev() {
             for n in stkout.iter() {
                 if *n < m[0] {
+                    *changed.write().unwrap() = true;
                     mine[i][0] -= 1;
                 }
                 else {
@@ -833,11 +839,14 @@ impl NextBlock { // need to sign the staker inputs too
         // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
         let stkin = self.txs.par_iter().map(|x|
             x.outputs.par_iter().filter_map(|y| 
-                if let Ok(z) = stakereader_acc().read_ot(y) {Some(z)} else {None}
+                if let Ok(z) = stakereader_acc().read_ot(y) {*changed.write().unwrap() = true; Some(z)} else {None}
             ).collect::<Vec<_>>()
         ).flatten().collect::<Vec<OTAccount>>();
         mine.par_extend(stkin.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.stake_acc().receive_ot(x) {Some([i as u64+*height,u64::from_le_bytes(y.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())])} else {None}).collect::<Vec<[u64;2]>>());
         *height += stkin.len() as u64;
+
+        let changed = *changed.read().unwrap();
+        changed
 
     }
     pub fn update_bloom(&self,bloom:&BloomFile) {

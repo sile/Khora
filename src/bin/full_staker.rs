@@ -428,7 +428,6 @@ impl StakerNode {
     }
     fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) {
         if lastblock.bnum >= self.bnum {
-            self.save();
             let com = self.comittee.par_iter().map(|x| x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
             println!("someone's sending block {} with name: {:?}",lastblock.bnum,lastblock.last_name);
             println!("names match up: {}",lastblock.last_name == self.lastname);
@@ -437,7 +436,7 @@ impl StakerNode {
             }
             println!("stkinfo: {:?}",self.stkinfo);
             match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
-                Ok(_) => println!("block verified..."),
+                Ok(_) => {self.save(); println!("block verified...")},
                 Err(x) => println!("Error in block verification: {}",x),
             };
             if (lastblock.shards[0] as usize >= self.headshard) && (lastblock.last_name == self.lastname) && lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok() {
@@ -475,13 +474,13 @@ impl StakerNode {
                 }
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
-                    self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
-                    let mystkaccs = self.smine.clone();
-                    self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
-                    if self.smine != mystkaccs {
+                    let mut guitruster = !self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
+                    if self.is_validator && self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo) {
+                        guitruster = false;
                         self.inner.broadcast_now(m.clone());
                         self.outer.broadcast_now(m.clone());
                     }
+                    self.gui_sender.send(vec![guitruster as u8,1]).expect("there's a problem communicating to the gui!");
                     self.keylocation = self.smine.iter().map(|x| x[0]).collect();
                     self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
                     if !self.is_user {
@@ -499,7 +498,7 @@ impl StakerNode {
                     hasher.update(lightning);
                     self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                 } else {
-                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
+                    self.gui_sender.send(vec![!NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine) as u8,1]).expect("there's a problem communicating to the gui!");
                     NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
                 }
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
@@ -1330,6 +1329,13 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         }).collect::<HashMap<_,_>>();
                         self.outer.broadcast_now(txbin);
                     }
+                } else if istx == 121 /* y */{
+                    let mut mynum = (self.bnum - (self.bnum > 0) as u64).to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
+                    mynum.push(121);
+                    let mut friend = self.outer.hyparview_node().active_view().to_vec();
+                    friend.extend(self.outer.hyparview_node().passive_view().to_vec());
+                    self.trustedsyncsource = friend;
+                    self.outer.dm(mynum, &self.trustedsyncsource, false); // you really dont need to send it to all your friends though
                 }
 
             }

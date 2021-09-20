@@ -50,6 +50,8 @@ pub struct TemplateApp {
     stkaddr: String,
 
     edit_names: Vec<bool>,
+
+    dont_trust_amounts: bool,
 }
 impl Default for TemplateApp {
     fn default() -> Self {
@@ -72,6 +74,7 @@ impl Default for TemplateApp {
             staking: false,
             addr: "".to_string(),
             stkaddr: "".to_string(),
+            dont_trust_amounts: true,
         }
     }
 }
@@ -121,11 +124,13 @@ impl epi::App for TemplateApp {
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
         if let Ok(mut i) = self.reciever.try_recv() {
-            let modify = i.pop().unwrap();
-            if modify == 0 {
+            let modification = i.pop().unwrap();
+            if modification == 0 {
                 let u = i.drain(..8).collect::<Vec<_>>();
                 self.unstaked = format!("{}",u64::from_le_bytes(u.try_into().unwrap()));
                 self.staked = format!("{}",u64::from_le_bytes(i.try_into().unwrap()));
+            } else if modification == 1 {
+                self.dont_trust_amounts = i.pop() == Some(0);
             }
         }
 
@@ -146,6 +151,7 @@ impl epi::App for TemplateApp {
             unstake,
             addr,
             stkaddr,
+            dont_trust_amounts,
         } = self;
 
  
@@ -247,6 +253,12 @@ impl epi::App for TemplateApp {
             });
             ui.label("Transaction Fee:");
             ui.text_edit_singleline(fee);
+            if ui.button("sync").clicked() {
+                sender.send(vec![121]).expect("something's wrong with communication from the gui");
+            }
+            if *dont_trust_amounts {
+                ui.add(Label::new("money owned is not yet verified").text_color(egui::Color32::RED));
+            }
             egui::warn_if_debug_build(ui);
         });
 
