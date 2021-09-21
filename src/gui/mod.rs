@@ -74,7 +74,7 @@ impl Default for TemplateApp {
             staking: false,
             addr: "".to_string(),
             stkaddr: "".to_string(),
-            dont_trust_amounts: true,
+            dont_trust_amounts: false,
         }
     }
 }
@@ -288,9 +288,6 @@ impl epi::App for TemplateApp {
                 let mut friend_deleted = usize::MAX;
                 ui.label("Friends: ");
                 for ((i,((addr,name),amnt)),e) in friends.iter_mut().zip(friend_names.iter_mut()).zip(send_amount.iter_mut()).enumerate().zip(edit_names.iter_mut()) {
-                    if ui.button("edit").clicked() {
-                        *e = !*e;
-                    }
                     if *e {
                         ui.text_edit_singleline(name);
                         ui.text_edit_singleline(addr);
@@ -299,6 +296,9 @@ impl epi::App for TemplateApp {
                         ui.small(&*addr);
                     }
                     ui.horizontal(|ui| {
+                        if ui.button("edit").clicked() {
+                            *e = !*e;
+                        }
                         if *e {
                             if ui.button("Delete Friend").clicked() {
                                 friend_deleted = i;
