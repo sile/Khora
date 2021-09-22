@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use eframe::{egui::{self, Label, Output, Sense}, epi};
+use eframe::{egui::{self, Checkbox, Label, Output, Sense}, epi};
 use crossbeam::channel;
 use fibers::sync::mpsc;
 
@@ -24,34 +24,27 @@ pub struct TemplateApp {
 
     // Example stuff:
     send_amount: Vec<String>,
-
     fee: String,
-
     unstaked: String,
-
     staked: String,
-
     friends: Vec<String>,
-
     friend_adding: String,
-
     name_adding: String,
-
     friend_names: Vec<String>,
-
     staking: bool,
-
     stake: String,
-
     unstake: String,
-
     addr: String,
-
     stkaddr: String,
-
     edit_names: Vec<bool>,
-
     dont_trust_amounts: bool,
+    password: String,
+    pswd_guess: String,
+    pswd_shown: bool,
+    reset_shown: bool,
+    delete_next_pswrd: bool,
+    next_pswrd: String,
+    panic_fee: String,
 }
 impl Default for TemplateApp {
     fn default() -> Self {
@@ -75,6 +68,13 @@ impl Default for TemplateApp {
             addr: "".to_string(),
             stkaddr: "".to_string(),
             dont_trust_amounts: false,
+            password: "".to_string(),
+            pswd_guess: "password".to_string(),
+            pswd_shown: true,
+            reset_shown: true,
+            delete_next_pswrd: true,
+            next_pswrd: "dont_make_this_passward".to_string(),
+            panic_fee: "1".to_string(),
         }
     }
 }
@@ -82,13 +82,14 @@ impl TemplateApp {
     pub fn new_minimal(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>) -> Self {
         TemplateApp{reciever, sender, ..Default::default()}
     }
-    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String, addr: String, stkaddr: String) -> Self {
+    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String, addr: String, stkaddr: String, password: String) -> Self {
         TemplateApp{
             reciever,
             sender,
             staked,
             addr,
             stkaddr,
+            password,
             ..Default::default()
         }
     }
@@ -152,6 +153,13 @@ impl epi::App for TemplateApp {
             addr,
             stkaddr,
             dont_trust_amounts,
+            password,
+            pswd_guess,
+            pswd_shown,
+            reset_shown,
+            delete_next_pswrd,
+            next_pswrd,
+            panic_fee,
         } = self;
 
  
@@ -217,44 +225,66 @@ impl epi::App for TemplateApp {
 
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(stake);
-                if ui.button("Stake").clicked() {
-                    let mut m = vec![];
-                    m.extend(stkaddr.as_bytes().to_vec());
-                    m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
-                    println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",unstaked,fee,stake);
-                    let x = unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap();
-                    if x > 0 {
-                        m.extend(addr.as_bytes().to_vec());
-                        m.extend(x.to_le_bytes().to_vec());
+                if pswd_guess == password {
+                    if ui.button("Stake").clicked() {
+                        let mut m = vec![];
+                        m.extend(stkaddr.as_bytes().to_vec());
+                        m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
+                        println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",unstaked,fee,stake);
+                        let x = unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap();
+                        if x > 0 {
+                            m.extend(addr.as_bytes().to_vec());
+                            m.extend(x.to_le_bytes().to_vec());
+                        }
+                        m.push(33);
+                        m.push(33);
+                        sender.send(m).expect("something's wrong with communication from the gui");
                     }
-                    m.push(33);
-                    m.push(33);
-                    sender.send(m).expect("something's wrong with communication from the gui");
                 }
             });
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(unstake);
-                if ui.button("Unstake").clicked() {
-                    // println!("unstaking {:?}!",unstake.parse::<u64>());
-                    let mut m = vec![];
-                    m.extend(addr.as_bytes().to_vec());
-                    m.extend(unstake.parse::<u64>().unwrap().to_le_bytes());
-                    // println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",staked,fee,unstake);
-                    let x = staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap();
-                    if x > 0 {
-                        m.extend(stkaddr.as_bytes());
-                        m.extend(x.to_le_bytes());
+                if pswd_guess == password {
+                    if ui.button("Unstake").clicked() {
+                        // println!("unstaking {:?}!",unstake.parse::<u64>());
+                        let mut m = vec![];
+                        m.extend(addr.as_bytes().to_vec());
+                        m.extend(unstake.parse::<u64>().unwrap().to_le_bytes());
+                        // println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",staked,fee,unstake);
+                        let x = staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap();
+                        if x > 0 {
+                            m.extend(stkaddr.as_bytes());
+                            m.extend(x.to_le_bytes());
+                        }
+                        m.push(63);
+                        m.push(33);
+                        println!("{}",String::from_utf8_lossy(&m));
+                        sender.send(m).expect("something's wrong with communication from the gui");
                     }
-                    m.push(63);
-                    m.push(33);
-                    println!("{}",String::from_utf8_lossy(&m));
-                    sender.send(m).expect("something's wrong with communication from the gui");
                 }
             });
             ui.label("Transaction Fee:");
             ui.text_edit_singleline(fee);
-            if ui.button("sync").clicked() {
-                sender.send(vec![121]).expect("something's wrong with communication from the gui");
+            ui.horizontal(|ui| {
+                if ui.button("sync").clicked() {
+                    sender.send(vec![121]).expect("something's wrong with communication from the gui");
+                }
+                // if pswd_guess == password {
+                //     if ui.button("toggle reset options").clicked() {
+                //         *reset_shown = !*reset_shown;
+                //     }
+                // } else {
+                //     *reset_shown = false;
+                // }
+                if ui.button("toggle password").clicked() {
+                    *pswd_shown = !*pswd_shown;
+                }
+                if *pswd_shown {
+                    ui.text_edit_singleline(pswd_guess);
+                }
+            });
+            if pswd_guess != password {
+                ui.add(Label::new("password incorrect, features disabled").text_color(egui::Color32::RED));
             }
             if *dont_trust_amounts {
                 ui.add(Label::new("money owned is not yet verified").text_color(egui::Color32::RED));
@@ -262,9 +292,46 @@ impl epi::App for TemplateApp {
             egui::warn_if_debug_build(ui);
         });
 
+        if *pswd_shown && (pswd_guess == password) {
+            egui::Window::new("Reset Options").show(ctx, |ui| {
+                if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
+                    ui.small("This section sends all of your money to a new account with the new password.");
+                }
+                ui.add(Checkbox::new(delete_next_pswrd,"Delete Next Password On Reset"));
+                ui.horizontal(|ui| {
+                    ui.label("Next Passward");
+                    ui.text_edit_singleline(next_pswrd);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Panic Fee");
+                    ui.text_edit_singleline(panic_fee)
+                });
+                
+                if ui.button("Panic").clicked() {
+                    let mut x = vec![];
+                    let pf = panic_fee.parse::<u64>().unwrap();
 
-
-
+                    let s = unstaked.parse::<u64>().unwrap();
+                    if s > pf {
+                        x.extend((s - pf).to_le_bytes());
+                    } else {
+                        x.extend(s.to_le_bytes());
+                    }
+                    let s = staked.parse::<u64>().unwrap();
+                    if s > pf {
+                        x.extend((s - pf).to_le_bytes());
+                    } else {
+                        x.extend(s.to_le_bytes());
+                    }
+                    x.extend(next_pswrd.as_bytes());
+                    x.push(u8::MAX);
+                    sender.send(x).expect("something's wrong with communication from the gui");
+                    if *delete_next_pswrd {
+                        *next_pswrd = "password".to_string();
+                    }
+                }
+            });
+        }
         egui::SidePanel::right("Right Panel").show(ctx, |ui| {
             egui::ScrollArea::auto_sized().show(ui,|ui| {
                 ui.heading("Friends");
@@ -318,25 +385,27 @@ impl epi::App for TemplateApp {
                     if ui.button("Clear Transaction").clicked() {
                         send_amount.iter_mut().for_each(|x| *x = "0".to_string());
                     }
-                    if ui.button("Send Transaction").clicked() {
-                        let mut m = vec![];
-                        let mut tot = 0u64;
-                        for (who,amnt) in friends.iter_mut().zip(send_amount.iter_mut()) {
-                            let x = amnt.parse::<u64>().unwrap();
-                            if x > 0 {
-                                m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
-                                m.extend(x.to_le_bytes().to_vec());
-                                tot += x;
+                    if pswd_guess == password {
+                        if ui.button("Send Transaction").clicked() {
+                            let mut m = vec![];
+                            let mut tot = 0u64;
+                            for (who,amnt) in friends.iter_mut().zip(send_amount.iter_mut()) {
+                                let x = amnt.parse::<u64>().unwrap();
+                                if x > 0 {
+                                    m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
+                                    m.extend(x.to_le_bytes().to_vec());
+                                    tot += x;
+                                }
                             }
+                            let x = unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
+                            if x > 0 {
+                                m.extend(str::to_ascii_lowercase(&addr).as_bytes());
+                                m.extend(x.to_le_bytes());
+                            }
+                            m.push(33);
+                            m.push(33);
+                            sender.send(m).expect("something's wrong with communication from the gui");
                         }
-                        let x = unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
-                        if x > 0 {
-                            m.extend(str::to_ascii_lowercase(&addr).as_bytes());
-                            m.extend(x.to_le_bytes());
-                        }
-                        m.push(33);
-                        m.push(33);
-                        sender.send(m).expect("something's wrong with communication from the gui");
                     }
                 });
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
