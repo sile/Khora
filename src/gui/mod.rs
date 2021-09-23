@@ -132,6 +132,12 @@ impl epi::App for TemplateApp {
                 self.staked = format!("{}",u64::from_le_bytes(i.try_into().unwrap()));
             } else if modification == 1 {
                 self.dont_trust_amounts = i.pop() == Some(0);
+            } else if modification == u8::MAX {
+                if i.pop() == Some(0) {
+                    self.addr = String::from_utf8_lossy(&i).to_string();
+                } else {
+                    self.stkaddr = String::from_utf8_lossy(&i).to_string();
+                }
             }
         }
 
@@ -326,6 +332,7 @@ impl epi::App for TemplateApp {
                     x.extend(next_pswrd.as_bytes());
                     x.push(u8::MAX);
                     sender.send(x).expect("something's wrong with communication from the gui");
+                    *password = next_pswrd.clone();
                     if *delete_next_pswrd {
                         *next_pswrd = "password".to_string();
                     }

@@ -187,6 +187,8 @@ fn main() -> Result<(), MainError> {
             is_user: smine.is_empty(),
             gui_sender: usend,
             gui_reciever: urecv,
+            moneyreset: None,
+            stkreset: None,
         };
     } else {
         node = StakerNode::load(frontnode, backnode, message_rx, usend, urecv);
@@ -268,6 +270,8 @@ struct SavedNode {
     rmems: HashMap<u64,OTAccount>,
     rname: Vec<u8>,
     is_user: bool,
+    moneyreset: Option<Vec<u8>>,
+    stkreset: Option<Vec<u8>>,
 }
 
 struct StakerNode {
@@ -326,6 +330,8 @@ struct StakerNode {
     rmems: HashMap<u64,OTAccount>,
     rname: Vec<u8>,
     is_user: bool,
+    moneyreset: Option<Vec<u8>>,
+    stkreset: Option<Vec<u8>>,
 }
 impl StakerNode {
     fn save(&self) {
@@ -356,6 +362,8 @@ impl StakerNode {
             rmems: self.rmems.clone(),
             rname: self.rname.clone(),
             is_user: self.is_user,
+            moneyreset: self.moneyreset.clone(),
+            stkreset: self.stkreset.clone(),
         }; // just redo initial conditions on the rest
         let mut sn = bincode::serialize(&sn).unwrap();
         let mut f = File::create("myNode").unwrap();
@@ -425,6 +433,8 @@ impl StakerNode {
             rmems: HashMap::new(),
             rname: vec![],
             is_user: sn.is_user,
+            moneyreset: sn.moneyreset,
+            stkreset: sn.stkreset,
         }
     }
     fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) {
@@ -567,6 +577,15 @@ impl StakerNode {
                 self.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui");; // this is how you send info to the gui
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
+                if self.moneyreset.is_some() || self.stkreset.is_some() {
+                    if self.mine.len() < (self.moneyreset.is_some() as usize + self.stkreset.is_some() as usize) {
+                        self.outer.broadcast(self.moneyreset.clone().unwrap());
+                        self.outer.broadcast(self.stkreset.clone().unwrap());
+                    } else {
+                        self.moneyreset = None;
+                        self.stkreset = None;
+                    }
+                }
                 if self.bnum % 128 == 0 {
                     self.overthrown = HashSet::new();
                 }
@@ -735,7 +754,7 @@ impl Future for StakerNode {
                                                     println!("going for empty block");
                                                     let m = MultiSignature::gen_group_x(&self.key, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
                                                     let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
-                                                    m.push(4);
+                                                    m.push(4u8);
                                                     if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
                                                         // self.inner.broadcast(m.clone());
                                                         if let Some(x) = self.leaderip {
@@ -764,7 +783,7 @@ impl Future for StakerNode {
                                 }
                                 // println!("{:?}",hash_to_scalar(&self.lastblock));
                             } else if mtype == 4 {
-                                println!("recieving points phase: {}",!self.points.contains_key(&usize::MAX));
+                                println!("recieving points phase: {}\nleader: {:?}",!self.points.contains_key(&usize::MAX),self.leader);
                                 if !self.points.contains_key(&usize::MAX) {
                                     print!(".");
                                     if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
@@ -987,8 +1006,8 @@ impl Future for StakerNode {
                     for keylocation in &self.keylocation {
                         let m = MultiSignature::gen_group_x(&self.key, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
                         let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
-                        m.push(4);
-                        if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
+                        m.push(4u8);
+                        if !self.comittee[self.headshard].iter().all(|&x| x as u64 != *keylocation) {
                             println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
                             self.inner.broadcast(m);
                         }
@@ -1346,67 +1365,81 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         let newacc = Account::new(&format!("{}",String::from_utf8_lossy(&m)));
                         println!("understood command");
 
-                        let (loc, _acc): (Vec<u64>,Vec<OTAccount>) = self.mine.par_iter().map(|x|(x.0 as u64,x.1.clone())).unzip();
 
-                        println!("remembered owned accounts");
-                        let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &(loc.len() as u16), &self.height);
-                        let ring = recieve_ring(&rname).expect("shouldn't fail");
+                        if self.mine.len() > 0 {
+                            let (loc, _acc): (Vec<u64>,Vec<OTAccount>) = self.mine.par_iter().map(|x|(x.0 as u64,x.1.clone())).unzip();
 
-                        println!("made rings");
-                        /* this is where people send you the ring members */ 
-                        // let mut rlring = ring.into_par_iter().map(|x| OTAccount::summon_ota(&History::get(&x))).collect::<Vec<OTAccount>>();
-                        let mut rlring = ring.iter().map(|&x| self.mine.iter().filter(|&&(y,_)| y == x).collect::<Vec<_>>()[0].1.clone()).collect::<Vec<OTAccount>>();
-                        /* this is where people send you the ring members */ 
-                        let me = self.me;
-                        rlring.par_iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x.clone()) {*x = y;});
-                        let tx = Transaction::spend_ring(&rlring, &vec![(&newacc,&amnt)]);
+                            println!("remembered owned accounts");
+                            let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &(loc.len() as u16), &self.height);
+                            let ring = recieve_ring(&rname).expect("shouldn't fail");
 
+                            println!("made rings");
+                            /* this is where people send you the ring members */ 
+                            // let mut rlring = ring.into_par_iter().map(|x| OTAccount::summon_ota(&History::get(&x))).collect::<Vec<OTAccount>>();
+                            let mut rlring = ring.iter().map(|&x| self.mine.iter().filter(|&&(y,_)| y == x).collect::<Vec<_>>()[0].1.clone()).collect::<Vec<OTAccount>>();
+                            /* this is where people send you the ring members */ 
+                            let me = self.me;
+                            rlring.par_iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x.clone()) {*x = y;});
+                            let tx = Transaction::spend_ring(&rlring, &vec![(&newacc,&amnt)]);
 
-                        let mut txbin: Vec<u8>;
-                        if tx.verify().is_ok() {
-                            let tx = tx.polyform(&rname);
-                            // tx.verify().unwrap(); // as a user you won't be able to check this
-                            txbin = bincode::serialize(&tx).unwrap();
-                            self.txses.push(txbin.clone());
-                            txbin.push(0);
-                            self.outer.broadcast_now(txbin.clone());
-                            self.inner.broadcast_now(txbin.clone());
-                            self.outer.broadcast(txbin.clone());
-                            self.inner.broadcast(txbin);
-                            println!("transaction made!");
-                        } else {
-                            println!("you can't make that transaction, user!");
+                            println!("{:?}",rlring.iter().map(|x| x.com.amount).collect::<Vec<_>>());
+                            println!("{:?}",amnt);
+                            if tx.verify().is_ok() {
+                                let tx = tx.polyform(&rname);
+                                // tx.verify().unwrap(); // as a user you won't be able to check this
+                                let mut txbin = bincode::serialize(&tx).unwrap();
+                                self.txses.push(txbin.clone());
+                                txbin.push(0);
+                                self.outer.broadcast_now(txbin.clone());
+                                self.inner.broadcast_now(txbin.clone());
+                                self.outer.broadcast(txbin.clone());
+                                self.inner.broadcast(txbin.clone());
+                                self.moneyreset = Some(txbin);
+                                println!("transaction made!");
+                            } else {
+                                println!("you can't make that transaction, user!");
+                            }
                         }
 
 
-
-
-
-                        let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.par_iter().map(|x|(x[0] as u64,x[1].clone())).unzip();
-                        let inps = amnt.into_iter().map(|x| self.me.receive_ot(&self.me.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
-                        let tx = Transaction::spend_ring(&inps, &vec![(&newacc,&stkamnt)]);
-                        println!("about to verify!");
-                        tx.verify().unwrap();
-                        println!("finished to verify!");
-                        let mut loc = loc.into_par_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
-                        loc.push(1);
-                        let tx = tx.polyform(&loc); // push 0
-                        if tx.verifystk(&self.stkinfo).is_ok() {
-                            txbin = bincode::serialize(&tx).unwrap();
-                            self.txses.push(txbin.clone());
-                            txbin.push(0);
-                            self.outer.broadcast_now(txbin.clone());
-                            self.inner.broadcast_now(txbin.clone());
-                            self.outer.broadcast(txbin.clone());
-                            self.inner.broadcast(txbin);
-                            println!("sending tx!");
-                        } else {
-                            println!("you can't make that transaction!");
+                        if self.smine.len() > 0 {
+                            let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.par_iter().map(|x|(x[0] as u64,x[1].clone())).unzip();
+                            let inps = amnt.into_iter().map(|x| self.me.receive_ot(&self.me.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
+                            let tx = Transaction::spend_ring(&inps, &vec![(&newacc,&stkamnt)]);
+                            println!("about to verify!");
+                            tx.verify().unwrap();
+                            println!("finished to verify!");
+                            let mut loc = loc.into_par_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
+                            loc.push(1);
+                            let tx = tx.polyform(&loc); // push 0
+                            if tx.verifystk(&self.stkinfo).is_ok() {
+                                let mut txbin = bincode::serialize(&tx).unwrap();
+                                self.txses.push(txbin.clone());
+                                txbin.push(0);
+                                self.outer.broadcast_now(txbin.clone());
+                                self.inner.broadcast_now(txbin.clone());
+                                self.outer.broadcast(txbin.clone());
+                                self.inner.broadcast(txbin.clone());
+                                self.stkreset = Some(txbin);
+                                println!("sending tx!");
+                            } else {
+                                println!("you can't make that transaction!");
+                            }
                         }
 
 
+                        self.mine = vec![];
+                        self.smine = vec![];
+                        self.me = newacc;
+                        self.key = self.me.stake_acc().receive_ot(&self.me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap().sk.unwrap();
+                        self.keylocation = HashSet::new();
+                        let mut m1 = self.me.name().as_bytes().to_vec();
+                        m1.extend([0,u8::MAX]);
+                        let mut m2 = self.me.stake_acc().name().as_bytes().to_vec();
+                        m2.extend([1,u8::MAX]);
+                        self.gui_sender.send(m1).expect("should be working");
+                        self.gui_sender.send(m2).expect("should be working");
 
-                        /* replace backend's idea of me? */                        
                     }
                 }
             }
