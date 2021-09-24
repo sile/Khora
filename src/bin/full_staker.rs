@@ -178,8 +178,6 @@ fn main() -> Result<(), MainError> {
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
             leaderip: None,
-            blocktrust: HashMap::new(),
-            possibleblocks: HashSet::new(),
             trustedsyncsource: vec![],
             newest: 0u64,
             rmems: HashMap::new(),
@@ -323,8 +321,6 @@ struct StakerNode {
     knownvalidators: HashMap<u64,NodeId>,
     announcevalidationtime: Instant,
     leaderip: Option<NodeId>,
-    blocktrust: HashMap<Vec<u8>,Vec<usize>>, // would have Vec<u8> 1 be the block and Vec<usize> be the comittee but you remove members
-    possibleblocks: HashSet<NextBlock>,
     trustedsyncsource: Vec<NodeId>,
     newest: u64,
     rmems: HashMap<u64,OTAccount>,
@@ -426,8 +422,6 @@ impl StakerNode {
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
             leaderip: None,
-            blocktrust: HashMap::new(),
-            possibleblocks: HashSet::new(),
             trustedsyncsource: vec![],
             newest: 0u64,
             rmems: HashMap::new(),
@@ -462,14 +456,6 @@ impl StakerNode {
                 self.overthrown.remove(&self.stkinfo[self.lastblock.leader.pk as usize].0);
                 if self.stkinfo[self.lastblock.leader.pk as usize].0 != self.leader {
                     self.overthrown.insert(self.leader);
-                }
-                if self.is_validator { // maybe make if self in comittee?
-                    let bhash = hash_to_scalar(&m).as_bytes().to_vec();
-                    for k in self.keylocation.iter() {
-                        let mut b = Signature::sign_message_nonced(&self.key, &bhash, k, &self.bnum);
-                        b.push(8u8);
-                        self.outer.broadcast_now(b);
-                    }
                 }
 
                 for _ in self.bnum..self.lastblock.bnum { // add whole different scannings for empty blocks
@@ -1046,47 +1032,7 @@ impl Future for StakerNode {
                             } else if (mtype == 3) /*&& !self.is_validator*/ {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
                                     self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
-                                    // // smsething about trust due to sender (you're syncing) or signatures (mtype 8)
-                                    // if self.trustedsyncsource.contains(&msg.id().node()) {
-                                    //     let bname = hash_to_scalar(&m).as_bytes().to_vec();
-                                    //     self.blocktrust.remove(&bname); // you may be a little behind and the order of some stufff was swapped
-                                    //     self.possibleblocks.remove(&lastblock);
-                                    //     self.readblock(lastblock, m);
-                                    // } else {
-                                    //     println!("3!");
-                                    //     let bname = hash_to_scalar(&m).as_bytes().to_vec();
-                                    //     if let Some(b) = self.blocktrust.get(&bname) {
-                                    //         if b.len() < NUMBER_OF_VALIDATORS/2 { // NUMBER_OF_VALIDATORS/2 here should be fine
-                                    //             self.readblock(lastblock, m);
-                                    //         } else {
-                                    //             self.possibleblocks.insert(lastblock);
-                                    //         }
-                                    //     } else {
-                                    //         self.blocktrust.insert(bname, self.comittee[self.headshard].clone());
-                                    //     }
-                                    // }
                                 }
-                            } else if (mtype == 8) /*&& !self.is_validator*/ {
-                                println!("8!");
-                                // if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
-                                //     // if who in comittee do something where you trust the block hash more
-                                //     println!("someone signed it: {}",who);
-                                //     if let Some(x) = self.blocktrust.get_mut(&m) {
-                                //         println!("got mut!");
-                                //         *x = x.into_iter().filter(|x| **x != who as usize).map(|x| *x).collect::<Vec<_>>();
-                                //         println!("{}",x.len());
-                                //         if x.len() < NUMBER_OF_VALIDATORS/2 { // NUMBER_OF_VALIDATORS/2 here should be fine
-                                //             println!("got enought sigs");
-                                //             if let Some(lastblock) = self.possibleblocks.clone().into_iter().filter(|x| hash_to_scalar(x).as_bytes().to_vec() == m).collect::<Vec<_>>().get(0) {
-                                //                 self.readblock(lastblock.to_owned(), bincode::serialize(&lastblock).unwrap());
-                                //             }
-                                //         }
-                                //     } else {
-                                //         println!("insering!");
-                                //         self.blocktrust.insert(m, self.comittee[self.headshard].clone().into_iter().filter(|x| *x != who as usize).collect::<Vec<_>>());
-                                //     }
-                                //     // maybe if ready scan the saved block?
-                                // }
                             } else if (mtype == 105) && !self.is_validator /* i */ {
                                 if Signature::recieve_signed_message(&mut m, &self.stkinfo).is_some() {
                                     self.randomstakers.push_front(bincode::deserialize::<NodeId>(&m).unwrap());
