@@ -456,7 +456,7 @@ impl StakerNode {
                 self.headshard = lastblock.shards[0] as usize;
 
                 self.lastblock = lastblock;
-                println!("=========================================================\nyay validator!");
+                println!("=========================================================\nyay!");
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
 
                 self.overthrown.remove(&self.stkinfo[self.lastblock.leader.pk as usize].0);
@@ -486,7 +486,7 @@ impl StakerNode {
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
                     let mut guitruster = !self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
-                    if self.is_validator && self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo) {
+                    if self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo) && self.is_validator {
                         guitruster = false;
                         self.inner.broadcast_now(m.clone());
                         self.outer.broadcast_now(m.clone());
@@ -568,6 +568,8 @@ impl StakerNode {
 
                 if let Some(&x) = self.knownvalidators.iter().filter(|&x| self.stkinfo[*x.0 as usize].0 == self.leader).map(|(_,&x)| x).collect::<Vec<_>>().get(0) {
                     self.leaderip = Some(x.with_id(1u64));
+                } else {
+                    self.leaderip = None;
                 }
                 /* LEADER CHOSEN BY VOTES */
                 let mut mymoney = self.mine.iter().map(|x| self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
@@ -579,8 +581,12 @@ impl StakerNode {
 
                 if self.moneyreset.is_some() || self.stkreset.is_some() {
                     if self.mine.len() < (self.moneyreset.is_some() as usize + self.stkreset.is_some() as usize) {
-                        self.outer.broadcast(self.moneyreset.clone().unwrap());
-                        self.outer.broadcast(self.stkreset.clone().unwrap());
+                        if let Some(x) = self.moneyreset.clone() {
+                            self.outer.broadcast(x);
+                        }
+                        if let Some(x) = self.stkreset.clone() {
+                            self.outer.broadcast(x);
+                        }
                     } else {
                         self.moneyreset = None;
                         self.stkreset = None;
@@ -598,6 +604,7 @@ impl StakerNode {
                 self.waitingforentrytime = Instant::now();
                 self.timekeeper = Instant::now();
                 self.usurpingtime = Instant::now();
+                println!("block reading process done!!!");
             }
         }
     }
@@ -1169,6 +1176,8 @@ impl Future for StakerNode {
                     }).unwrap().0].0;
                     if let Some(&x) = self.knownvalidators.iter().filter(|&x| self.stkinfo[*x.0 as usize].0 == self.leader).map(|(_,&x)| x).collect::<Vec<_>>().get(0) {
                         self.leaderip = Some(x.with_id(1u64));
+                    } else {
+                        self.leaderip = None;
                     }
                 }
                 /*____________________________________________________________________________________________________________________________________________________________________________________________________________________________
