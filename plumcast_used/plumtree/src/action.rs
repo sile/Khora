@@ -1,4 +1,4 @@
-use crate::message::{Message, ProtocolMessage};
+use crate::message::{GossipMessage, Message, ProtocolMessage};
 use crate::System;
 use std::collections::VecDeque;
 use std::fmt;
@@ -24,7 +24,7 @@ pub enum Action<T: System> {
     /// Deliver a message to the applications waiting for messages.
     Deliver {
         /// The message to be delivered.
-        message: Message<T>,
+        message: GossipMessage<T>,
     },
 }
 impl<T: System> Action<T> {
@@ -60,9 +60,25 @@ where
 }
 
 pub struct ActionQueue<T: System>(VecDeque<Action<T>>);
-impl<T: System> ActionQueue<T> {
+impl<T: System> ActionQueue<T>{
     pub fn new() -> Self {
         ActionQueue(VecDeque::new())
+    }
+
+    pub fn drain_send_actions(&mut self) -> VecDeque<Action<T>> {
+        let m = self.0.iter().filter_map(|x| {
+            match x {
+                Action::Send { destination, message } => Some(Action::Send { destination:destination.clone(), message:message.clone() }),
+                Action::Deliver { message: _ } => None,
+            }
+        }).collect::<VecDeque<_>>();
+        self.0 = self.0.iter().filter_map(|x| {
+            match x {
+                Action::Send { destination: _ , message: _ } => None,
+                Action::Deliver { message } => Some(Action::Deliver { message:message.clone() }),
+            }
+        }).collect();
+        m
     }
 
     pub fn send_now<M: Into<ProtocolMessage<T>>>(&mut self, destination: T::NodeId, message: M) {
@@ -73,11 +89,11 @@ impl<T: System> ActionQueue<T> {
         self.0.push_back(Action::send(destination, message));
     }
 
-    pub fn deliver_now(&mut self, message: Message<T>) {
+    pub fn deliver_now(&mut self, message: GossipMessage<T>) {
         self.0.push_front(Action::Deliver { message });
     }
 
-    pub fn deliver(&mut self, message: Message<T>) {
+    pub fn deliver(&mut self, message: GossipMessage<T>) {
         self.0.push_back(Action::Deliver { message });
     }
 

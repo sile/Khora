@@ -69,7 +69,7 @@ pub(crate) type PruneMessage<M> = plumtree::message::PruneMessage<PlumtreeSystem
 /// An implementation of [`plumtree::System`] trait specialised to this crate.
 ///
 /// [`plumtree::System`]: https://docs.rs/plumtree/0.1/plumtree/trait.System.html
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct PlumtreeSystem<M>(PhantomData<M>);
 impl<M: MessagePayload> plumtree::System for PlumtreeSystem<M> {
     type NodeId = NodeId;

@@ -702,13 +702,14 @@ impl Future for StakerNode {
         |--0| ::::::::::::::::VALIDATOR STUFF::::::::::::::::VALIDATOR STUFF::::::::::::::::VALIDATOR STUFF::::::::::::::::VALIDATOR STUFF/
              \*/
             if self.is_validator {
-                while let Async::Ready(Some(msg)) = track_try_unwrap!(self.inner.poll()) {
-                    if !self.bannedlist.contains(&msg.id().node()) {
-                        let mut m = msg.payload().to_vec();
+                while let Async::Ready(Some(fullmsg)) = track_try_unwrap!(self.inner.poll()) {
+                    let msg = fullmsg.message.clone();
+                    if !self.bannedlist.contains(&msg.id.node()) {
+                        let mut m = msg.payload.to_vec();
                         if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
                             self.clogging += 1;
                             if mtype == 2 {print!("#{:?}", mtype);}
-                            else {println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id().node());}
+                            else {println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id.node());}
                             // println!("# MESSAGE TYPE: {:?}", mtype); // i dont do anything with lightning blocks because im a staker
 
 
@@ -830,6 +831,7 @@ impl Future for StakerNode {
                             }
                         }
                     }
+                    self.inner.handle_gossip_now(fullmsg);
                     did_something = true;
                 }
                 /*_________________________________________________________________________________________________________
@@ -1019,12 +1021,13 @@ impl Future for StakerNode {
         |--0| ::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF/
              \*/
             if self.is_staker {
-                while let Async::Ready(Some(msg)) = track_try_unwrap!(self.outer.poll()) {
-                    if !self.bannedlist.contains(&msg.id().node()) {
-                        let mut m = msg.payload().to_vec();
+                while let Async::Ready(Some(fullmsg)) = track_try_unwrap!(self.outer.poll()) {
+                    let msg = fullmsg.message.clone();
+                    if !self.bannedlist.contains(&msg.id.node()) {
+                        let mut m = msg.payload.to_vec();
                         if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
                             self.clogging += 1;
-                            println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id().node());
+                            println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id.node());
 
 
                             if mtype == 0 {
@@ -1046,7 +1049,7 @@ impl Future for StakerNode {
                                 let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
                                 x.append(&mut y);
                                 x.push(113);
-                                self.outer.dm(x,&vec![msg.id().node()],false);
+                                self.outer.dm(x,&vec![msg.id.node()],false);
                             } else if (mtype == 116) && !self.is_validator /* t */ { // this is totally untested
                                 let tsk = Scalar::from_canonical_bytes(m.try_into().unwrap()).unwrap();
                                 let mut location = 0u64;
@@ -1071,7 +1074,7 @@ impl Future for StakerNode {
                                         location += thisheight;
                                     }
                                 }
-                                self.outer.dm(bincode::serialize(&allyours).unwrap(),&vec![msg.id().node()],false);
+                                self.outer.dm(bincode::serialize(&allyours).unwrap(),&vec![msg.id.node()],false);
                             } else if mtype == 118 /* v */ {
                                 if let Some(who) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
                                     let m = bincode::deserialize::<NodeId>(&m).unwrap();
@@ -1093,18 +1096,19 @@ impl Future for StakerNode {
                                         file.read_to_end(&mut x).unwrap();
                                         println!("sending block {} of {}\t{:?}",b,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
                                         x.push(3);
-                                        self.outer.dm(x,&vec![msg.id().node()],false);
+                                        self.outer.dm(x,&vec![msg.id.node()],false);
                                     }
                                 }
                                 let mut x = bincode::serialize(&self.lastblock).unwrap();
                                 println!("sending block {} of {}\t{:?}",self.bnum,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
                                 x.push(3);
-                                self.outer.dm(x,&vec![msg.id().node()],false);
+                                self.outer.dm(x,&vec![msg.id.node()],false);
                             } else if (mtype == 113) && !self.is_validator /* q */ {
                                 self.rmems.insert(u64::from_le_bytes(m[64..72].try_into().unwrap()),History::read_raw(&m));
                             }
                         }
                     }
+                    self.inner.handle_gossip_now(fullmsg);
                     did_something = true;
                 }
                 if (self.waitingforleadertime.elapsed().as_secs() > 30) && self.waitingforleaderbool {

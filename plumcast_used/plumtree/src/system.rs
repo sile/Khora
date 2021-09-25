@@ -1,5 +1,5 @@
 use std::hash::Hash;
-use serde::{Serialize,Deserialize};
+
 /// This trait allows for defining a system to which Plumtree nodes belong.
 pub trait System {
     /// Node identifier.

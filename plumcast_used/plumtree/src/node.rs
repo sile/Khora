@@ -5,8 +5,9 @@ use crate::message::{
 use crate::missing::MissingMessages;
 use crate::time::{Clock, NodeTime};
 use crate::System;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
+use std::iter::Cloned;
 use std::time::Duration;
 
 /// Options for Plumtree [Node].
@@ -80,6 +81,7 @@ where
     T::NodeId: fmt::Debug,
     T::MessageId: fmt::Debug,
     T::MessagePayload: fmt::Debug,
+    T: Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -97,7 +99,8 @@ where
         )
     }
 }
-impl<T: System> Node<T> {
+impl<T: System> Node<T>
+    {
     /// Makes a new `Node` instance.
     pub fn new(node_id: T::NodeId) -> Self {
         Self::with_options(node_id, NodeOptions::default())
@@ -149,9 +152,8 @@ impl<T: System> Node<T> {
 
     /// Broadcasts the given message.
     pub fn broadcast_message(&mut self, message: Message<T>) {
-        self.actions.deliver(message.clone());
-
         let gossip = GossipMessage::new(&self.id, message, 0);
+        self.actions.deliver(gossip.clone());
         self.eager_push(&gossip);
         self.lazy_push(&gossip);
         self.messages
@@ -183,6 +185,12 @@ impl<T: System> Node<T> {
     pub fn poll_action(&mut self) -> Option<Action<T>> {
         self.handle_expiration();
         self.actions.pop()
+    }
+
+    /// Polls the next action that the node wants to execute.
+    pub fn poll_sends(&mut self) -> VecDeque<Action<T>> {
+        self.handle_expiration();
+        self.actions.drain_send_actions()
     }
 
     /// Handles the given incoming message.
@@ -297,6 +305,40 @@ impl<T: System> Node<T> {
     /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
 
 
+    // #[allow(clippy::map_entry)]
+    // fn handle_gossip_old(&mut self, gossip: GossipMessage<T>) {
+    //     if self.messages.contains_key(&gossip.message.id) {
+    //         self.eager_push_peers.remove(&gossip.sender);
+    //         self.lazy_push_peers.insert(gossip.sender.clone());
+    //         self.actions
+    //             .send(gossip.sender, PruneMessage::new(&self.id));
+    //     } else if gossip.round == 0 { // this handels DMs
+    //         if gossip.message.payload.clone().into_iter().count() == 0 {
+    //             self.eager_push_peers.insert(gossip.sender);
+    //         } else {
+    //             self.actions.deliver(gossip);
+    //         }
+    //     } else if Node::kill_condition(&gossip) {
+    //         self.eager_push_peers.remove(&gossip.sender);
+    //         // self.lazy_push_peers.insert(gossip.sender.clone()); // this one makes the muted noisy still
+    //         // self.lazy_push_peers.remove(&gossip.sender); // this is redundent because lazy and eager are disjoint
+    //         // self.actions // this is probably convenient for the other person
+    //         //     .send(gossip.sender, PruneMessage::new(&self.id));
+    //     } else {
+    //         self.actions.deliver(gossip.clone());
+
+    //         self.eager_push(&gossip);
+    //         self.lazy_push(&gossip);
+    //         self.eager_push_peers.insert(gossip.sender.clone());
+    //         self.lazy_push_peers.remove(&gossip.sender);
+
+    //         self.optimize(&gossip);
+    //         self.missings.remove(&gossip.message.id);
+    //         self.messages
+    //             .insert(gossip.message.id, gossip.message.payload);
+    //     }
+    // }
+
     #[allow(clippy::map_entry)]
     fn handle_gossip(&mut self, gossip: GossipMessage<T>) {
         if self.messages.contains_key(&gossip.message.id) {
@@ -308,7 +350,7 @@ impl<T: System> Node<T> {
             if gossip.message.payload.clone().into_iter().count() == 0 {
                 self.eager_push_peers.insert(gossip.sender);
             } else {
-                self.actions.deliver(gossip.message);
+                self.actions.deliver(gossip);
             }
         } else if Node::kill_condition(&gossip) {
             self.eager_push_peers.remove(&gossip.sender);
@@ -317,18 +359,25 @@ impl<T: System> Node<T> {
             // self.actions // this is probably convenient for the other person
             //     .send(gossip.sender, PruneMessage::new(&self.id));
         } else {
-            self.actions.deliver(gossip.message.clone());
-
-            self.eager_push(&gossip);
-            self.lazy_push(&gossip);
-            self.eager_push_peers.insert(gossip.sender.clone());
-            self.lazy_push_peers.remove(&gossip.sender);
-
-            self.optimize(&gossip);
-            self.missings.remove(&gossip.message.id);
-            self.messages
-                .insert(gossip.message.id, gossip.message.payload);
+            self.actions.deliver(gossip.clone());
         }
+    }
+
+    #[allow(clippy::map_entry)]
+    /// handles the gossip if you want to get the message delivered and read before you gossip it
+    pub fn handle_gossip_now(&mut self, gossip: GossipMessage<T>) {
+            if gossip.round != 0 {
+                self.eager_push_now(&gossip);
+                self.lazy_push_now(&gossip);
+                self.eager_push_peers.insert(gossip.sender.clone());
+                self.lazy_push_peers.remove(&gossip.sender);
+
+                self.optimize_now(&gossip);
+                self.missings.remove(&gossip.message.id);
+                self.messages
+                    .insert(gossip.message.id, gossip.message.payload);
+            }
+        
     }
 
     fn handle_ihave(&mut self, mut ihave: IhaveMessage<T>) {
@@ -388,6 +437,39 @@ impl<T: System> Node<T> {
                 let prune = PruneMessage::new(&self.id);
                 self.actions.send(ihave_owner.clone(), graft);
                 self.actions.send(gossip.sender.clone(), prune);
+            }
+        }
+    }
+
+    fn eager_push_now(&mut self, gossip: &GossipMessage<T>) {
+        let round = gossip.round.saturating_add(1);
+        for peer in self
+            .eager_push_peers
+            .iter()
+            .filter(|n| **n != gossip.sender)
+        {
+            let forward = GossipMessage::new(&self.id, gossip.message.clone(), round);
+            self.actions.send_now(peer.clone(), forward);
+        }
+    }
+
+    fn lazy_push_now(&mut self, gossip: &GossipMessage<T>) {
+        let round = gossip.round.saturating_add(1);
+        let ihave = IhaveMessage::new(&self.id, gossip.message.id.clone(), round, true);
+        for peer in self.lazy_push_peers.iter().filter(|n| **n != gossip.sender) {
+            self.actions.send_now(peer.clone(), ihave.clone());
+        }
+    }
+
+    fn optimize_now(&mut self, gossip: &GossipMessage<T>) {
+        if let Some((ihave_round, ihave_owner)) = self.missings.get_ihave(&gossip.message.id) {
+            let optimize =
+                gossip.round.checked_sub(ihave_round) >= Some(self.options.optimization_threshold);
+            if optimize {
+                let graft = GraftMessage::new(&self.id, None, ihave_round);
+                let prune = PruneMessage::new(&self.id);
+                self.actions.send_now(ihave_owner.clone(), graft);
+                self.actions.send_now(gossip.sender.clone(), prune);
             }
         }
     }
