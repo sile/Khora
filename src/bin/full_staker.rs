@@ -1148,7 +1148,7 @@ impl Future for StakerNode {
                 */////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 if self.emitmessage.elapsed().as_secs() > 300 { // i don't even do anything with this rn (because it's all for the user)
                     self.emitmessage = Instant::now();
-                    if (self.clogging < 3000) { // 10 messages per second
+                    if self.clogging < 3000 { // 10 messages per second
                         let mut m = Signature::sign_message(&self.key, &bincode::serialize(&self.outer.id().address()).unwrap(), &self.keylocation.iter().next().unwrap());
                         m.push(105u8);
                         self.outer.broadcast(m);
