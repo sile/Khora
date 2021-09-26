@@ -169,7 +169,6 @@ fn main() -> Result<(), MainError> {
             clogging: 0,
             emitmessage: Instant::now(),
             randomstakers: VecDeque::new(),
-            laststkgossip: HashSet::new(),
             headshard: 0,
             usurpingtime: Instant::now(),
             is_validator: false,
@@ -311,7 +310,6 @@ struct StakerNode {
     waitingforentrytime: Instant,
     clogging: u64,
     emitmessage: Instant,
-    laststkgossip: HashSet<Vec<u8>>,
     headshard: usize,
     usurpingtime: Instant,
     randomstakers: VecDeque<NodeId>,
@@ -391,7 +389,6 @@ impl StakerNode {
             bannedlist: HashSet::new(),
             points: HashMap::new(),
             scalars: HashMap::new(),
-            laststkgossip: HashSet::new(),
             clogging: 0,
             save_history: sn.save_history,
             me: sn.me,
@@ -1054,9 +1051,6 @@ impl Future for StakerNode {
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
                                 // add identity to known people and delete oldest maybe (VecDeque)
-                            } else if (mtype == 112) && !self.is_validator /* p */ {
-                                self.laststkgossip.insert(m);
-                                self.outer.handle_gossip_now(fullmsg);
                             } else if (mtype == 114) && !self.is_validator /* r */ {
                                 let mut y = m[..8].to_vec();
                                 let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
@@ -1154,15 +1148,11 @@ impl Future for StakerNode {
                 */////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 if self.emitmessage.elapsed().as_secs() > 300 { // i don't even do anything with this rn (because it's all for the user)
                     self.emitmessage = Instant::now();
-                    let mut m = hash_to_scalar(&self.stkinfo).as_bytes().to_vec();
-                    if self.laststkgossip.contains(&m) && (self.clogging < 3000) { // 10 messages per second
-                        m.push(112u8);
-                        self.outer.broadcast(m);
+                    if (self.clogging < 3000) { // 10 messages per second
                         let mut m = Signature::sign_message(&self.key, &bincode::serialize(&self.outer.id().address()).unwrap(), &self.keylocation.iter().next().unwrap());
                         m.push(105u8);
                         self.outer.broadcast(m);
                     }
-                    self.laststkgossip = HashSet::new();
                     self.clogging = 0;
                 }
             }
