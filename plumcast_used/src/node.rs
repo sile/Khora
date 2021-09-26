@@ -228,8 +228,9 @@ impl<M: MessagePayload> Node<M> {
 
         for peer in self.plumtree_node.all_push_peers() {
             self.plumtree_node.actions.send_now(peer, m.clone());
-            self.poll().expect("never fails");
+            // self.poll().expect("never fails");
         }
+        self.send_all_gossips();
         self.plumtree_node.actions.deliver(m);
         id
     }
@@ -237,10 +238,12 @@ impl<M: MessagePayload> Node<M> {
     pub fn handle_gossip_now(&mut self, message_payload: GossipMessage<M>) {
         self.plumtree_node.handle_gossip_now(message_payload);
 
-        let acts = self.plumtree_node.poll_sends();
-        
+        self.send_all_gossips();
+    }
+
+    fn send_all_gossips(&mut self) {
         use plumtree::Action;
-        acts.into_iter().for_each(|x| {
+        self.plumtree_node.poll_sends().into_iter().for_each(|x| {
             match x {
                 Action::Send { destination, message } => {
                     debug!(self.logger, "Sends a Plumtree message to {:?}", destination,);
@@ -256,10 +259,6 @@ impl<M: MessagePayload> Node<M> {
                 Action::Deliver { message:_ } => (),
             }
         });
-
-
-
-
     }
     
     /// kill node
@@ -335,17 +334,18 @@ impl<M: MessagePayload> Node<M> {
         for peer in peers.into_iter() { // hop count for messages recieved through gossip is never 0
             if stay {
                 self.join_now(*peer);
-                self.poll().expect("shouldn't fail");
+                // self.poll().expect("shouldn't fail");
                 self.plumtree_node.eager_push_peers.insert(*peer);
                 self.plumtree_node.actions.send_now(*peer, m.clone());
-                self.poll().expect("shouldn't fail");
+                // self.poll().expect("shouldn't fail");
             } else {
                 self.plumtree_node.actions.send_now(*peer, m.clone());
-                self.poll().expect("shouldn't fail");
+                // self.poll().expect("shouldn't fail");
             }
         }
         self.plumtree_node.actions.deliver_now(m);
-        self.poll().expect("shouldn't fail");
+        // self.poll().expect("shouldn't fail");
+        self.send_all_gossips();
 
 
     }

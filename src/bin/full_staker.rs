@@ -718,11 +718,12 @@ impl Future for StakerNode {
 
                             if mtype == 0 {
                                 self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
+                                self.inner.handle_gossip_now(fullmsg);
                             } else if mtype == 1 {
                                 // println!("bnum: {}",self.bnum);
                                 if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     print!(".");
-                                    if (who == self.newest) | (self.stkinfo[who as usize].0 == self.leader) {
+                                    if (who == self.newest) || (self.stkinfo[who as usize].0 == self.leader) {
                                         print!(".");
                                         if let Ok(m) = bincode::deserialize::<Vec<Vec<u8>>>(&m) {
                                             print!(".");
@@ -767,16 +768,19 @@ impl Future for StakerNode {
                                             self.waitingforentrybool = false;
                                             self.waitingforleaderbool = true;
                                             self.waitingforleadertime = Instant::now();
+                                            self.inner.handle_gossip_now(fullmsg);
                                         }
                                     }
                                 }
                             } else if mtype == 2 {
                                 if let Ok(sig) = bincode::deserialize(&m) {
                                     self.sigs.push(sig);
+                                    self.inner.handle_gossip_now(fullmsg);
                                 }
                             } else if mtype == 3 {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
                                     self.readblock(lastblock, m);
+                                    self.inner.handle_gossip_now(fullmsg);
                                 }
                                 // println!("{:?}",hash_to_scalar(&self.lastblock));
                             } else if mtype == 4 {
@@ -799,6 +803,7 @@ impl Future for StakerNode {
                                         }
                                     }
                                 }
+                                self.inner.handle_gossip_now(fullmsg);
                             } else if mtype == 5 {
                                 if let Ok(m) = m.try_into() {
                                     let xt = CompressedRistretto(m);
@@ -819,6 +824,7 @@ impl Future for StakerNode {
                                         }
                                     }
                                     self.waitingforleadertime = Instant::now();
+                                    self.inner.handle_gossip_now(fullmsg);
                                 }
                             } else if mtype == 6 {
                                 println!("recieving scalars phase: {}",self.points.contains_key(&usize::MAX));
@@ -828,13 +834,13 @@ impl Future for StakerNode {
                                         println!("got sent a scalar from {}",pk);
                                         if let Ok(m) = m.try_into() {
                                             self.scalars.insert(pk,Scalar::from_bits(m));
+                                            self.inner.handle_gossip_now(fullmsg);
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                    self.inner.handle_gossip_now(fullmsg);
                     did_something = true;
                 }
                 /*_________________________________________________________________________________________________________
@@ -1035,18 +1041,22 @@ impl Future for StakerNode {
 
                             if mtype == 0 {
                                 self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
+                                self.outer.handle_gossip_now(fullmsg);
                             } else if (mtype == 3) /*&& !self.is_validator*/ {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
                                     self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
+                                    self.outer.handle_gossip_now(fullmsg);
                                 }
                             } else if (mtype == 105) && !self.is_validator /* i */ {
                                 if Signature::recieve_signed_message(&mut m, &self.stkinfo).is_some() {
                                     self.randomstakers.push_front(bincode::deserialize::<NodeId>(&m).unwrap());
                                     self.randomstakers.pop_back();
+                                    self.outer.handle_gossip_now(fullmsg);
                                 }
                                 // add identity to known people and delete oldest maybe (VecDeque)
                             } else if (mtype == 112) && !self.is_validator /* p */ {
                                 self.laststkgossip.insert(m);
+                                self.outer.handle_gossip_now(fullmsg);
                             } else if (mtype == 114) && !self.is_validator /* r */ {
                                 let mut y = m[..8].to_vec();
                                 let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
@@ -1084,9 +1094,7 @@ impl Future for StakerNode {
                                     if self.queue[self.headshard].contains(&(who as usize)) {
                                         self.knownvalidators.insert(who,m.with_id(0));
                                     }
-                                    if self.comittee[self.headshard].contains(&(who as usize)) {
-                                        self.inner.join(m.with_id(1));
-                                    }
+                                    self.outer.handle_gossip_now(fullmsg);
                                 }
                             } else if (mtype == 121) /*&& !self.is_validator*/ /* y */ {
                                 let theirnum = u64::from_le_bytes(m.try_into().unwrap());
@@ -1106,12 +1114,11 @@ impl Future for StakerNode {
                                 println!("sending block {} of {}\t{:?}",self.bnum,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
                                 x.push(3);
                                 self.outer.dm(x,&vec![msg.id.node()],false);
-                            } else if (mtype == 113) && !self.is_validator /* q */ {
+                            } else if mtype == 113 /* q */ { // they just sent you a ring member
                                 self.rmems.insert(u64::from_le_bytes(m[64..72].try_into().unwrap()),History::read_raw(&m));
                             }
                         }
                     }
-                    self.inner.handle_gossip_now(fullmsg);
                     did_something = true;
                 }
                 if (self.waitingforleadertime.elapsed().as_secs() > 30) && self.waitingforleaderbool {
