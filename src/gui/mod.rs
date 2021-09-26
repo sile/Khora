@@ -41,7 +41,7 @@ pub struct TemplateApp {
     password: String,
     pswd_guess: String,
     pswd_shown: bool,
-    reset_shown: bool,
+    block_number: u64,
     delete_next_pswrd: bool,
     next_pswrd: String,
     panic_fee: String,
@@ -71,7 +71,7 @@ impl Default for TemplateApp {
             password: "".to_string(),
             pswd_guess: "password".to_string(),
             pswd_shown: true,
-            reset_shown: true,
+            block_number: 0,
             delete_next_pswrd: true,
             next_pswrd: "dont_make_this_passward".to_string(),
             panic_fee: "1".to_string(),
@@ -132,6 +132,8 @@ impl epi::App for TemplateApp {
                 self.staked = format!("{}",u64::from_le_bytes(i.try_into().unwrap()));
             } else if modification == 1 {
                 self.dont_trust_amounts = i.pop() == Some(0);
+            } else if modification == 2 {
+                self.block_number = u64::from_le_bytes(i.try_into().unwrap());
             } else if modification == u8::MAX {
                 if i.pop() == Some(0) {
                     self.addr = String::from_utf8_lossy(&i).to_string();
@@ -162,7 +164,7 @@ impl epi::App for TemplateApp {
             password,
             pswd_guess,
             pswd_shown,
-            reset_shown,
+            block_number,
             delete_next_pswrd,
             next_pswrd,
             panic_fee,
@@ -203,6 +205,7 @@ impl epi::App for TemplateApp {
                 "https://github.com/constantine1024/Kora",
                 "Source code."
             ));
+            ui.label(format!("current block: {}",block_number));
             ui.horizontal(|ui| {
                 if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
                     ui.output().copied_text = addr.clone();
@@ -275,13 +278,6 @@ impl epi::App for TemplateApp {
                 if ui.button("sync").clicked() {
                     sender.send(vec![121]).expect("something's wrong with communication from the gui");
                 }
-                // if pswd_guess == password {
-                //     if ui.button("toggle reset options").clicked() {
-                //         *reset_shown = !*reset_shown;
-                //     }
-                // } else {
-                //     *reset_shown = false;
-                // }
                 if ui.button("toggle password").clicked() {
                     *pswd_shown = !*pswd_shown;
                 }

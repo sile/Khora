@@ -563,6 +563,9 @@ impl StakerNode {
                 mymoney.push(0);
                 println!("my money:\n---------------------------------\n{:?}",mymoney);
                 self.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui");; // this is how you send info to the gui
+                let mut thisbnum = self.bnum.to_le_bytes().to_vec();
+                thisbnum.push(2);
+                self.gui_sender.send(thisbnum).expect("something's wrong with the communication to the gui");; // this is how you send info to the gui
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
                 if self.moneyreset.is_some() || self.stkreset.is_some() {
@@ -746,7 +749,7 @@ impl Future for StakerNode {
                                                     }
                                                 } else if (m.txs.len() == 0) && (m.emptyness.is_none()){
                                                     println!("going for empty block");
-                                                    let m = MultiSignature::gen_group_x(&self.key, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
+                                                    let m = MultiSignature::gen_group_x(&self.key).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
                                                     let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
                                                     m.push(4u8);
                                                     if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
@@ -805,7 +808,7 @@ impl Future for StakerNode {
                                     // println!("from the me: {:?}",mess);
                                     println!("you're trying to send a scalar!");
                                     for keylocation in self.keylocation.iter() {
-                                        let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &self.bnum, &mess, &xt).as_bytes().to_vec(), keylocation, &self.bnum);
+                                        let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &mess, &xt).as_bytes().to_vec(), keylocation, &self.bnum);
                                         m.push(6u8);
                                         if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
                                             if let Some(x) = self.leaderip {
@@ -999,7 +1002,7 @@ impl Future for StakerNode {
                 if (self.waitingforentrytime.elapsed().as_secs() > 5) && self.waitingforentrybool {
                     self.waitingforentrybool = false;
                     for keylocation in &self.keylocation {
-                        let m = MultiSignature::gen_group_x(&self.key, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
+                        let m = MultiSignature::gen_group_x(&self.key).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
                         let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
                         m.push(4u8);
                         if !self.comittee[self.headshard].iter().all(|&x| x as u64 != *keylocation) {
