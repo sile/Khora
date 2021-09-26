@@ -167,8 +167,6 @@ fn main() -> Result<(), MainError> {
             waitingforleadertime: Instant::now(),
             waitingforentrytime: Instant::now(),
             clogging: 0,
-            emitmessage: Instant::now(),
-            randomstakers: VecDeque::new(),
             headshard: 0,
             usurpingtime: Instant::now(),
             is_validator: false,
@@ -309,10 +307,8 @@ struct StakerNode {
     waitingforleadertime: Instant,
     waitingforentrytime: Instant,
     clogging: u64,
-    emitmessage: Instant,
     headshard: usize,
     usurpingtime: Instant,
-    randomstakers: VecDeque<NodeId>,
     is_validator: bool,
     is_staker: bool, // modify this depending on if staking??? is that already done?
     sent_onces: HashSet<Vec<u8>>,
@@ -382,7 +378,6 @@ impl StakerNode {
             waitingforleaderbool: false,
             waitingforleadertime: Instant::now(),
             waitingforentrytime: Instant::now(),
-            emitmessage: Instant::now(),
             usurpingtime: Instant::now(),
             txses: vec![], // if someone is not a leader for a really long time they'll have a wrongly long list of tx
             sigs: vec![],
@@ -412,7 +407,6 @@ impl StakerNode {
             sheight: sn.sheight,
             alltagsever: sn.alltagsever.clone(),
             headshard: sn.headshard.clone(),
-            randomstakers: VecDeque::new(),
             is_validator: false,
             is_staker: true,
             sent_onces: HashSet::new(), // maybe occasionally clear this or replace with vecdeq?
@@ -1044,13 +1038,6 @@ impl Future for StakerNode {
                                     self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
-                            } else if (mtype == 105) && !self.is_validator /* i */ {
-                                if Signature::recieve_signed_message(&mut m, &self.stkinfo).is_some() {
-                                    self.randomstakers.push_front(bincode::deserialize::<NodeId>(&m).unwrap());
-                                    self.randomstakers.pop_back();
-                                    self.outer.handle_gossip_now(fullmsg);
-                                }
-                                // add identity to known people and delete oldest maybe (VecDeque)
                             } else if (mtype == 114) && !self.is_validator /* r */ {
                                 let mut y = m[..8].to_vec();
                                 let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
@@ -1133,27 +1120,6 @@ impl Future for StakerNode {
                     } else {
                         self.leaderip = None;
                     }
-                }
-                /*____________________________________________________________________________________________________________________________________________________________________________________________________________________________
-                RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION -------------------|
-                ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION|
-                RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION -------------------|
-                ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION|
-                RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION -------------------|
-                ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION|
-                RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION -------------------|
-                ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION|
-                RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION -------------------|
-                ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION ------------------- RANDOM EMMISSION|
-                */////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-                if self.emitmessage.elapsed().as_secs() > 300 { // i don't even do anything with this rn (because it's all for the user)
-                    self.emitmessage = Instant::now();
-                    if self.clogging < 3000 { // 10 messages per second
-                        let mut m = Signature::sign_message(&self.key, &bincode::serialize(&self.outer.id().address()).unwrap(), &self.keylocation.iter().next().unwrap());
-                        m.push(105u8);
-                        self.outer.broadcast(m);
-                    }
-                    self.clogging = 0;
                 }
             }
 
