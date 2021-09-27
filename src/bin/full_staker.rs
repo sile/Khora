@@ -23,6 +23,7 @@ use curve25519_dalek::scalar::Scalar;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::TryInto;
 use std::time::{Duration, Instant};
+use std::borrow::Borrow;
 use kora::transaction::*;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use kora::constants::PEDERSEN_H;
@@ -575,6 +576,19 @@ impl StakerNode {
                 if self.bnum % 128 == 0 {
                     self.overthrown = HashSet::new();
                 }
+                let s = self.stkinfo.borrow();
+                self.txses.retain(|x| {
+                    if let Ok(x) = bincode::deserialize::<PolynomialTransaction>(x) {
+                        if x.inputs.last() == Some(&1) {
+                            x.verifystk(s).is_ok()
+                        } else {
+                            x.verify().is_ok()
+                        }
+                    } else {
+                        false
+                    }
+                });
+
                 self.sigs = vec![];
                 self.points = HashMap::new();
                 self.scalars = HashMap::new();
@@ -627,7 +641,6 @@ impl Future for StakerNode {
                     let mut m = Signature::sign_message_nonced(&self.key, &m, &self.newest,&self.bnum);
                     m.push(1u8);
                     self.inner.broadcast(m);
-                    self.txses = vec![];
                     self.timekeeper = Instant::now();
                     // if self.txses.len() == 0 {self.multisig = true;}
                     did_something = true;
@@ -986,7 +999,6 @@ impl Future for StakerNode {
                                 m.push(1u8);
                                 println!("a validator was corrupted I'm restarting this bitch");
                                 self.inner.broadcast(m);
-                                self.txses = vec![];
                                 self.timekeeper = Instant::now();
                             }
         
@@ -1569,24 +1581,23 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             self.inner.poll();
                             self.outer.poll();
                         }
-                    } else if istx == 100 /* d */ {
-                        let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-                        // let initial_history = vec![(leader,1u64)];
-                        let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-                        let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-                        let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-                        let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
-                        self.bnum = 0;
-                        self.lastbnum = 0;
-                        self.height = 0;
-                        self.sheight = 1;
-                        self.lastname = Scalar::one().as_bytes().to_vec();
-                        self.lastblock = NextBlock::default();
-                        self.queue = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
-                        self.exitqueue = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
-                        self.comittee = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>();
-                        self.stkinfo = initial_history.clone();
-
+                    // } else if istx == 100 /* d */ {
+                    //     let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+                    //     // let initial_history = vec![(leader,1u64)];
+                    //     let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+                    //     let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+                    //     let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+                    //     let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
+                    //     self.bnum = 0;
+                    //     self.lastbnum = 0;
+                    //     self.height = 0;
+                    //     self.sheight = 1;
+                    //     self.lastname = Scalar::one().as_bytes().to_vec();
+                    //     self.lastblock = NextBlock::default();
+                    //     self.queue = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
+                    //     self.exitqueue = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).collect::<VecDeque<usize>>()).collect::<Vec<_>>();
+                    //     self.comittee = (0..self.comittee.len()).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>();
+                    //     self.stkinfo = initial_history.clone();
                     } else if istx == 121 /* y */ {
                         let mut mynum = (self.bnum - (self.bnum > 0) as u64).to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
                         mynum.push(121);
