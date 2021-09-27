@@ -436,7 +436,13 @@ impl StakerNode {
                 Ok(_) => {self.save(); println!("block verified...")},
                 Err(x) => println!("Error in block verification: {}",x),
             };
-            if (lastblock.shards[0] as usize >= self.headshard) && (lastblock.last_name == self.lastname) && lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok() {
+            let v: bool;
+            if true {
+                v = lastblock.verify_single_thread(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok();
+            } else {
+                v = lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok()
+            }
+            if v && (lastblock.shards[0] as usize >= self.headshard) && (lastblock.last_name == self.lastname)  {
                 println!("smine: {:?}",self.smine);
                 println!("all outer push pears: {:?}",self.outer.plumtree_node().all_push_peers());
                 self.headshard = lastblock.shards[0] as usize;
