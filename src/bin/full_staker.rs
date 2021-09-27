@@ -1018,7 +1018,7 @@ impl Future for StakerNode {
                     }
                 }
                 // }
-                if (self.waitingforentrytime.elapsed().as_secs() > 5) && self.waitingforentrybool {
+                if self.waitingforentrybool && (self.waitingforentrytime.elapsed().as_secs() > 5) {
                     self.waitingforentrybool = false;
                     for keylocation in &self.keylocation {
                         let m = MultiSignature::gen_group_x(&self.key).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
@@ -1066,7 +1066,7 @@ impl Future for StakerNode {
                                 x.append(&mut y);
                                 x.push(113);
                                 self.outer.dm(x,&vec![msg.id.node()],false);
-                            } else if (mtype == 116) && !self.is_validator /* t */ { // this is totally untested
+                            } else if (mtype == 116) /* t */ /* thread this throughout runtime */{ // this is totally untested and you can't sync someone if youre going to be on the comittee it's a huge risk... do this in parts where you scan n blocks in a row then end for a bit (if not validating)
                                 let tsk = Scalar::from_canonical_bytes(m.try_into().unwrap()).unwrap();
                                 let mut location = 0u64;
                                 let mut allyours = vec![];
@@ -1079,7 +1079,7 @@ impl Future for StakerNode {
                                         let block = bincode::deserialize::<LightningSyncBlock>(&x).unwrap();
                                         println!("sending block {} of {}\t{:?}",b,self.bnum,block.last_name);
                                         let thisheight = block.info.txout.len() as u64;
-                                        let yours = block.info.txout.par_iter().enumerate().filter_map(|(i,a)| {
+                                        let yours = block.info.txout.iter().enumerate().filter_map(|(i,a)| {
                                             if a.track_ot(&tsk) {
                                                 Some((i as u64 + location,a.clone()))
                                             } else {
@@ -1197,11 +1197,11 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         while m.len() > 0 {
                             let mut pks = vec![];
                             for _ in 0..3 { // read the pk address
-                                let h1 = m.par_drain(..32).collect::<Vec<_>>().par_iter().map(|x| (x-97)).collect::<Vec<_>>();
-                                let h2 = m.par_drain(..32).collect::<Vec<_>>().par_iter().map(|x| (x-97)*16).collect::<Vec<_>>();
-                                pks.push(CompressedRistretto(h1.into_par_iter().zip(h2).map(|(x,y)|x+y).collect::<Vec<u8>>().try_into().unwrap()));
+                                let h1 = m.drain(..32).collect::<Vec<_>>().iter().map(|x| (x-97)).collect::<Vec<_>>();
+                                let h2 = m.drain(..32).collect::<Vec<_>>().iter().map(|x| (x-97)*16).collect::<Vec<_>>();
+                                pks.push(CompressedRistretto(h1.into_iter().zip(h2).map(|(x,y)|x+y).collect::<Vec<u8>>().try_into().unwrap()));
                             }
-                            let x: [u8;8] = m.par_drain(..8).collect::<Vec<_>>().try_into().unwrap();
+                            let x: [u8;8] = m.drain(..8).collect::<Vec<_>>().try_into().unwrap();
                             // println!("hi {:?}",x);
                             let x = u64::from_le_bytes(x);
                             println!("amounts {:?}",x);
@@ -1213,7 +1213,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
 
                         let mut txbin: Vec<u8>;
                         if txtype == 33 /* ! */ {
-                            let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.par_iter().map(|x|(x.0 as u64,x.1.clone())).unzip();
+                            let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(x.0,x.1.clone())).unzip();
 
                             if self.is_user {
                                 // let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &15, &self.height);
@@ -1221,11 +1221,11 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                                 /* this is where people send you the ring members */ 
                                 // let mut rlring = ring.into_par_iter().map(|x| OTAccount::summon_ota(&History::get(&x))).collect::<Vec<OTAccount>>();
                                 let rmems = &self.rmems;
-                                let mut rlring = ring.par_iter().map(|x| rmems[x].clone()).collect::<Vec<OTAccount>>();
+                                let mut rlring = ring.iter().map(|x| rmems[x].clone()).collect::<Vec<OTAccount>>();
                                 /* this is where people send you the ring members */ 
                                 let me = self.me;
-                                rlring.par_iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x.clone()) {*x = y;});
-                                let tx = Transaction::spend_ring(&rlring, &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
+                                rlring.iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x) {*x = y;});
+                                let tx = Transaction::spend_ring(&rlring, &outs.iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
                                 if tx.verify().is_ok() {
                                     let tx = tx.polyform(&self.rname);
                                     // tx.verify().unwrap(); // as a user you won't be able to check this
@@ -1236,24 +1236,24 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                                     println!("you can't make that transaction, user!");
                                 }
                             } else {
-                                let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &5, &self.height);
+                                let rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &5, &self.height);
                                 let ring = recieve_ring(&rname).expect("shouldn't fail");
                                 println!("ring: {:?}",ring);
                                 println!("mine: {:?}",acc.iter().map(|x|x.pk.compress()).collect::<Vec<_>>());
                                 // println!("ring: {:?}",ring.iter().map(|x|OTAccount::summon_ota(&History::get(&x)).pk.compress()).collect::<Vec<_>>());
                                 let mut rlring = ring.into_iter().map(|x| {
                                     let x = OTAccount::summon_ota(&History::get(&x));
-                                    if acc.par_iter().all(|a| a.pk != x.pk) {
+                                    if acc.iter().all(|a| a.pk != x.pk) {
                                         println!("not mine!");
                                         x
                                     } else {
                                         println!("mine!");
-                                        acc.par_iter().filter(|a| a.pk == x.pk).collect::<Vec<_>>()[0].to_owned()
+                                        acc.iter().filter(|a| a.pk == x.pk).collect::<Vec<_>>()[0].to_owned()
                                     }
                                 }).collect::<Vec<OTAccount>>();
                                 println!("ring len: {:?}",rlring.len());
                                 let me = self.me;
-                                rlring.par_iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x.clone()) {*x = y;});
+                                rlring.iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x) {*x = y;});
                                 let tx = Transaction::spend_ring(&rlring, &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
                                 let tx = tx.polyform(&rname);
                                 if tx.verify().is_ok() {
@@ -1266,13 +1266,13 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             }
                         } else {
                             println!("unstaking!");
-                            let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.par_iter().map(|x|(x[0] as u64,x[1].clone())).unzip();
+                            let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.iter().map(|x|(x[0] as u64,x[1].clone())).unzip();
                             let inps = amnt.into_iter().map(|x| self.me.receive_ot(&self.me.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
-                            let tx = Transaction::spend_ring(&inps, &outs.par_iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
+                            let tx = Transaction::spend_ring(&inps, &outs.iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
                             println!("about to verify!");
                             tx.verify().unwrap();
                             println!("finished to verify!");
-                            let mut loc = loc.into_par_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
+                            let mut loc = loc.into_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
                             loc.push(1);
                             let tx = tx.polyform(&loc); // push 0
                             if tx.verifystk(&self.stkinfo).is_ok() {
@@ -1314,10 +1314,10 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
 
 
                         if self.mine.len() > 0 {
-                            let (loc, _acc): (Vec<u64>,Vec<OTAccount>) = self.mine.par_iter().map(|x|(x.0 as u64,x.1.clone())).unzip();
+                            let (loc, _acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(x.0,x.1.clone())).unzip();
 
                             println!("remembered owned accounts");
-                            let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &(loc.len() as u16), &self.height);
+                            let rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &(loc.len() as u16), &self.height);
                             let ring = recieve_ring(&rname).expect("shouldn't fail");
 
                             println!("made rings");
@@ -1326,7 +1326,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             let mut rlring = ring.iter().map(|&x| self.mine.iter().filter(|&&(y,_)| y == x).collect::<Vec<_>>()[0].1.clone()).collect::<Vec<OTAccount>>();
                             /* this is where people send you the ring members */ 
                             let me = self.me;
-                            rlring.par_iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x.clone()) {*x = y;});
+                            rlring.iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x) {*x = y;});
                             let tx = Transaction::spend_ring(&rlring, &vec![(&newacc,&amnt)]);
 
                             println!("{:?}",rlring.iter().map(|x| x.com.amount).collect::<Vec<_>>());
@@ -1350,13 +1350,13 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
 
 
                         if self.smine.len() > 0 {
-                            let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.par_iter().map(|x|(x[0] as u64,x[1].clone())).unzip();
+                            let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.iter().map(|x|(x[0],x[1])).unzip();
                             let inps = amnt.into_iter().map(|x| self.me.receive_ot(&self.me.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
                             let tx = Transaction::spend_ring(&inps, &vec![(&newacc,&stkamnt)]);
                             println!("about to verify!");
                             tx.verify().unwrap();
                             println!("finished to verify!");
-                            let mut loc = loc.into_par_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
+                            let mut loc = loc.into_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
                             loc.push(1);
                             let tx = tx.polyform(&loc); // push 0
                             if tx.verifystk(&self.stkinfo).is_ok() {
@@ -1390,6 +1390,9 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                     }
                 }
             }
+
+
+            /* THIS CODE WILL NOT BE USED, ALL INTERACTIONS WILL BE THROUGH THE GUI */
             while let Async::Ready(Some(m)) = self.message_rx.poll().expect("Never fails") { // this would be for terminal (all the messages here are good)
                 if m.len() > 0 {
                     println!("# MESSAGE (sent): {:?}", m);
@@ -1629,6 +1632,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                 }
                 did_something = true;
             }
+            /* THIS CODE WILL NOT BE USED, ALL INTERACTIONS WILL BE THROUGH THE GUI */
 
 
 

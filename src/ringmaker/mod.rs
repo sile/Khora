@@ -1,5 +1,4 @@
 use rand::{Rng, distributions::Uniform};
-use rayon::prelude::*;
 use std::usize;
 use polynomial_over_finite_prime_field::PolynomialOverP;
 use modinverse::modinverse;
@@ -30,7 +29,7 @@ pub fn generate_ring(s: &Vec<usize>, r: &u16, now: &u64) -> Vec<u8> {
 
     /* h is the random number */
     let h: Vec<_> = (0..r).collect();
-    let h: Vec<_> = h.par_iter().map(|x| {
+    let h: Vec<_> = h.iter().map(|x| {
         hash(&(*x as u32)) as u64 
         % P as u64} ).collect();
     let ringmems_init = Uniform::new(0,r);
@@ -60,8 +59,8 @@ pub fn generate_ring(s: &Vec<usize>, r: &u16, now: &u64) -> Vec<u8> {
     let justx = PolynomialOverP::<i128>::new(vec![0, 1], P);
     let mut poly = PolynomialOverP::<i128>::new(vec![], P);
     for (x, y) in j.iter().zip(y) {
-        let mut term = y.clone(); //1+2x+3x^2
-        for xi in j.clone() {
+        let mut term = y; //1+2x+3x^2
+        for &xi in j.iter() {
             if *x != xi {
                 let mut top = PolynomialOverP::<i128>::new(vec![xi as i128], P);
                 top = justx.clone() - top;
@@ -94,7 +93,7 @@ pub fn generate_ring(s: &Vec<usize>, r: &u16, now: &u64) -> Vec<u8> {
     //         places.push(0);
     //     }
     // }
-    // let a: Vec<Option<usize>> = s.par_iter().map(
+    // let a: Vec<Option<usize>> = s.iter().map(
     //     |x| places.iter().position(
     //         |y| y.clone() as usize == x.clone()
     //     )
@@ -138,11 +137,11 @@ pub fn recieve_ring(recieved: &Vec<u8>) -> Result<Vec<u64>,&'static str> {
     let mut recieved = recieved.to_owned();
     /* send the info over */
     if recieved.pop() == Some(0) {
-        let r_bytes: Vec<u8> = recieved.par_drain(..2).collect(); //u16
+        let r_bytes: Vec<u8> = recieved.drain(..2).collect(); //u16
         let r_bytes: Result<[u8;2],_> = r_bytes.try_into();
         let r = u16::from_le_bytes(r_bytes.unwrap());
 
-        let now_bytes: Vec<u8> = recieved.par_drain(..8).collect(); //u32
+        let now_bytes: Vec<u8> = recieved.drain(..8).collect(); //u32
         let now_bytes: Result<[u8;8],_> = now_bytes.try_into();
         let now = u64::from_le_bytes(now_bytes.unwrap()) as i128;
 
@@ -150,17 +149,17 @@ pub fn recieve_ring(recieved: &Vec<u8>) -> Result<Vec<u64>,&'static str> {
 
         let mut coefficients = Vec::<u64>::new();
         while recieved.len() > 0 {
-            let ci: Vec<u8> = recieved.par_drain(..8).collect();
+            let ci: Vec<u8> = recieved.drain(..8).collect();
             let ci: [u8;8] = ci.try_into().unwrap();
             coefficients.push(u64::from_le_bytes(ci));
         }
 
 
-        let coefficients = coefficients.par_iter().map(|x| *x as i128).collect();
+        let coefficients = coefficients.iter().map(|x| *x as i128).collect();
         let poly = PolynomialOverP::<i128>::new(coefficients, P);
         /* these next 2 paragraphs of comments are good */
         let throwaway: Vec<_> = (0..r).collect();
-        let h: Vec<_> = throwaway.par_iter().map(|x| {hash(&(*x as u32)) as u64 % P as u64} ).collect();
+        let h: Vec<_> = throwaway.iter().map(|x| {hash(&(*x as u32)) as u64 % P as u64} ).collect();
         let mut places = Vec::<i128>::new();
         for x in 0..r {
             let mut throwaway = poly.eval(&(x as i128));

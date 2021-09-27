@@ -77,7 +77,7 @@ impl Transaction {
         outputs.pop(); // let's move this into the seal function to make it prettier
         Transaction{
             inputs ,
-            outputs: outputs.par_iter().map(|x| x.publish_offer()).collect::<Vec<_>>(),
+            outputs: outputs.iter().map(|x| x.publish_offer()).collect::<Vec<_>>(),
             tags: tagelem,
             seal,
             fee: u64::from_le_bytes(fee_amount.as_bytes()[..8].try_into().unwrap()),
@@ -85,13 +85,13 @@ impl Transaction {
     }
     
     pub fn spend_ring(inring: &Vec<OTAccount>, recipients: &Vec<(&Account, &Scalar)>) -> Transaction{
-        let (poss,inamnt): (Vec<usize>,Vec<Scalar>) = inring.par_iter().enumerate().filter_map(|(i,a)|if let Some(x) = a.com.amount {Some((i,x))} else {None}).unzip();
+        let (poss,inamnt): (Vec<usize>,Vec<Scalar>) = inring.iter().enumerate().filter_map(|(i,a)|if let Some(x) = a.com.amount {Some((i,x))} else {None}).unzip();
 
         // println!("in amount: {:?}",inamnt);
 
         let ring = inring.to_owned();
-        let fee_amount = inamnt.into_par_iter().sum::<Scalar>() - recipients.par_iter().map(|(_,y)| y.to_owned()).sum::<Scalar>();
-        let mut outputs = recipients.into_par_iter().map(|(rcpt,amout)|
+        let fee_amount = inamnt.into_iter().sum::<Scalar>() - recipients.iter().map(|(_,y)| y.to_owned()).sum::<Scalar>();
+        let mut outputs = recipients.into_iter().map(|(rcpt,amout)|
             if rcpt.vpk == RISTRETTO_BASEPOINT_POINT {rcpt.derive_stk_ot(amout)}
             else {rcpt.derive_ot(amout)}
         ).collect::<Vec<OTAccount>>();
@@ -109,7 +109,7 @@ impl Transaction {
         let seal = SealSig::sign(&mut tr, &sigin, &tags, &poss, &sigout).expect("Not able sign tx");
         outputs.pop();
 
-        outputs.par_iter_mut().for_each(|x| {*x = x.publish_offer();});
+        outputs.iter_mut().for_each(|x| {*x = x.publish_offer();});
         Transaction{
             inputs ,
             outputs,
@@ -122,12 +122,12 @@ impl Transaction {
 
     pub fn verify(&self) -> Result<(), TransactionError> {
         let mut tr = Transcript::new(b"seal tx");
-        let inputs: Vec<&OTAccount> = self.inputs.par_iter().map(|a| a).collect();
-        let tags: Vec<&Tag> = self.tags.par_iter().map(|a| a).collect();
+        let inputs: Vec<&OTAccount> = self.inputs.iter().map(|a| a).collect();
+        let tags: Vec<&Tag> = self.tags.iter().map(|a| a).collect();
         
         let mut outputs = self.outputs.clone();
         outputs.push(fee_ota(&Scalar::from(self.fee)));
-        let outputs: Vec<&OTAccount> = outputs.par_iter().map(|a|a).collect();
+        let outputs: Vec<&OTAccount> = outputs.iter().map(|a|a).collect();
         
         let b = self.seal.verify(&mut tr, &inputs, &tags, &outputs);
 
@@ -181,12 +181,12 @@ impl PartialEq for PolynomialTransaction {
 impl PolynomialTransaction {
     pub fn verify_ram(&self,history:&Vec<OTAccount>) -> Result<(), TransactionError> {
         let mut tr = Transcript::new(b"seal tx");
-        let tags: Vec<&Tag> = self.tags.par_iter().map(|a| a).collect();
+        let tags: Vec<&Tag> = self.tags.iter().map(|a| a).collect();
         if let Ok(i) = recieve_ring(&self.inputs) {
-            let inputs: Vec<&OTAccount> = i.par_iter().map(|x| &history[*x as usize]).collect();        
+            let inputs: Vec<&OTAccount> = i.iter().map(|x| &history[*x as usize]).collect();        
             let mut outputs = self.outputs.clone();
             outputs.push(fee_ota(&Scalar::from(self.fee)));
-            let outputs: Vec<&OTAccount> = outputs.par_iter().map(|a|a).collect();
+            let outputs: Vec<&OTAccount> = outputs.iter().map(|a|a).collect();
             
             let b = self.seal.verify(&mut tr, &inputs, &tags, &outputs);
 
@@ -201,14 +201,14 @@ impl PolynomialTransaction {
 
     pub fn verify(&self) -> Result<(), TransactionError> {
         let mut tr = Transcript::new(b"seal tx");
-        let tags: Vec<&Tag> = self.tags.par_iter().map(|a| a).collect();
+        let tags: Vec<&Tag> = self.tags.iter().map(|a| a).collect();
         if let Ok(i) = recieve_ring(&self.inputs) {
-            let inputs = i.par_iter().map(|x| OTAccount::summon_ota(&History::get(x))).collect::<Vec<OTAccount>>();        
+            let inputs = i.iter().map(|x| OTAccount::summon_ota(&History::get(x))).collect::<Vec<OTAccount>>();        
             let mut outputs = self.outputs.clone();
             outputs.push(fee_ota(&Scalar::from(self.fee)));
-            let outputs: Vec<&OTAccount> = outputs.par_iter().map(|a|a).collect();
+            let outputs: Vec<&OTAccount> = outputs.iter().map(|a|a).collect();
             
-            let b = self.seal.verify(&mut tr, &inputs.par_iter().collect::<Vec<_>>(), &tags, &outputs);
+            let b = self.seal.verify(&mut tr, &inputs.iter().collect::<Vec<_>>(), &tags, &outputs);
 
             match b {
                 Ok(()) => Ok(()),
@@ -221,12 +221,12 @@ impl PolynomialTransaction {
 
     pub fn verifystk(&self,history:&Vec<(CompressedRistretto,u64)>) -> Result<(), TransactionError> {
         let mut tr = Transcript::new(b"seal tx");
-        let tags: Vec<&Tag> = self.tags.par_iter().map(|a| a).collect();
+        let tags: Vec<&Tag> = self.tags.iter().map(|a| a).collect();
         // println!("history {}: {:?}",history.len(),history);
         let mut i = self.inputs.clone();
         if i.pop() == Some(1) {
-            let places = i.par_chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap()) as usize).collect::<Vec<_>>();
-            if !places[1..].par_iter().enumerate().all(|(i,&x)| x > places[i]) {
+            let places = i.chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap()) as usize).collect::<Vec<_>>();
+            if !places[1..].iter().enumerate().all(|(i,&x)| x > places[i]) {
                 return Err(TransactionError::InvalidTransaction)
             }
             let mut input = vec![];
@@ -241,9 +241,9 @@ impl PolynomialTransaction {
 
             let mut outputs = self.outputs.clone();
             outputs.push(fee_ota(&Scalar::from(self.fee)));
-            let outputs: Vec<&OTAccount> = outputs.par_iter().map(|a|a).collect();
+            let outputs: Vec<&OTAccount> = outputs.iter().map(|a|a).collect();
             
-            let b = self.seal.verify(&mut tr, &input.par_iter().collect::<Vec<_>>(), &tags, &outputs);
+            let b = self.seal.verify(&mut tr, &input.iter().collect::<Vec<_>>(), &tags, &outputs);
 
             match b {
                 Ok(()) => Ok(()),
