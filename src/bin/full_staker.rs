@@ -437,12 +437,16 @@ impl StakerNode {
                 Err(x) => println!("Error in block verification: {}",x),
             };
             let v: bool;
-            if true {
-                v = lastblock.verify_single_thread(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok();
+            if (lastblock.shards[0] as usize >= self.headshard) && (lastblock.last_name == self.lastname) {
+                if self.is_validator {
+                    v = lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok();
+                } else {
+                    v = lastblock.verify_single_thread(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok()
+                }
             } else {
-                v = lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok()
+                v = false;
             }
-            if v && (lastblock.shards[0] as usize >= self.headshard) && (lastblock.last_name == self.lastname)  {
+            if v  {
                 println!("smine: {:?}",self.smine);
                 println!("all outer push pears: {:?}",self.outer.plumtree_node().all_push_peers());
                 self.headshard = lastblock.shards[0] as usize;
@@ -560,10 +564,10 @@ impl StakerNode {
                 mymoney.extend(self.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
                 mymoney.push(0);
                 println!("my money:\n---------------------------------\n{:?}",mymoney);
-                self.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui");; // this is how you send info to the gui
+                self.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
                 let mut thisbnum = self.bnum.to_le_bytes().to_vec();
                 thisbnum.push(2);
-                self.gui_sender.send(thisbnum).expect("something's wrong with the communication to the gui");; // this is how you send info to the gui
+                self.gui_sender.send(thisbnum).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
                 if self.moneyreset.is_some() || self.stkreset.is_some() {
@@ -1051,7 +1055,7 @@ impl Future for StakerNode {
                             if mtype == 0 {
                                 self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
                                 self.outer.handle_gossip_now(fullmsg);
-                            } else if (mtype == 3) /*&& !self.is_validator*/ {
+                            } else if mtype == 3 {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
                                     self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
                                     self.outer.handle_gossip_now(fullmsg);
@@ -1582,11 +1586,11 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
 
                         // add sync request button and rotor and timer tp cycle through friends to sync in dm
 
-                    } else if istx == 112 /* p */ { // exhausts action queues hopefully
-                        for _ in 0..1000 {
-                            self.inner.poll();
-                            self.outer.poll();
-                        }
+                    // } else if istx == 112 /* p */ { // exhausts action queues hopefully
+                    //     for _ in 0..1000 {
+                    //         self.inner.poll();
+                    //         self.outer.poll();
+                    //     }
                     // } else if istx == 100 /* d */ {
                     //     let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
                     //     // let initial_history = vec![(leader,1u64)];
