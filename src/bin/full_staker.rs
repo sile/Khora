@@ -928,90 +928,102 @@ impl Future for StakerNode {
         
                     }
                     let k = self.scalars.keys().collect::<HashSet<_>>();
-                    if self.points.get(&usize::MAX).is_some() && (self.timekeeper.elapsed().as_secs() > 2) && (self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > SIGNING_CUTOFF) {
-                        let sumpt = self.points.remove(&usize::MAX).unwrap();
-        
-                        let keys = self.points.clone();
-                        let mut keys = keys.keys().collect::<Vec<_>>();
-                        let mut m = self.leader.as_bytes().to_vec();
-                        m.extend(&self.lastname);
-                        m.extend(&(self.headshard as u16).to_le_bytes().to_vec());
-                        let mut s = Sha3_512::new();
-                        s.update(&m);
-                        s.update(sumpt.compress().as_bytes());
-                        let e = Scalar::from_hash(s);
-
-                        // println!("keys: {:?}",keys);
-                        let k = keys.len();
-                        keys.retain(|&x|
-                            if self.scalars.contains_key(&x) {
-                                (self.points[x] + e*self.stkinfo[*x].0.decompress().unwrap() == self.scalars[x]*PEDERSEN_H()) && self.comittee[self.headshard].contains(x)
-                            } else {
-                                false
-                            }
-                        );
-                        if k == keys.len() {
-                            let failed_validators = self.comittee[self.headshard].iter().enumerate().filter_map(|(i,x)|
-                                if self.points.contains_key(x) {
-                                    None
-                                } else {
-                                    Some(i as u8)
-                                }
-                            ).collect::<Vec<_>>();
-                            // println!("e: {:?}",e);
-                            // println!("y: {:?}",self.scalars.values().map(|x| *x).sum::<Scalar>());
-                            // println!("x: {:?}",sumpt.compress());
-                            // println!("not who: {:?}",failed_validators); // <-------this is fucked up somehow
-                            // println!("comittee: {:?}",self.comittee[self.headshard]);
-                            let mut lastblock = NextBlock::default();
-                            lastblock.bnum = self.bnum;
-                            lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});
-                            lastblock.last_name = self.lastname.clone();
-                            lastblock.shards = vec![self.headshard as u16];
+                    if self.points.get(&usize::MAX).is_some() && (self.timekeeper.elapsed().as_secs() > 2) {
+                        if self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > SIGNING_CUTOFF {
+                            let sumpt = self.points.remove(&usize::MAX).unwrap();
             
-                            
-                            let m = vec![BLOCK_KEYWORD.to_vec(),(self.headshard as u16).to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.lastname.clone(),bincode::serialize(&lastblock.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+                            let keys = self.points.clone();
+                            let mut keys = keys.keys().collect::<Vec<_>>();
+                            let mut m = self.leader.as_bytes().to_vec();
+                            m.extend(&self.lastname);
+                            m.extend(&(self.headshard as u16).to_le_bytes().to_vec());
                             let mut s = Sha3_512::new();
                             s.update(&m);
-                            let leader = Signature::sign(&self.key, &mut s,&self.keylocation.iter().next().unwrap());
-                            lastblock.leader = leader;
+                            s.update(sumpt.compress().as_bytes());
+                            let e = Scalar::from_hash(s);
 
-                            // println!("sum of points is accurate: {}",sumpt == self.points.iter().map(|x| x.1).sum());
-                            if lastblock.verify(&self.comittee[self.headshard].iter().map(|x| *x as u64).collect(),&self.stkinfo).is_ok() {
-                                println!("block verified!");
-                                let mut m = bincode::serialize(&lastblock).unwrap();
-                                println!("sending off block {}!!!",lastblock.bnum);
-                                m.push(3u8);
-                                self.inner.broadcast(m);
-                            } else {
-                                println!("block NOT verified... this shouldn't happen... restarting this selection stuff");
-                            }
-                            self.points = HashMap::new();
-                            self.scalars = HashMap::new();
-                            self.sigs = vec![];
-                            
-                            self.timekeeper = Instant::now();
-                        } else { // need an extra round to weed out liers
-                            let points = keys.iter().map(|x| self.points[x]).collect::<Vec<_>>();
-                            if keys.len() > SIGNING_CUTOFF {
-                                let p = MultiSignature::sum_group_x(&points);
-                                self.points.insert(usize::MAX,p.decompress().unwrap());
-                                let mut m = p.as_bytes().to_vec();
-                                m.push(5u8);
-                                self.inner.broadcast(m);
-                                self.points = keys.iter().map(|&x| (*x,self.points[x])).collect::<HashMap<_,_>>();
+                            // println!("keys: {:?}",keys);
+                            let k = keys.len();
+                            keys.retain(|&x|
+                                if self.scalars.contains_key(&x) {
+                                    (self.points[x] + e*self.stkinfo[*x].0.decompress().unwrap() == self.scalars[x]*PEDERSEN_H()) && self.comittee[self.headshard].contains(x)
+                                } else {
+                                    false
+                                }
+                            );
+                            if k == keys.len() {
+                                let failed_validators = self.comittee[self.headshard].iter().enumerate().filter_map(|(i,x)|
+                                    if self.points.contains_key(x) {
+                                        None
+                                    } else {
+                                        Some(i as u8)
+                                    }
+                                ).collect::<Vec<_>>();
+                                // println!("e: {:?}",e);
+                                // println!("y: {:?}",self.scalars.values().map(|x| *x).sum::<Scalar>());
+                                // println!("x: {:?}",sumpt.compress());
+                                // println!("not who: {:?}",failed_validators); // <-------this is fucked up somehow
+                                // println!("comittee: {:?}",self.comittee[self.headshard]);
+                                let mut lastblock = NextBlock::default();
+                                lastblock.bnum = self.bnum;
+                                lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});
+                                lastblock.last_name = self.lastname.clone();
+                                lastblock.shards = vec![self.headshard as u16];
+                
+                                
+                                let m = vec![BLOCK_KEYWORD.to_vec(),(self.headshard as u16).to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.lastname.clone(),bincode::serialize(&lastblock.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+                                let mut s = Sha3_512::new();
+                                s.update(&m);
+                                let leader = Signature::sign(&self.key, &mut s,&self.keylocation.iter().next().unwrap());
+                                lastblock.leader = leader;
+
+                                // println!("sum of points is accurate: {}",sumpt == self.points.iter().map(|x| x.1).sum());
+                                if lastblock.verify(&self.comittee[self.headshard].iter().map(|x| *x as u64).collect(),&self.stkinfo).is_ok() {
+                                    println!("block verified!");
+                                    let mut m = bincode::serialize(&lastblock).unwrap();
+                                    println!("sending off block {}!!!",lastblock.bnum);
+                                    m.push(3u8);
+                                    self.inner.broadcast(m);
+                                } else {
+                                    println!("block NOT verified... this shouldn't happen... restarting this selection stuff");
+                                }
+                                self.points = HashMap::new();
                                 self.scalars = HashMap::new();
-                                self.timekeeper -= Duration::from_secs(1);
-                            } else {
-                                // this would make them switch away from points (they dont have enough points anyways...)
-                                let m = bincode::serialize(&vec![bincode::serialize(&PolynomialTransaction::default()).unwrap()]).unwrap(); // Is that good? I means we expect the validators to be willing to sign 2 blocks...? Leader could double spend until disproved path in next block
-                                let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
-                                m.push(1u8);
-                                println!("a validator was corrupted I'm restarting this bitch");
-                                self.inner.broadcast(m);
+                                self.sigs = vec![];
+                                
                                 self.timekeeper = Instant::now();
+                            } else { // need an extra round to weed out liers
+                                let points = keys.iter().map(|x| self.points[x]).collect::<Vec<_>>();
+                                if keys.len() > SIGNING_CUTOFF {
+                                    let p = MultiSignature::sum_group_x(&points);
+                                    self.points.insert(usize::MAX,p.decompress().unwrap());
+                                    let mut m = p.as_bytes().to_vec();
+                                    m.push(5u8);
+                                    self.inner.broadcast(m);
+                                    self.points = keys.iter().map(|&x| (*x,self.points[x])).collect::<HashMap<_,_>>();
+                                    self.scalars = HashMap::new();
+                                    self.timekeeper -= Duration::from_secs(1);
+                                } else {
+                                    // this would make them switch away from points (they dont have enough points anyways...)
+                                    let m = bincode::serialize(&vec![bincode::serialize(&PolynomialTransaction::default()).unwrap()]).unwrap(); // Is that good? I means we expect the validators to be willing to sign 2 blocks...? Leader could double spend until disproved path in next block
+                                    let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
+                                    m.push(1u8);
+                                    println!("a validator was corrupted I'm restarting this bitch");
+                                    self.inner.broadcast(m);
+                                    self.timekeeper = Instant::now();
+                                }
+            
                             }
-        
+                        } else {
+                            self.points.remove(&usize::MAX);
+                            let points = self.points.par_iter().map(|x| *x.1).collect::<Vec<_>>();
+                            let mut m = MultiSignature::sum_group_x(&points).as_bytes().to_vec();
+                            m.push(5u8);
+                            self.inner.broadcast(m);
+                            // self.points = HashMap::new();
+                            self.points.insert(usize::MAX,MultiSignature::sum_group_x(&points).decompress().unwrap());
+                            println!("scalar time!");
+                            self.timekeeper = Instant::now() - Duration::from_secs(2);
                         }
                         did_something = true;
         
@@ -1024,7 +1036,7 @@ impl Future for StakerNode {
                         let m = MultiSignature::gen_group_x(&self.key).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
                         let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
                         m.push(4u8);
-                        if !self.comittee[self.headshard].iter().all(|&x| x as u64 != *keylocation) {
+                        if self.comittee[self.headshard].contains(&(*keylocation as usize)) {
                             println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
                             self.inner.broadcast(m);
                         }
