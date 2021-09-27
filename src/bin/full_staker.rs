@@ -108,8 +108,9 @@ fn main() -> Result<(), MainError> {
         // let initial_history = vec![(leader,1u64)];
         let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
+        let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64)];
+        // let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        // let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
 
 
         let me = Account::new(&format!("{}",pswrd));
@@ -185,6 +186,13 @@ fn main() -> Result<(), MainError> {
             gui_reciever: urecv,
             moneyreset: None,
             stkreset: None,
+            scan_tsk: None,
+            scan_location: 0u64,
+            scan_allyours: vec![],
+            scan_returnaddr: None,
+            scan_block: 0u64,
+            sync_returnaddr: None,
+            sync_theirnum: 0u64,
         };
     } else {
         node = StakerNode::load(frontnode, backnode, message_rx, usend, urecv);
@@ -234,6 +242,7 @@ fn main() -> Result<(), MainError> {
     });
     eframe::run_native(Box::new(app), native_options);
     println!("ending!");
+    // add save node command somehow or add that as exit thing and add wait for saved signal here
     Ok(())
 }
 
@@ -323,6 +332,13 @@ struct StakerNode {
     is_user: bool,
     moneyreset: Option<Vec<u8>>,
     stkreset: Option<Vec<u8>>,
+    scan_tsk: Option<Scalar>,
+    scan_location: u64,
+    scan_allyours: Vec<(u64, OTAccount)>,
+    scan_returnaddr: Option<NodeId>,
+    scan_block: u64,
+    sync_returnaddr: Option<NodeId>,
+    sync_theirnum: u64,
 }
 impl StakerNode {
     fn save(&self) {
@@ -421,6 +437,13 @@ impl StakerNode {
             is_user: sn.is_user,
             moneyreset: sn.moneyreset,
             stkreset: sn.stkreset,
+            scan_tsk: None,
+            scan_location: 0u64,
+            scan_allyours: vec![],
+            scan_returnaddr: None,
+            scan_block: 0u64,
+            sync_returnaddr: None,
+            sync_theirnum: 0u64,
         }
     }
     fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) {
@@ -1054,7 +1077,60 @@ impl Future for StakerNode {
         |--0| STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::|/
         |--0| ::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF/
              \*/
-            if self.is_staker {
+            if self.is_staker { // users have is_staker true
+                if let Some(tsk) = self.scan_tsk {
+                    for b in self.scan_block..std::cmp::min(self.scan_block+10, self.bnum) {
+                        let file = format!("blocks/l{}",b);
+                        println!("checking for file {:?}...",file);
+                        if let Ok(mut file) = File::open(file) {
+                            let mut x = vec![];
+                            file.read_to_end(&mut x).unwrap();
+                            let block = bincode::deserialize::<LightningSyncBlock>(&x).unwrap();
+                            println!("sending block {} of {}\t{:?}",b,self.bnum,block.last_name);
+                            let thisheight = block.info.txout.len() as u64;
+                            let yours = block.info.txout.iter().enumerate().filter_map(|(i,a)| {
+                                if a.track_ot(&tsk) {
+                                    Some((i as u64 + self.scan_location,a.clone()))
+                                } else {
+                                    None
+                                }
+                            }).collect::<Vec<_>>();
+                            self.scan_allyours.par_extend(yours);
+                            self.scan_location += thisheight;
+                        }
+                        self.scan_block += 1;
+                    }
+                    if self.scan_block == self.bnum {
+                        let mut m = bincode::serialize(&self.scan_allyours).unwrap();
+                        m.push(36);
+                        self.outer.dm(m,&vec![self.scan_returnaddr.unwrap()],false);
+                        self.scan_tsk = None;
+                    }
+                }
+                if let Some(addr) = self.sync_returnaddr {
+                    for b in self.sync_theirnum..std::cmp::min(self.sync_theirnum+10, self.bnum) {
+                        let file = format!("blocks/b{}",b);
+                        println!("checking for file {:?}...",file);
+                        if let Ok(mut file) = File::open(file) {
+                            let mut x = vec![];
+                            file.read_to_end(&mut x).unwrap();
+                            println!("sending block {} of {}\t{:?}",b,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
+                            x.push(3);
+                            self.outer.dm(x,&vec![addr],false);
+                        }
+                        self.sync_theirnum += 1;
+                    }
+                    if self.sync_theirnum == self.bnum {
+                        let mut x = bincode::serialize(&self.lastblock).unwrap();
+                        println!("sending block {} of {}\t{:?}",self.bnum,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
+                        x.push(3);
+                        self.outer.dm(x,&vec![addr],false);
+                        self.sync_returnaddr = None;
+                    }
+                }
+
+
+
                 while let Async::Ready(Some(fullmsg)) = track_try_unwrap!(self.outer.poll()) {
                     let msg = fullmsg.message.clone();
                     if !self.bannedlist.contains(&msg.id.node()) {
@@ -1072,37 +1148,24 @@ impl Future for StakerNode {
                                     self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
-                            } else if (mtype == 114) && !self.is_validator /* r */ {
+                            } else if mtype == 36 /* $ */ { // they just scanned for you with the tsk
+                                self.mine = bincode::deserialize::<Vec<(u64, OTAccount)>>(&m).unwrap();
+                            } else if mtype == 113 /* q */ { // they just sent you a ring member
+                                self.rmems.insert(u64::from_le_bytes(m[64..72].try_into().unwrap()),History::read_raw(&m));
+                            } else if (mtype == 114) /* r */ {
                                 let mut y = m[..8].to_vec();
                                 let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
                                 x.append(&mut y);
                                 x.push(113);
                                 self.outer.dm(x,&vec![msg.id.node()],false);
-                            } else if (mtype == 116) /* t */ /* thread this throughout runtime, accept 1 at a time? */ { // this is totally untested and you can't sync someone if youre going to be on the comittee it's a huge risk... do this in parts where you scan n blocks in a row then end for a bit (if not validating)
-                                let tsk = Scalar::from_canonical_bytes(m.try_into().unwrap()).unwrap();
-                                let mut location = 0u64;
-                                let mut allyours = vec![];
-                                for b in 0..=self.bnum {
-                                    let file = format!("blocks/l{}",b);
-                                    println!("checking for file {:?}...",file);
-                                    if let Ok(mut file) = File::open(file) {
-                                        let mut x = vec![];
-                                        file.read_to_end(&mut x).unwrap();
-                                        let block = bincode::deserialize::<LightningSyncBlock>(&x).unwrap();
-                                        println!("sending block {} of {}\t{:?}",b,self.bnum,block.last_name);
-                                        let thisheight = block.info.txout.len() as u64;
-                                        let yours = block.info.txout.iter().enumerate().filter_map(|(i,a)| {
-                                            if a.track_ot(&tsk) {
-                                                Some((i as u64 + location,a.clone()))
-                                            } else {
-                                                None
-                                            }
-                                        }).collect::<Vec<_>>();
-                                        allyours.par_extend(yours);
-                                        location += thisheight;
-                                    }
+                            } else if (mtype == 116) /* t */ {
+                                if self.scan_tsk.is_none() {
+                                    self.scan_tsk = Some(Scalar::from_canonical_bytes(m.try_into().unwrap()).unwrap());
+                                    self.scan_block = 0u64;
+                                    self.scan_location = 0u64;
+                                    self.scan_allyours = vec![];
+                                    self.scan_returnaddr = Some(msg.id.node());
                                 }
-                                self.outer.dm(bincode::serialize(&allyours).unwrap(),&vec![msg.id.node()],false);
                             } else if mtype == 118 /* v */ {
                                 if let Some(who) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
                                     let m = bincode::deserialize::<NodeId>(&m).unwrap();
@@ -1112,25 +1175,25 @@ impl Future for StakerNode {
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
                             } else if (mtype == 121) /*&& !self.is_validator*/ /* y */ {
-                                let theirnum = u64::from_le_bytes(m.try_into().unwrap());
-                                println!("they're at {}, syncing them...",theirnum);
-                                for b in theirnum+1..=self.bnum {
-                                    let file = format!("blocks/b{}",b);
-                                    println!("checking for file {:?}...",file);
-                                    if let Ok(mut file) = File::open(file) {
-                                        let mut x = vec![];
-                                        file.read_to_end(&mut x).unwrap();
-                                        println!("sending block {} of {}\t{:?}",b,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
-                                        x.push(3);
-                                        self.outer.dm(x,&vec![msg.id.node()],false);
-                                    }
-                                }
-                                let mut x = bincode::serialize(&self.lastblock).unwrap();
-                                println!("sending block {} of {}\t{:?}",self.bnum,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
-                                x.push(3);
-                                self.outer.dm(x,&vec![msg.id.node()],false);
-                            } else if mtype == 113 /* q */ { // they just sent you a ring member
-                                self.rmems.insert(u64::from_le_bytes(m[64..72].try_into().unwrap()),History::read_raw(&m));
+                                self.sync_returnaddr = Some(msg.id.node());
+                                self.sync_theirnum = u64::from_le_bytes(m.try_into().unwrap());
+                                // let theirnum = u64::from_le_bytes(m.try_into().unwrap());
+                                // println!("they're at {}, syncing them...",theirnum);
+                                // for b in theirnum+1..=self.bnum {
+                                //     let file = format!("blocks/b{}",b);
+                                //     println!("checking for file {:?}...",file);
+                                //     if let Ok(mut file) = File::open(file) {
+                                //         let mut x = vec![];
+                                //         file.read_to_end(&mut x).unwrap();
+                                //         println!("sending block {} of {}\t{:?}",b,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
+                                //         x.push(3);
+                                //         self.outer.dm(x,&vec![msg.id.node()],false);
+                                //     }
+                                // }
+                                // let mut x = bincode::serialize(&self.lastblock).unwrap();
+                                // println!("sending block {} of {}\t{:?}",self.bnum,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
+                                // x.push(3);
+                                // self.outer.dm(x,&vec![msg.id.node()],false);
                             }
                         }
                     }
@@ -1309,7 +1372,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             self.outer.broadcast_now(txbin);
                         }
                     } else if istx == 121 /* y */ {
-                        let mut mynum = (self.bnum - (self.bnum > 0) as u64).to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
+                        let mut mynum = self.bnum.to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
                         mynum.push(121);
                         let mut friend = self.outer.hyparview_node().active_view().to_vec();
                         friend.extend(self.outer.hyparview_node().passive_view().to_vec());
