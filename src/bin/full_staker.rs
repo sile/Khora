@@ -1066,7 +1066,7 @@ impl Future for StakerNode {
                                 x.append(&mut y);
                                 x.push(113);
                                 self.outer.dm(x,&vec![msg.id.node()],false);
-                            } else if (mtype == 116) /* t */ /* thread this throughout runtime */{ // this is totally untested and you can't sync someone if youre going to be on the comittee it's a huge risk... do this in parts where you scan n blocks in a row then end for a bit (if not validating)
+                            } else if (mtype == 116) /* t */ /* thread this throughout runtime, accept 1 at a time? */ { // this is totally untested and you can't sync someone if youre going to be on the comittee it's a huge risk... do this in parts where you scan n blocks in a row then end for a bit (if not validating)
                                 let tsk = Scalar::from_canonical_bytes(m.try_into().unwrap()).unwrap();
                                 let mut location = 0u64;
                                 let mut allyours = vec![];
