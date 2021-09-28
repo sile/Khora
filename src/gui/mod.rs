@@ -86,6 +86,7 @@ impl TemplateApp {
         TemplateApp{
             reciever,
             sender,
+            staking: staked != "0".to_string(),
             staked,
             addr,
             stkaddr,
@@ -141,6 +142,7 @@ impl epi::App for TemplateApp {
                     self.stkaddr = String::from_utf8_lossy(&i).to_string();
                 }
             }
+            self.staking = self.staked != "0".to_string();
         }
 
         let Self {
@@ -219,18 +221,12 @@ impl epi::App for TemplateApp {
                 ui.label("Unstaked Money");
                 ui.label(&*unstaked);
             });
-            ui.horizontal(|ui| {
-                ui.label("Staked Money ");
-                ui.label(&*staked);
-                // let bytes: Vec<_> = s.bytes().rev().collect(); // something like this maybe? (would need to handle tx differently though)
-                // let chunks: Vec<_> = bytes.chunks(3).map(|chunk| str::from_utf8(chunk).unwrap()).collect();
-                // let result: Vec<_> = chunks.connect(" ").bytes().rev().collect();
-                // String::from_utf8(result).unwrap()
-            });
-            // ui.horizontal(|ui| {
-            //     ui.label("Maximum Money");
-            //     ui.label(format!("{}",2u64.pow(41)));
-            // });
+            if *staking {
+                ui.horizontal(|ui| {
+                    ui.label("Staked Money ");
+                    ui.label(&*staked);
+                });
+            }
 
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(stake);
@@ -251,32 +247,42 @@ impl epi::App for TemplateApp {
                     }
                 }
             });
-            ui.horizontal(|ui| {
-                ui.text_edit_singleline(unstake);
-                if pswd_guess == password {
-                    if ui.button("Unstake").clicked() {
-                        // println!("unstaking {:?}!",unstake.parse::<u64>());
-                        let mut m = vec![];
-                        m.extend(addr.as_bytes().to_vec());
-                        m.extend(unstake.parse::<u64>().unwrap().to_le_bytes());
-                        // println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",staked,fee,unstake);
-                        let x = staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap();
-                        if x > 0 {
-                            m.extend(stkaddr.as_bytes());
-                            m.extend(x.to_le_bytes());
+            if *staking {
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(unstake);
+                    if pswd_guess == password {
+                        if ui.button("Unstake").clicked() {
+                            // println!("unstaking {:?}!",unstake.parse::<u64>());
+                            let mut m = vec![];
+                            m.extend(addr.as_bytes().to_vec());
+                            m.extend(unstake.parse::<u64>().unwrap().to_le_bytes());
+                            // println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",staked,fee,unstake);
+                            let x = staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap();
+                            if x > 0 {
+                                m.extend(stkaddr.as_bytes());
+                                m.extend(x.to_le_bytes());
+                            }
+                            m.push(63);
+                            m.push(33);
+                            println!("{}",String::from_utf8_lossy(&m));
+                            sender.send(m).expect("something's wrong with communication from the gui");
                         }
-                        m.push(63);
-                        m.push(33);
-                        println!("{}",String::from_utf8_lossy(&m));
-                        sender.send(m).expect("something's wrong with communication from the gui");
                     }
-                }
-            });
+                });
+            }
             ui.label("Transaction Fee:");
             ui.text_edit_singleline(fee);
             ui.horizontal(|ui| {
                 if ui.button("sync").clicked() {
                     sender.send(vec![121]).expect("something's wrong with communication from the gui");
+                }
+                if !*staking {
+                    if ui.button("track sync").clicked() {
+                        sender.send(vec![116]).expect("something's wrong with communication from the gui");
+                    }
+                    if ui.button("fill ring").clicked() {
+                        sender.send(vec![114]).expect("something's wrong with communication from the gui");
+                    }
                 }
                 if ui.button("toggle password").clicked() {
                     *pswd_shown = !*pswd_shown;

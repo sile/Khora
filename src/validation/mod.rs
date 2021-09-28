@@ -16,7 +16,7 @@ use std::io::Read;
 use std::io::Write;
 use std::hash::Hasher;
 use serde::{Serialize, Deserialize};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use crate::constants::PEDERSEN_H;
 use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
@@ -819,7 +819,7 @@ impl NextBlock { // need to sign the staker inputs too
         let info = Syncedtx::from(&self.txs);
         history.extend(info.txout);
     }
-    pub fn scan(&self, me: &Account, mine: &mut Vec<(u64,OTAccount)>, height: &mut u64, alltagsever: &mut Vec<CompressedRistretto>) -> bool {
+    pub fn scan(&self, me: &Account, mine: &mut HashMap<u64,OTAccount>, height: &mut u64, alltagsever: &mut Vec<CompressedRistretto>) -> bool {
         let x = Syncedtx::from(&self.txs);
         let newmine = x.txout.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.receive_ot(x) {Some((i as u64+*height,y))} else {None}).collect::<Vec<(u64,OTAccount)>>();
         let newtags = newmine.par_iter().map(|x|x.1.tag.unwrap()).collect::<Vec<CompressedRistretto>>();
@@ -828,7 +828,7 @@ impl NextBlock { // need to sign the staker inputs too
         }
         alltagsever.par_extend(&newtags);
         let changed = std::sync::Arc::new(std::sync::RwLock::new(newtags.len() != 0));
-        *mine = mine.into_par_iter().filter_map(|(j,a)| if x.tags.par_iter().all(|x| x != &a.tag.unwrap()) {*changed.write().unwrap() = true; Some((*j,a.clone()))} else {None} ).collect::<Vec<(u64,OTAccount)>>();
+        *mine = mine.into_par_iter().filter_map(|(j,a)| if x.tags.par_iter().all(|x| x != &a.tag.unwrap()) {*changed.write().unwrap() = true; Some((*j,a.clone()))} else {None} ).collect::<HashMap<u64,OTAccount>>();
         *height += x.txout.len() as u64;
         mine.par_extend(newmine);
 
