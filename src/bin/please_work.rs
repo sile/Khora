@@ -2,6 +2,7 @@
 // #![allow(non_snake_case)]
 use kora::account::*;
 use curve25519_dalek::scalar::Scalar;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::time::Instant;
@@ -120,8 +121,7 @@ fn main() -> Result<(),std::io::Error> {
     let mut lastheight = 0u64;
     let mut height = info.txout.len() as u64;
     let mut sheight = info.stkout.len() as u64;
-    let mut mine = Vec::<(u64,OTAccount)>::new(); // read from file
-    mine.par_extend(info.txout.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = ryan.receive_ot(x) {Some((i as u64+height,y))} else {None}).collect::<Vec<(u64,OTAccount)>>());
+    let mut mine = info.txout.par_iter().enumerate().filter_map(|(i,x)| if let Ok(y) = ryan.receive_ot(x) {Some((i as u64+height,y))} else {None}).collect::<HashMap<u64,OTAccount>>();
     let mut smine = Vec::<[u64;2]>::new(); // read from file
     smine.par_extend(info.stkin.par_iter().enumerate().filter_map(|(i,x)| if x.0 == ryan.derive_stk_ot(&Scalar::from(x.1)).pk.compress() {Some([i as u64+sheight,x.1])} else {None}).collect::<Vec<[u64;2]>>());
 

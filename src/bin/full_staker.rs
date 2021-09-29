@@ -455,6 +455,10 @@ impl StakerNode {
                 println!("{:?}\n{:?}",self.lastname,lastblock.last_name);
             }
             println!("stkinfo: {:?}",self.stkinfo);
+            if let Some(shrd) = lastblock.shards.get(0) {
+                println!("Error in block verification: there is no shard");
+                return ();
+            }
             match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
                 Ok(_) => {self.save(); println!("block verified...")},
                 Err(x) => println!("Error in block verification: {}",x),
@@ -1400,10 +1404,10 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         for (i,r) in ring.iter().enumerate() {
                             let mut r = r.to_le_bytes().to_vec();
                             r.push(114u8);
-                            self.outer.dm(r,&vec![helpers[i%alen]],false);
+                            self.outer.dm(r,&[helpers[i%alen]],false); // worry about txting self
                         }
-                    } else if istx == 121 /* y */ {
-                        let mut mynum = self.bnum.to_le_bytes().to_vec(); // remember the attack where you send someone middle blocks during gap
+                    } else if (istx == 121) /* y */ { // there's some overkill wastfullness with the number of people you dm
+                        let mut mynum = self.bnum.to_le_bytes().to_vec();
                         mynum.push(121);
                         let mut friend = self.outer.hyparview_node().active_view().to_vec();
                         friend.extend(self.outer.hyparview_node().passive_view().to_vec());
