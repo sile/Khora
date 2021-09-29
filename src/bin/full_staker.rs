@@ -455,7 +455,7 @@ impl StakerNode {
                 println!("{:?}\n{:?}",self.lastname,lastblock.last_name);
             }
             println!("stkinfo: {:?}",self.stkinfo);
-            if let Some(shrd) = lastblock.shards.get(0) {
+            if lastblock.shards.len() == 0 {
                 println!("Error in block verification: there is no shard");
                 return ();
             }
@@ -500,12 +500,13 @@ impl StakerNode {
                 }
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
-                    let mut guitruster = !self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever);
-                    if self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo) && self.is_validator {
+                    let mut guitruster = !self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
+                    if guitruster && self.is_validator {
                         guitruster = false;
                         self.inner.broadcast_now(m.clone());
                         self.outer.broadcast_now(m.clone());
                     }
+                    guitruster = !self.lastblock.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever) && guitruster;
                     self.gui_sender.send(vec![guitruster as u8,1]).expect("there's a problem communicating to the gui!");
                     self.keylocation = self.smine.iter().map(|x| x[0]).collect();
                     self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
@@ -906,8 +907,6 @@ impl Future for StakerNode {
                             let mut m = bincode::serialize(&lastblock).unwrap();
                             // let l = bincode::serialize(&lastblock.tolightning()).unwrap();
             
-                            self.sigs = vec![];
-        
                             // let mut hasher = Sha3_512::new();
                             // hasher.update(&l);
                             // self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
@@ -1013,6 +1012,9 @@ impl Future for StakerNode {
                                     self.inner.broadcast(m);
                                 } else {
                                     println!("block NOT verified... this shouldn't happen... restarting this selection stuff");
+                                    let m = bincode::serialize(&self.txses).unwrap();
+                                    let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
+                                    m.push(1u8);
                                 }
                                 self.points = HashMap::new();
                                 self.scalars = HashMap::new();
@@ -1031,8 +1033,7 @@ impl Future for StakerNode {
                                     self.scalars = HashMap::new();
                                     self.timekeeper -= Duration::from_secs(1);
                                 } else {
-                                    // this would make them switch away from points (they dont have enough points anyways...)
-                                    let m = bincode::serialize(&vec![bincode::serialize(&PolynomialTransaction::default()).unwrap()]).unwrap(); // Is that good? I means we expect the validators to be willing to sign 2 blocks...? Leader could double spend until disproved path in next block
+                                    let m = bincode::serialize(&self.txses).unwrap();
                                     let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
                                     m.push(1u8);
                                     println!("a validator was corrupted I'm restarting this bitch");
@@ -1068,7 +1069,6 @@ impl Future for StakerNode {
                             self.inner.broadcast(m);
                         }
                     }
-
                 }
             }
              /*\______________________________________________________________________________________________
@@ -1090,7 +1090,7 @@ impl Future for StakerNode {
                             let mut x = vec![];
                             file.read_to_end(&mut x).unwrap();
                             let block = bincode::deserialize::<LightningSyncBlock>(&x).unwrap();
-                            println!("sending block {} of {}\t{:?}",b,self.bnum,block.last_name);
+                            println!("reading block {} of {}\t{:?}",b,self.bnum,block.last_name);
                             let thisheight = block.info.txout.len() as u64;
                             let yours = block.info.txout.iter().enumerate().filter_map(|(i,a)| {
                                 if a.track_ot(&tsk) {
@@ -1186,26 +1186,11 @@ impl Future for StakerNode {
                                     }
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
-                            } else if (mtype == 121) /*&& !self.is_validator*/ /* y */ {
-                                self.sync_returnaddr = Some(msg.id.node());
-                                self.sync_theirnum = u64::from_le_bytes(m.try_into().unwrap());
-                                // let theirnum = u64::from_le_bytes(m.try_into().unwrap());
-                                // println!("they're at {}, syncing them...",theirnum);
-                                // for b in theirnum+1..=self.bnum {
-                                //     let file = format!("blocks/b{}",b);
-                                //     println!("checking for file {:?}...",file);
-                                //     if let Ok(mut file) = File::open(file) {
-                                //         let mut x = vec![];
-                                //         file.read_to_end(&mut x).unwrap();
-                                //         println!("sending block {} of {}\t{:?}",b,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
-                                //         x.push(3);
-                                //         self.outer.dm(x,&vec![msg.id.node()],false);
-                                //     }
-                                // }
-                                // let mut x = bincode::serialize(&self.lastblock).unwrap();
-                                // println!("sending block {} of {}\t{:?}",self.bnum,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
-                                // x.push(3);
-                                // self.outer.dm(x,&vec![msg.id.node()],false);
+                            } else if mtype == 121 /* y */ {
+                                if self.sync_returnaddr.is_none() {
+                                    self.sync_returnaddr = Some(msg.id.node());
+                                    self.sync_theirnum = u64::from_le_bytes(m.try_into().unwrap());
+                                }
                             }
                         }
                     }
