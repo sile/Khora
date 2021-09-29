@@ -90,6 +90,7 @@ fn main() -> Result<(), MainError> {
         let contact: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), contact).parse())?;
         println!("contact: {:?}",contact);
         backnode.join(NodeId::new(contact, LocalNodeId::new(0)));
+        backnode.plumtree_node.lazy_push_peers.insert(NodeId::new(contact, LocalNodeId::new(0)));
     }
     let frontnode = NodeBuilder::new().logger(logger).finish(service.handle()); // todo: make this local_id random so people can't guess you
     println!("{:?}",frontnode.id()); // this should be the validator survice
@@ -177,7 +178,6 @@ fn main() -> Result<(), MainError> {
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
             leaderip: None,
-            trustedsyncsource: vec![],
             newest: 0u64,
             rmems: HashMap::new(),
             rname: vec![],
@@ -325,7 +325,6 @@ struct StakerNode {
     knownvalidators: HashMap<u64,NodeId>,
     announcevalidationtime: Instant,
     leaderip: Option<NodeId>,
-    trustedsyncsource: Vec<NodeId>,
     newest: u64,
     rmems: HashMap<u64,OTAccount>,
     rname: Vec<u8>,
@@ -430,7 +429,6 @@ impl StakerNode {
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
             leaderip: None,
-            trustedsyncsource: vec![],
             newest: 0u64,
             rmems: HashMap::new(),
             rname: vec![],
@@ -1153,15 +1151,50 @@ impl Future for StakerNode {
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
                             } else if mtype == 36 /* $ */ { // they just scanned for you with the tsk
-                                self.mine = bincode::deserialize::<Vec<(u64, OTAccount)>>(&m).unwrap().into_iter().collect();
-                                println!("got a $!");
-                                let acc = self.me.borrow();
-                                self.mine.iter_mut().for_each(|x| *x.1 = acc.receive_ot(&x.1).unwrap());
-                                let mut mymoney = self.mine.iter().map(|x| self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
-                                mymoney.extend(self.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
-                                mymoney.push(0);
-                                println!("my money:\n---------------------------------\n{:?}",mymoney);
-                                self.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
+                                if fullmsg.sender != *self.outer.plumtree_node().id() {
+                                    self.mine = bincode::deserialize::<Vec<(u64, OTAccount)>>(&m).unwrap().into_iter().collect();
+                                    println!("got a $!");
+                                    let acc = self.me.borrow();
+                                    self.mine.iter_mut().for_each(|x| *x.1 = acc.receive_ot(&x.1).unwrap());
+                                    let mut mymoney = self.mine.iter().map(|x| self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
+                                    mymoney.extend(self.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
+                                    mymoney.push(0);
+                                    println!("my money:\n---------------------------------\n{:?}",mymoney);
+                                    self.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
+                                }
+                            } else if mtype == 104 /* h */ {
+                                let mut m = self.height.to_le_bytes().to_vec();
+                                m.push(108);
+                                self.outer.dm(m,&vec![msg.id.node()],false);
+                            } else if mtype == 108 /* l */ {
+                                if self.is_user {
+                                    if let Ok(m) = m.try_into() {
+                                        self.height = u64::from_le_bytes(m);
+
+                                        let helpers = self.outer.plumtree_node().all_push_peers().into_iter().collect::<Vec<_>>();
+                                    
+                                        let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(*x.0,x.1.clone())).unzip();
+                    
+                                        println!("loc: {:?}",loc);
+                                        println!("height: {}",self.height); // need to get the true height first!
+                                        for (i,j) in loc.iter().zip(acc) {
+                                            println!("i: {}, j.pk: {:?}",i,j.pk.compress());
+                                            self.rmems.insert(*i,j);
+                                        }
+                                        
+                                        // maybe have bigger rings than 5? it's a choice i dont forbid anything
+                                        self.rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &11, &self.height);
+                                        let ring = recieve_ring(&self.rname).expect("shouldn't fail");
+                                        let ring = ring.into_iter().filter(|x| loc.iter().all(|y|x!=y)).collect::<Vec<_>>();
+                                        println!("ring:----------------------------------\n{:?}",ring);
+                                        let alen = helpers.len();
+                                        for (i,r) in ring.iter().enumerate() {
+                                            let mut r = r.to_le_bytes().to_vec();
+                                            r.push(114u8);
+                                            self.outer.dm(r,&[helpers[i%alen]],false); // worry about txting self
+                                        }
+                                    }
+                                }
                             } else if mtype == 113 /* q */ { // they just sent you a ring member
                                 self.rmems.insert(u64::from_le_bytes(m[64..72].try_into().unwrap()),History::read_raw(&m));
                             } else if (mtype == 114) /* r */ {
@@ -1371,42 +1404,27 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                     } else if istx == 114 /* r */ {
                         let helpers = self.outer.plumtree_node().all_push_peers().into_iter().collect::<Vec<_>>();
     
-                        let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(*x.0,x.1.clone())).unzip();
-    
-                        println!("loc: {:?}",loc);
-                        println!("height: {}",self.height);
-                        for (i,j) in loc.iter().zip(acc) {
-                            println!("i: {}, j.pk: {:?}",i,j.pk.compress());
-                            self.rmems.insert(*i,j);
-                        }
-                        
-                        // maybe have bigger rings than 5? it's a choice i dont forbid anything
-                        self.rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &11, &self.height);
-                        let ring = recieve_ring(&self.rname).expect("shouldn't fail");
-                        let ring = ring.into_iter().filter(|x| loc.iter().all(|y|x!=y)).collect::<Vec<_>>();
-                        println!("ring:----------------------------------\n{:?}",ring);
-                        let alen = helpers.len();
-                        for (i,r) in ring.iter().enumerate() {
-                            let mut r = r.to_le_bytes().to_vec();
-                            r.push(114u8);
-                            self.outer.dm(r,&[helpers[i%alen]],false); // worry about txting self
-                        }
+                        self.outer.dm(vec![104],&helpers[..1],false);
+
                     } else if (istx == 121) /* y */ { // there's some overkill wastfullness with the number of people you dm
                         let mut mynum = self.bnum.to_le_bytes().to_vec();
                         mynum.push(121);
-                        let mut friend = self.outer.hyparview_node().active_view().to_vec();
-                        friend.extend(self.outer.hyparview_node().passive_view().to_vec());
-                        self.trustedsyncsource = friend;
-                        self.outer.dm(mynum, &self.trustedsyncsource, false); // you really dont need to send it to all your friends though
+                        let mut friend = self.outer.plumtree_node().all_push_peers();
+                        friend.remove(self.outer.plumtree_node().id());
+                        let mut friend = friend.into_iter().collect::<Vec<_>>();
+                        friend = friend[..std::cmp::min(friend.len(),2)].to_vec();
+                        println!("asking for help from {:?}",friend);
+                        self.outer.dm(mynum, &friend, false); // you really dont need to send it to all your friends though
                     } else if istx == 116 /* t */ {
                         println!("got a 116!");
                         let mut m = self.me.ask.as_bytes().to_vec();
                         m.push(116);
-                        let mut helpers = self.outer.plumtree_node().all_push_peers().into_iter().collect::<Vec<_>>();
-                        if helpers.len() > 2 {
-                            helpers = helpers[..2].to_vec();
-                        }
-                        self.outer.dm(m,&helpers,false);
+                        let mut friend = self.outer.plumtree_node().all_push_peers();
+                        friend.remove(self.outer.plumtree_node().id());
+                        let mut friend = friend.into_iter().collect::<Vec<_>>();
+                        friend = friend[..std::cmp::min(friend.len(),2)].to_vec();
+                        println!("asking for help from {:?}",friend);
+                        self.outer.dm(m,&friend,false);
                     } else if istx == u8::MAX {
 
 

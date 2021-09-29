@@ -1,8 +1,10 @@
-use std::convert::TryInto;
+use std::{convert::TryInto};
 
 use eframe::{egui::{self, Checkbox, Label, Output, Sense}, epi};
 use crossbeam::channel;
 use fibers::sync::mpsc;
+
+use getrandom::getrandom;
 
 /*
 cargo run --bin full_staker --release 9876 pig
@@ -10,6 +12,24 @@ cargo run --bin full_staker --release 9877 dog 0 9876
 cargo run --bin full_staker --release 9878 cow 0 9876
 cargo run --bin full_staker --release 9879 ant 0 9876
 */
+
+
+fn random_pswrd() -> String {
+    let mut chars = vec![0u8;100];
+    getrandom(&mut chars).expect("something's wrong with your randomness");
+    chars = chars.into_iter().filter(|x| *x < 248).take(20).collect();
+    chars.iter_mut().for_each(|x| {
+        *x %= 62;
+        *x += 48;
+        if *x > 57 {
+            *x += 7
+        }
+        if *x > 90 {
+            *x += 6;
+        }
+    });
+    chars.into_iter().map(char::from).collect()
+}
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
@@ -73,7 +93,7 @@ impl Default for TemplateApp {
             pswd_shown: true,
             block_number: 0,
             show_next_pswrd: true,
-            next_pswrd: "dont_make_this_passward".to_string(),
+            next_pswrd: random_pswrd(),
             panic_fee: "1".to_string(),
         }
     }
@@ -301,14 +321,14 @@ impl epi::App for TemplateApp {
             egui::warn_if_debug_build(ui);
         });
 
-        if *pswd_shown && (pswd_guess == password) {
+        if *pswd_shown && (pswd_guess == password) { // add warning to not panic 2ce in a row
             egui::Window::new("Reset Options").show(ctx, |ui| {
                 if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
                     ui.small("This section sends all of your money to a new account with the new password.");
                 }
                 ui.add(Checkbox::new(show_next_pswrd,"Show Password On Reset"));
                 ui.horizontal(|ui| {
-                    ui.label("Next Passward");
+                    ui.label("Next Password");
                     ui.text_edit_singleline(next_pswrd);
                 });
                 ui.horizontal(|ui| {
@@ -339,7 +359,7 @@ impl epi::App for TemplateApp {
                     if *show_next_pswrd {
                         *pswd_guess = next_pswrd.clone();
                     }
-                    *next_pswrd = "password".to_string();
+                    *next_pswrd = random_pswrd();
                 }
             });
         }
