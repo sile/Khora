@@ -42,7 +42,7 @@ pub struct TemplateApp {
     pswd_guess: String,
     pswd_shown: bool,
     block_number: u64,
-    delete_next_pswrd: bool,
+    show_next_pswrd: bool,
     next_pswrd: String,
     panic_fee: String,
 }
@@ -72,7 +72,7 @@ impl Default for TemplateApp {
             pswd_guess: "password".to_string(),
             pswd_shown: true,
             block_number: 0,
-            delete_next_pswrd: true,
+            show_next_pswrd: true,
             next_pswrd: "dont_make_this_passward".to_string(),
             panic_fee: "1".to_string(),
         }
@@ -90,6 +90,7 @@ impl TemplateApp {
             staked,
             addr,
             stkaddr,
+            pswd_guess: password.clone(),
             password,
             ..Default::default()
         }
@@ -167,7 +168,7 @@ impl epi::App for TemplateApp {
             pswd_guess,
             pswd_shown,
             block_number,
-            delete_next_pswrd,
+            show_next_pswrd,
             next_pswrd,
             panic_fee,
         } = self;
@@ -305,7 +306,7 @@ impl epi::App for TemplateApp {
                 if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
                     ui.small("This section sends all of your money to a new account with the new password.");
                 }
-                ui.add(Checkbox::new(delete_next_pswrd,"Delete Next Password On Reset"));
+                ui.add(Checkbox::new(show_next_pswrd,"Show Password On Reset"));
                 ui.horizontal(|ui| {
                     ui.label("Next Passward");
                     ui.text_edit_singleline(next_pswrd);
@@ -335,9 +336,10 @@ impl epi::App for TemplateApp {
                     x.push(u8::MAX);
                     sender.send(x).expect("something's wrong with communication from the gui");
                     *password = next_pswrd.clone();
-                    if *delete_next_pswrd {
-                        *next_pswrd = "password".to_string();
+                    if *show_next_pswrd {
+                        *pswd_guess = next_pswrd.clone();
                     }
+                    *next_pswrd = "password".to_string();
                 }
             });
         }
