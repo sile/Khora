@@ -629,6 +629,11 @@ impl StakerNode {
                     }
                 }
 
+                if self.is_validator && self.inner.plumtree_node().all_push_peers().is_empty() {
+                    for n in self.knownvalidators.iter() {
+                        self.inner.join(*n.1);
+                    }
+                }
 
                 self.is_user = self.smine.is_empty();
                 self.sigs = vec![];
@@ -678,13 +683,11 @@ impl Future for StakerNode {
                     self.points = HashMap::new();
                     self.scalars = HashMap::new();
                     let m = bincode::serialize(&self.txses).unwrap();
-                    // println!("bnum: {}",self.bnum);
                     println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
                     let mut m = Signature::sign_message_nonced(&self.key, &m, &self.newest,&self.bnum);
                     m.push(1u8);
                     self.inner.broadcast(m);
                     self.timekeeper = Instant::now();
-                    // if self.txses.len() == 0 {self.multisig = true;}
                     did_something = true;
                 }
             }
@@ -706,9 +709,6 @@ impl Future for StakerNode {
                     self.is_staker = true;
                 }
                 if !headqueue.range(0..REPLACERATE).collect::<Vec<_>>().iter().all(|&&x| x as u64 != *keylocation) {
-                    if !self.is_validator {
-                        self.save(); // in case the leader tries to fork you to ruin your profits you can just reload and sync
-                    }
                     self.is_staker = true;
                     self.is_validator = true;
                     if self.announcevalidationtime.elapsed().as_secs() > 10 {
@@ -723,8 +723,8 @@ impl Future for StakerNode {
                             } else {
                                 None
                             }
-                        }).collect::<Vec<_>>(), true); // add a recieve new members section for validators (also maybe don't send to the whole list?)
-                        self.announcevalidationtime = Instant::now(); // i dont want to do thiss... 2 that drain into eachother?
+                        }).collect::<Vec<_>>(), true);
+                        self.announcevalidationtime = Instant::now();
                     }
                 }
             });
