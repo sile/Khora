@@ -1,11 +1,9 @@
 #![allow(dead_code)]
-use std::collections::HashSet;
 use std::convert::TryInto;
 
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::scalar::Scalar;
 use merlin::Transcript;
-use rayon::slice::ParallelSlice;
 use serde::{Serialize, Deserialize};
 use rand::random;
 
@@ -17,9 +15,7 @@ use crate::commitment::{Commitment};
 
 use curve25519_dalek::ristretto::{CompressedRistretto};
 
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator};
-use rayon::iter::ParallelIterator;
-use rayon::iter::IntoParallelIterator;
+use rayon::iter;
 use crate::validation::History;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
