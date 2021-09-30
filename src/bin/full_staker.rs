@@ -91,7 +91,6 @@ fn main() -> Result<(), MainError> {
         let contact: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), contact).parse())?;
         println!("contact: {:?}",contact);
         backnode.join(NodeId::new(contact, LocalNodeId::new(0)));
-        backnode.plumtree_node.lazy_push_peers.insert(NodeId::new(contact, LocalNodeId::new(0)));
     }
     let frontnode = NodeBuilder::new().logger(logger).finish(service.handle()); // todo: make this local_id random so people can't guess you
     println!("{:?}",frontnode.id()); // this should be the validator survice
@@ -450,7 +449,7 @@ impl StakerNode {
                 return ();
             }
             match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
-                Ok(_) => {self.save(); println!("block verified...")},
+                Ok(_) => {self.save(); println!("block verified...")}, // save second newest state (prevents the leader from attacking you)
                 Err(x) => println!("Error in block verification: {}",x),
             };
             let v: bool;

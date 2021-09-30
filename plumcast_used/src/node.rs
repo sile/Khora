@@ -1,9 +1,9 @@
 //! [`Node`] and related components.
 //!
 //! [`Node`]: ./node/struct.Node.html
-use crate::message::{Message, MessageId, MessagePayload};
+use crate::message::{MessageId, MessagePayload};
 use crate::metrics::NodeMetrics;
-use crate::misc::{GossipMessage, HyparviewAction, HyparviewNode, HyparviewNodeOptions, PlumtreeAction, PlumtreeMessage, PlumtreeNode, PlumtreeNodeOptions};
+use crate::misc::{GossipMessage, HyparviewAction, HyparviewNode, HyparviewNodeOptions, PlumtreeAction, PlumtreeNode, PlumtreeNodeOptions};
 use crate::rpc::RpcMessage;
 use crate::service::ServiceHandle;
 use crate::{Error, ErrorKind};
@@ -160,8 +160,8 @@ pub struct Node<M: MessagePayload> {
     service: ServiceHandle<M>,
     message_rx: mpsc::Receiver<RpcMessage<M>>,
     hyparview_node: HyparviewNode,
-    pub plumtree_node: PlumtreeNode<M>,
-    pub message_seqno: u64,
+    plumtree_node: PlumtreeNode<M>,
+    message_seqno: u64,
     hyparview_shuffle_time: NodeTime,
     hyparview_sync_active_view_time: NodeTime,
     hyparview_fill_active_view_time: NodeTime,

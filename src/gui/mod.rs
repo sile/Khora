@@ -1,6 +1,6 @@
 use std::{convert::TryInto};
 
-use eframe::{egui::{self, Checkbox, Label, Output, Sense}, epi};
+use eframe::{egui::{self, Checkbox, Label, Sense}, epi};
 use crossbeam::channel;
 use fibers::sync::mpsc;
 
@@ -314,7 +314,7 @@ impl epi::App for TemplateApp {
         });
 
         if *pswd_shown && (pswd_guess == password) { // add warning to not panic 2ce in a row
-            egui::TopBottomPanel::bottom("Reset Options").show(ctx, |ui| {
+            egui::Window::new("Reset Options").show(ctx, |ui| {
                 if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
                     ui.small("This section sends all of your money to a new account with the new password.");
                 }
