@@ -10,10 +10,10 @@ use rand::random;
 use crate::account::{OTAccount, Account, Tag, fee_ota};
 use crate::seal::SealSig;
 use crate::ringmaker::*;
-use crate::commitment::{Commitment};
+use crate::commitment::Commitment;
 
 
-use curve25519_dalek::ristretto::{CompressedRistretto};
+use curve25519_dalek::ristretto::CompressedRistretto;
 
 
 use crate::validation::History;

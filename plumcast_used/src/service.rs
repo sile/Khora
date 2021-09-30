@@ -242,6 +242,7 @@ impl<M: MessagePayload> Drop for Service<M> {
 pub struct ServiceHandle<M: MessagePayload> {
     server_addr: SocketAddr,
     command_tx: mpsc::Sender<Command<M>>,
+    /// the rpc_service of type RpcClientServiceHandle
     pub rpc_service: RpcClientServiceHandle,
     local_nodes: LocalNodes<M>,
     local_id_gen: ArcLocalNodeIdGenerator,
