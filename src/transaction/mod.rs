@@ -15,7 +15,7 @@ use crate::commitment::{Commitment};
 
 use curve25519_dalek::ristretto::{CompressedRistretto};
 
-use rayon::iter;
+
 use crate::validation::History;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
