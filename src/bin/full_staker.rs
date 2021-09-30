@@ -9,6 +9,7 @@ use fibers::{Executor, Spawn, ThreadPoolExecutor};
 use futures::{Async, Future, Poll, Stream};
 use plumcast::node::{LocalNodeId, Node, NodeBuilder, NodeId, SerialLocalNodeIdGenerator};
 use plumcast::service::ServiceBuilder;
+use rand::prelude::SliceRandom;
 use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::Build;
 use std::fs::File;
@@ -1337,15 +1338,18 @@ impl Future for StakerNode {
                             }).collect::<HashMap<_,_>>();
                             self.outer.broadcast_now(txbin);
                         }
-                    } else if (istx == 121) /* y */ { // there's some overkill wastfullness with the number of people you dm
+                    } else if istx == 121 /* y */ {
                         let mut mynum = self.bnum.to_le_bytes().to_vec();
                         mynum.push(121);
                         let mut friend = self.outer.plumtree_node().all_push_peers();
                         friend.remove(self.outer.plumtree_node().id());
-                        let mut friend = friend.into_iter().collect::<Vec<_>>();
-                        friend = friend[..std::cmp::min(friend.len(),2)].to_vec();
-                        println!("asking for help from {:?}",friend);
-                        self.outer.dm(mynum, &friend, false); // you really dont need to send it to all your friends though
+                        let friend = friend.into_iter().collect::<Vec<_>>();
+                        if let Some(friend) = friend.choose(&mut rand::thread_rng()) {
+                            println!("asking for help from {:?}",friend);
+                            self.outer.dm(mynum, &[*friend], false);
+                        } else {
+                            println!("you're isolated");
+                        }
                     } else if istx == u8::MAX {
                         let amnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
                         let stkamnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));

@@ -297,9 +297,6 @@ impl epi::App for TemplateApp {
                 if ui.button("sync").clicked() {
                     sender.send(vec![121]).expect("something's wrong with communication from the gui");
                 }
-                if !*staking {
-                    ui.label("You're not staking");
-                }
                 if ui.button("toggle password").clicked() {
                     *pswd_shown = !*pswd_shown;
                 }

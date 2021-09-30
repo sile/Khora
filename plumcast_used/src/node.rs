@@ -143,7 +143,6 @@ impl NodeBuilder {
             tick_timeout: timer::timeout(self.params.tick_interval),
             params: self.params.clone(),
             metrics,
-            muted_friends: [HashSet::new(),HashSet::new(),],
         }
     }
 }
@@ -158,7 +157,7 @@ impl Default for NodeBuilder {
 #[must_use = "streams do nothing unless polled"]
 pub struct Node<M: MessagePayload> {
     logger: Logger,
-    pub service: ServiceHandle<M>,
+    service: ServiceHandle<M>,
     message_rx: mpsc::Receiver<RpcMessage<M>>,
     hyparview_node: HyparviewNode,
     pub plumtree_node: PlumtreeNode<M>,
@@ -169,7 +168,6 @@ pub struct Node<M: MessagePayload> {
     tick_timeout: Timeout,
     params: Parameters,
     metrics: NodeMetrics,
-    pub muted_friends: [HashSet<NodeId>;2],
 }
 impl<M: MessagePayload> Node<M> {
     /// Makes a new `Node` instance with the default settings.
