@@ -1208,13 +1208,6 @@ impl Future for StakerNode {
                         txbin.push(0);
                         let needtosend = (txbin,self.mine.iter().map(|x| *x.0).collect::<Vec<_>>());
                         self.needtosend = Some(needtosend.clone());
-                        self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
-                            if self.queue[self.headshard].contains(&(location as usize)) {
-                                Some((location,node))
-                            } else {
-                                None
-                            }
-                        }).collect::<HashMap<_,_>>();
                         if self.knownvalidators.len() > 0 {
                             self.outer.dm_now(needtosend.0.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
                         } else {
