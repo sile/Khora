@@ -298,9 +298,7 @@ impl epi::App for TemplateApp {
                     sender.send(vec![121]).expect("something's wrong with communication from the gui");
                 }
                 if !*staking {
-                    if ui.button("fill ring").clicked() {
-                        sender.send(vec![114]).expect("something's wrong with communication from the gui");
-                    }
+                    ui.label("You're not staking");
                 }
                 if ui.button("toggle password").clicked() {
                     *pswd_shown = !*pswd_shown;
@@ -319,7 +317,7 @@ impl epi::App for TemplateApp {
         });
 
         if *pswd_shown && (pswd_guess == password) { // add warning to not panic 2ce in a row
-            egui::Window::new("Reset Options").show(ctx, |ui| {
+            egui::TopBottomPanel::bottom("Reset Options").show(ctx, |ui| {
                 if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
                     ui.small("This section sends all of your money to a new account with the new password.");
                 }
