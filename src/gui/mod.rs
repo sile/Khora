@@ -298,9 +298,6 @@ impl epi::App for TemplateApp {
                     sender.send(vec![121]).expect("something's wrong with communication from the gui");
                 }
                 if !*staking {
-                    if ui.button("track sync").clicked() {
-                        sender.send(vec![116]).expect("something's wrong with communication from the gui");
-                    }
                     if ui.button("fill ring").clicked() {
                         sender.send(vec![114]).expect("something's wrong with communication from the gui");
                     }

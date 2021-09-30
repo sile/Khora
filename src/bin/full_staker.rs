@@ -186,13 +186,10 @@ fn main() -> Result<(), MainError> {
             gui_reciever: urecv,
             moneyreset: None,
             stkreset: None,
-            scan_tsk: None,
-            scan_location: 0u64,
-            scan_allyours: vec![],
-            scan_returnaddr: None,
-            scan_block: 0u64,
             sync_returnaddr: None,
             sync_theirnum: 0u64,
+            needtosend: None,
+            outs: None,
         };
     } else {
         node = StakerNode::load(frontnode, backnode, message_rx, usend, urecv);
@@ -331,13 +328,10 @@ struct StakerNode {
     is_user: bool,
     moneyreset: Option<Vec<u8>>,
     stkreset: Option<Vec<u8>>,
-    scan_tsk: Option<Scalar>,
-    scan_location: u64,
-    scan_allyours: Vec<(u64, OTAccount)>,
-    scan_returnaddr: Option<NodeId>,
-    scan_block: u64,
     sync_returnaddr: Option<NodeId>,
     sync_theirnum: u64,
+    needtosend: Option<(Vec<u8>,Vec<u64>)>,
+    outs: Option<Vec<(Account, Scalar)>>,
 }
 impl StakerNode {
     fn save(&self) {
@@ -435,13 +429,10 @@ impl StakerNode {
             is_user: sn.is_user,
             moneyreset: sn.moneyreset,
             stkreset: sn.stkreset,
-            scan_tsk: None,
-            scan_location: 0u64,
-            scan_allyours: vec![],
-            scan_returnaddr: None,
-            scan_block: 0u64,
             sync_returnaddr: None,
             sync_theirnum: 0u64,
+            needtosend: None,
+            outs: None,
         }
     }
     fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) {
@@ -624,6 +615,20 @@ impl StakerNode {
                         false
                     }
                 });
+
+                if let Some(needtosend) = self.needtosend.clone() {
+                    if needtosend.1 == self.mine.iter().map(|x| *x.0).collect::<Vec<u64>>() {
+                        if self.knownvalidators.len() > 0 {
+                            self.outer.dm_now(needtosend.0.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
+                        } else {
+                            self.outer.broadcast_now(needtosend.0.clone());
+                        }
+                    } else {
+                        self.needtosend = None;
+                    }
+                }
+
+
 
                 self.sigs = vec![];
                 self.points = HashMap::new();
@@ -1080,35 +1085,6 @@ impl Future for StakerNode {
         |--0| ::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF/
              \*/
             if self.is_staker { // users have is_staker true
-                if let Some(tsk) = self.scan_tsk {
-                    for b in self.scan_block..std::cmp::min(self.scan_block+10, self.bnum) {
-                        let file = format!("blocks/l{}",b);
-                        println!("checking for file {:?}...",file);
-                        if let Ok(mut file) = File::open(file) {
-                            let mut x = vec![];
-                            file.read_to_end(&mut x).unwrap();
-                            let block = bincode::deserialize::<LightningSyncBlock>(&x).unwrap();
-                            println!("reading block {} of {}\t{:?}",b,self.bnum,block.last_name);
-                            let thisheight = block.info.txout.len() as u64;
-                            let yours = block.info.txout.iter().enumerate().filter_map(|(i,a)| {
-                                if a.track_ot(&tsk) {
-                                    Some((i as u64 + self.scan_location,a.clone()))
-                                } else {
-                                    None
-                                }
-                            }).collect::<Vec<_>>();
-                            self.scan_allyours.par_extend(yours);
-                            self.scan_location += thisheight;
-                        }
-                        self.scan_block += 1;
-                    }
-                    if self.scan_block == self.bnum {
-                        let mut m = bincode::serialize(&self.scan_allyours).unwrap();
-                        m.push(36);
-                        self.outer.dm(m,&vec![self.scan_returnaddr.unwrap()],false);
-                        self.scan_tsk = None;
-                    }
-                }
                 if let Some(addr) = self.sync_returnaddr {
                     for b in self.sync_theirnum..std::cmp::min(self.sync_theirnum+10, self.bnum) {
                         let file = format!("blocks/b{}",b);
@@ -1150,67 +1126,14 @@ impl Future for StakerNode {
                                     self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
-                            } else if mtype == 36 /* $ */ { // they just scanned for you with the tsk
-                                if fullmsg.sender != *self.outer.plumtree_node().id() {
-                                    self.mine = bincode::deserialize::<Vec<(u64, OTAccount)>>(&m).unwrap().into_iter().collect();
-                                    println!("got a $!");
-                                    let acc = self.me.borrow();
-                                    self.mine.iter_mut().for_each(|x| *x.1 = acc.receive_ot(&x.1).unwrap());
-                                    let mut mymoney = self.mine.iter().map(|x| self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
-                                    mymoney.extend(self.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
-                                    mymoney.push(0);
-                                    println!("my money:\n---------------------------------\n{:?}",mymoney);
-                                    self.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
-                                }
-                            } else if mtype == 104 /* h */ {
-                                let mut m = self.height.to_le_bytes().to_vec();
-                                m.push(108);
-                                self.outer.dm(m,&vec![msg.id.node()],false);
-                            } else if mtype == 108 /* l */ {
-                                if self.is_user {
-                                    if let Ok(m) = m.try_into() {
-                                        self.height = u64::from_le_bytes(m);
-
-                                        let helpers = self.outer.plumtree_node().all_push_peers().into_iter().collect::<Vec<_>>();
-                                    
-                                        let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(*x.0,x.1.clone())).unzip();
-                    
-                                        println!("loc: {:?}",loc);
-                                        println!("height: {}",self.height); // need to get the true height first!
-                                        for (i,j) in loc.iter().zip(acc) {
-                                            println!("i: {}, j.pk: {:?}",i,j.pk.compress());
-                                            self.rmems.insert(*i,j);
-                                        }
-                                        
-                                        // maybe have bigger rings than 5? it's a choice i dont forbid anything
-                                        self.rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &11, &self.height);
-                                        let ring = recieve_ring(&self.rname).expect("shouldn't fail");
-                                        let ring = ring.into_iter().filter(|x| loc.iter().all(|y|x!=y)).collect::<Vec<_>>();
-                                        println!("ring:----------------------------------\n{:?}",ring);
-                                        let alen = helpers.len();
-                                        for (i,r) in ring.iter().enumerate() {
-                                            let mut r = r.to_le_bytes().to_vec();
-                                            r.push(114u8);
-                                            self.outer.dm(r,&[helpers[i%alen]],false); // worry about txting self
-                                        }
-                                    }
-                                }
                             } else if mtype == 113 /* q */ { // they just sent you a ring member
                                 self.rmems.insert(u64::from_le_bytes(m[64..72].try_into().unwrap()),History::read_raw(&m));
-                            } else if (mtype == 114) /* r */ {
+                            } else if mtype == 114 /* r */ { // answer their ring question
                                 let mut y = m[..8].to_vec();
                                 let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
                                 x.append(&mut y);
                                 x.push(113);
                                 self.outer.dm(x,&vec![msg.id.node()],false);
-                            } else if (mtype == 116) /* t */ {
-                                if self.scan_tsk.is_none() {
-                                    self.scan_tsk = Some(Scalar::from_canonical_bytes(m.try_into().unwrap()).unwrap());
-                                    self.scan_block = 0u64;
-                                    self.scan_location = 0u64;
-                                    self.scan_allyours = vec![];
-                                    self.scan_returnaddr = Some(msg.id.node());
-                                }
                             } else if mtype == 118 /* v */ {
                                 if let Some(who) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
                                     let m = bincode::deserialize::<NodeId>(&m).unwrap();
@@ -1259,27 +1182,6 @@ impl Future for StakerNode {
 
 
 
-/*
-send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- send to non stake ------- 
-ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigmnjimdgmpelmdoehiemiefmhinffkcnbmkjofflhfcpbcamfhheknjkibbcooeccgfemcpbnfommaiefmllkeekmghjokbhjepfgnfeilgjkipokjmfffggckekhpbef10000000a!
-ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigmnjimdgmpelmdoehiemiefmhinffkcnbmkjofflhfcpbcamfhheknjkibbcooeccgfemcpbnfommaiefmllkeekmghjokbhjepfgnfeilgjkipokjmfffggckekhpbef10000000b!
-  send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   -------   send to stake   ------- 
-ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000a!
-
-               VVVVVVVVVVVVVVVVVV split stake VVVVVVVVVVVVVVVVVV
-ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000a!
-
-                  VVVVVVVVVVV pump up the height VVVVVVVVVVV
-ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigmnjimdgmpelmdoehiemiefmhinffkcnbmkjofflhfcpbcamfhheknjkibbcooeccgfemcpbnfommaiefmllkeekmghjokbhjepfgnfeilgjkipokjmfffggckekhpbef10000000ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigmnjimdgmpelmdoehiemiefmhinffkcnbmkjofflhfcpbcamfhheknjkibbcooeccgfemcpbnfommaiefmllkeekmghjokbhjepfgnfeilgjkipokjmfffggckekhpbef10000000ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigmnjimdgmpelmdoehiemiefmhinffkcnbmkjofflhfcpbcamfhheknjkibbcooeccgfemcpbnfommaiefmllkeekmghjokbhjepfgnfeilgjkipokjmfffggckekhpbef10000000a!
-
-
-   VVVVVVVVVVVVVVV send from non stake (!) to non stake (gf...ob) VVVVVVVVVVVVVVV
-ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoichccokkmobiejbfabpidlkfcnnggjfanngopkaglehkikgmafffoagkinilkfeoich10000000!!
-
-*/
-
-
-
 
 
 
@@ -1293,6 +1195,39 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
             USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF |||||||||||||
             ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF
             */
+            if self.is_user {
+                if let Some(outs) = self.outs.clone() {
+                    if let Some(needtosend) = self.needtosend.clone() {
+                        let ring = recieve_ring(&self.rname).expect("shouldn't fail");
+                        let mut rlring = ring.iter().map(|x| self.rmems[x].clone()).collect::<Vec<OTAccount>>();
+                        rlring.iter_mut().for_each(|x|if let Ok(y)=self.me.receive_ot(&x) {*x = y;});
+                        let tx = Transaction::spend_ring(&rlring, &outs.iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
+                        if tx.verify().is_ok() {
+                            let tx = tx.polyform(&self.rname);
+                            // tx.verify().unwrap(); // as a user you won't be able to check this
+                            let mut txbin = bincode::serialize(&tx).unwrap();
+                            txbin.push(0);
+                            self.needtosend = Some((txbin,self.mine.iter().map(|x| *x.0).collect::<Vec<_>>()));
+                            self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
+                                if self.queue[self.headshard].contains(&(location as usize)) {
+                                    Some((location,node))
+                                } else {
+                                    None
+                                }
+                            }).collect::<HashMap<_,_>>();
+                            if self.knownvalidators.len() > 0 {
+                                self.outer.dm_now(needtosend.0.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
+                            } else {
+                                self.outer.broadcast_now(needtosend.0.clone());
+                            }
+                            println!("transaction made!");
+                            self.outs = None;
+                        } else {
+                            println!("you can't make that transaction, user!");
+                        }
+                    }
+                }
+            }
             while let Async::Ready(Some(mut m)) = self.gui_reciever.poll().expect("Never fails") {
                 println!("got message from gui!\n{}",String::from_utf8_lossy(&m));
                 if let Some(istx) = m.pop() {
@@ -1321,25 +1256,33 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(x.0,x.1.clone())).unzip();
 
                             if self.is_user {
-                                // let rname = generate_ring(&loc.par_iter().map(|x|*x as usize).collect::<Vec<_>>(), &15, &self.height);
-                                let ring = recieve_ring(&self.rname).expect("shouldn't fail");
-                                /* this is where people send you the ring members */ 
-                                // let mut rlring = ring.into_par_iter().map(|x| OTAccount::summon_ota(&History::get(&x))).collect::<Vec<OTAccount>>();
-                                let rmems = &self.rmems;
-                                let mut rlring = ring.iter().map(|x| rmems[x].clone()).collect::<Vec<OTAccount>>();
-                                /* this is where people send you the ring members */ 
-                                let me = self.me;
-                                rlring.iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x) {*x = y;});
-                                let tx = Transaction::spend_ring(&rlring, &outs.iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
-                                if tx.verify().is_ok() {
-                                    let tx = tx.polyform(&self.rname);
-                                    // tx.verify().unwrap(); // as a user you won't be able to check this
-                                    txbin = bincode::serialize(&tx).unwrap();
-                                    println!("transaction made!");
-                                } else {
-                                    txbin = vec![];
-                                    println!("you can't make that transaction, user!");
+                                if self.mine.len() > 0 {
+                                    let helpers = self.outer.plumtree_node().all_push_peers().into_iter().collect::<Vec<_>>();
+                                
+                                    let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(*x.0,x.1.clone())).unzip();
+                
+                                    println!("loc: {:?}",loc);
+                                    println!("height: {}",self.height); // need to get the true height first!
+                                    for (i,j) in loc.iter().zip(acc) {
+                                        println!("i: {}, j.pk: {:?}",i,j.pk.compress());
+                                        self.rmems.insert(*i,j);
+                                    }
+                                    
+                                    // maybe have bigger rings than 5? it's a choice i dont forbid anything
+                                    self.rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &5, &self.height);
+                                    let ring = recieve_ring(&self.rname).expect("shouldn't fail");
+                                    let ring = ring.into_iter().filter(|x| loc.iter().all(|y|x!=y)).collect::<Vec<_>>();
+                                    println!("ring:----------------------------------\n{:?}",ring);
+                                    let alen = helpers.len();
+                                    for (i,r) in ring.iter().enumerate() {
+                                        let mut r = r.to_le_bytes().to_vec();
+                                        r.push(114u8);
+                                        self.outer.dm(r,&[helpers[i%alen],helpers[(i+1)%alen]],false); // worry about txting self
+                                    }
+
+                                    self.outs = Some(outs);
                                 }
+                                txbin = vec![];
                             } else {
                                 let rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &5, &self.height);
                                 let ring = recieve_ring(&rname).expect("shouldn't fail");
@@ -1364,6 +1307,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                                 if tx.verify().is_ok() {
                                     txbin = bincode::serialize(&tx).unwrap();
                                     println!("transaction made!");
+                                    self.needtosend = Some((txbin.iter().chain(vec![&0u8]).map(|x| *x).collect(),self.mine.iter().map(|x| *x.0).collect::<Vec<_>>()));
                                 } else {
                                     txbin = vec![];
                                     println!("you can't make that transaction!");
@@ -1401,11 +1345,6 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                             }).collect::<HashMap<_,_>>();
                             self.outer.broadcast_now(txbin);
                         }
-                    } else if istx == 114 /* r */ {
-                        let helpers = self.outer.plumtree_node().all_push_peers().into_iter().collect::<Vec<_>>();
-    
-                        self.outer.dm(vec![104],&helpers[..1],false);
-
                     } else if (istx == 121) /* y */ { // there's some overkill wastfullness with the number of people you dm
                         let mut mynum = self.bnum.to_le_bytes().to_vec();
                         mynum.push(121);
@@ -1415,20 +1354,7 @@ ippcaamfollgjphmfpicoomjbphhepifhpkemhihaegcilmlkemajnolgocakhigccokkmobiejbfabp
                         friend = friend[..std::cmp::min(friend.len(),2)].to_vec();
                         println!("asking for help from {:?}",friend);
                         self.outer.dm(mynum, &friend, false); // you really dont need to send it to all your friends though
-                    } else if istx == 116 /* t */ {
-                        println!("got a 116!");
-                        let mut m = self.me.ask.as_bytes().to_vec();
-                        m.push(116);
-                        let mut friend = self.outer.plumtree_node().all_push_peers();
-                        friend.remove(self.outer.plumtree_node().id());
-                        let mut friend = friend.into_iter().collect::<Vec<_>>();
-                        friend = friend[..std::cmp::min(friend.len(),2)].to_vec();
-                        println!("asking for help from {:?}",friend);
-                        self.outer.dm(m,&friend,false);
                     } else if istx == u8::MAX {
-
-
-
                         let amnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
                         let stkamnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
                         let newacc = Account::new(&format!("{}",String::from_utf8_lossy(&m)));
