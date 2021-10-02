@@ -37,7 +37,7 @@ use std::fs::OpenOptions;
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Read, Write, BufReader};
 
-
+#[derive(Clone)]
 pub struct BloomFilter {
     pub bits: BitVec,
     pub num_hashes: u32,
@@ -185,7 +185,7 @@ impl BloomFilter {
 }
 
 
-
+#[derive(Clone)]
 pub struct BloomFile {
     h1: AHasher,
     h2: AHasher,

@@ -612,12 +612,13 @@ impl StakerNode {
                     self.overthrown = HashSet::new();
                 }
                 let s = self.stkinfo.borrow();
+                let bloom = self.bloom.borrow();
                 self.txses.retain(|x| {
                     if let Ok(x) = bincode::deserialize::<PolynomialTransaction>(x) {
                         if x.inputs.last() == Some(&1) {
                             x.verifystk(s).is_ok()
                         } else {
-                            x.verify().is_ok()
+                            x.tags.iter().all(|x| !bloom.contains(x.as_bytes())) && x.verify().is_ok()
                         }
                     } else {
                         false
@@ -802,19 +803,6 @@ impl StakerNode {
                 if self.bnum % 128 == 0 {
                     self.overthrown = HashSet::new();
                 }
-                let s = self.stkinfo.borrow();
-                self.txses.retain(|x| {
-                    if let Ok(x) = bincode::deserialize::<PolynomialTransaction>(x) {
-                        if x.inputs.last() == Some(&1) {
-                            x.verifystk(s).is_ok()
-                        } else {
-                            x.verify().is_ok()
-                        }
-                    } else {
-                        false
-                    }
-                });
-
                 if let Some(needtosend) = self.needtosend.clone() {
                     if needtosend.1 == self.mine.iter().map(|x| *x.0).collect::<Vec<u64>>() {
                         if self.knownvalidators.len() > 0 {
@@ -961,7 +949,9 @@ impl Future for StakerNode {
 
 
                             if mtype == 0 {
-                                self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
+                                if self.txses.len() < 1000 {
+                                    self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
+                                }
                                 self.inner.handle_gossip_now(fullmsg);
                             } else if mtype == 1 {
                                 // println!("bnum: {}",self.bnum);
