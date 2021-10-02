@@ -1281,7 +1281,7 @@ impl Future for StakerNode {
                         if let Ok(mut file) = File::open(file) {
                             let mut x = vec![];
                             file.read_to_end(&mut x).unwrap();
-                            println!("sending block {} of {}\t{:?}",b,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
+                            println!("sending block {} of {}",b,self.bnum);
                             if self.sync_lightning == 'l' {
                                 x.push(108); //l
                             } else {
@@ -1328,7 +1328,25 @@ impl Future for StakerNode {
                                     self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
-                            } else if mtype == 108 {
+                            } else if mtype == 60 /* < */{
+                                let mut mynum = self.bnum.to_le_bytes().to_vec();
+                                if self.is_user {
+                                    mynum.push(108); //l
+                                } else {
+                                    mynum.push(102); //f
+                                }
+                                mynum.push(121);
+                                let mut friend = self.outer.plumtree_node().all_push_peers();
+                                friend.remove(&msg.id.node());
+                                friend.remove(self.outer.plumtree_node().id());
+                                let friend = friend.into_iter().collect::<Vec<_>>();
+                                if let Some(friend) = friend.choose(&mut rand::thread_rng()) {
+                                    println!("asking for help from {:?}",friend);
+                                    self.outer.dm(mynum, &[*friend], false);
+                                } else {
+                                    println!("you're isolated");
+                                }
+                            } else if mtype == 108 /* l */ {
                                 if let Ok(lastblock) = bincode::deserialize::<LightningSyncBlock>(&m) {
                                     self.readlightning(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
                                 }
@@ -1349,18 +1367,22 @@ impl Future for StakerNode {
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
                             } else if mtype == 121 /* y */ {
-                                if self.sync_returnaddr.is_none() {
-                                    if let Some(theyfast) = m.pop() {
-                                        if let Ok(m) = m.try_into() {
-                                            self.sync_returnaddr = Some(msg.id.node());
-                                            self.sync_theirnum = u64::from_le_bytes(m);
-                                            if theyfast == 108 {
-                                                self.sync_lightning = 'l';
-                                            } else {
-                                                self.sync_lightning = 'b';
+                                if !self.is_user {
+                                    if self.sync_returnaddr.is_none() {
+                                        if let Some(theyfast) = m.pop() {
+                                            if let Ok(m) = m.try_into() {
+                                                self.sync_returnaddr = Some(msg.id.node());
+                                                self.sync_theirnum = u64::from_le_bytes(m);
+                                                if theyfast == 108 {
+                                                    self.sync_lightning = 'l';
+                                                } else {
+                                                    self.sync_lightning = 'b';
+                                                }
                                             }
                                         }
                                     }
+                                } else {
+                                    self.outer.dm(vec![60], &[msg.id.node()], false);
                                 }
                             }
                         }
