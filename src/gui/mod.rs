@@ -15,9 +15,14 @@ cargo run --bin full_staker --release 9879 ant 0 9876
 
 
 fn random_pswrd() -> String {
-    let mut chars = vec![0u8;100];
-    getrandom(&mut chars).expect("something's wrong with your randomness");
-    chars = chars.into_iter().filter(|x| *x < 248).take(20).collect();
+    let mut chars = vec![0u8;40];
+    loop {
+        getrandom(&mut chars).expect("something's wrong with your randomness");
+        chars = chars.into_iter().filter(|x| *x < 248).take(20).collect();
+        if chars.len() == 20 {
+            break
+        }
+    }
     chars.iter_mut().for_each(|x| {
         *x %= 62;
         *x += 48;
@@ -237,6 +242,16 @@ impl epi::App for TemplateApp {
                     ui.small(&*addr);
                 }
             });
+            if *staking {
+                ui.horizontal(|ui| {
+                    if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
+                        ui.output().copied_text = stkaddr.clone();
+                    }
+                    if ui.add(Label::new("staking address").sense(Sense::hover())).hovered() {
+                        ui.small(&*stkaddr);
+                    }
+                });
+            }
 
             ui.horizontal(|ui| {
                 ui.label("Unstaked Money");
