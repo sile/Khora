@@ -70,6 +70,7 @@ pub struct TemplateApp {
     show_next_pswrd: bool,
     next_pswrd: String,
     panic_fee: String,
+    entrypoint: String,
 }
 impl Default for TemplateApp {
     fn default() -> Self {
@@ -100,6 +101,7 @@ impl Default for TemplateApp {
             show_next_pswrd: true,
             next_pswrd: random_pswrd(),
             panic_fee: "1".to_string(),
+            entrypoint: "".to_string(),
         }
     }
 }
@@ -196,6 +198,7 @@ impl epi::App for TemplateApp {
             show_next_pswrd,
             next_pswrd,
             panic_fee,
+            entrypoint,
         } = self;
 
  
@@ -222,10 +225,17 @@ impl epi::App for TemplateApp {
 
             egui::menu::bar(ui, |ui| {
                 egui::menu::menu(ui, "File", |ui| {
+                    if ui.button("Enter Network").clicked() {
+                        let mut m = entrypoint.as_bytes().to_vec();
+                        m.push(42);
+                        sender.send(m).expect("something's wrong with communication from the gui");
+                    }
                     if ui.button("Quit").clicked() {
                         frame.quit();
                     }
                 });
+                ui.label("entry address");
+                ui.text_edit_singleline(entrypoint);
             });
             ui.heading("Kora");
             ui.hyperlink("https://github.com/constantine1024/Kora");

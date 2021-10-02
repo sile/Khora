@@ -1552,23 +1552,6 @@ impl Future for StakerNode {
                             }).collect::<HashMap<_,_>>();
                             self.outer.broadcast_now(txbin);
                         }
-                    } else if istx == 121 /* y */ {
-                        let mut mynum = self.bnum.to_le_bytes().to_vec();
-                        if self.is_user {
-                            mynum.push(108); //l
-                        } else {
-                            mynum.push(102); //f
-                        }
-                        mynum.push(121);
-                        let mut friend = self.outer.plumtree_node().all_push_peers();
-                        friend.remove(self.outer.plumtree_node().id());
-                        let friend = friend.into_iter().collect::<Vec<_>>();
-                        if let Some(friend) = friend.choose(&mut rand::thread_rng()) {
-                            println!("asking for help from {:?}",friend);
-                            self.outer.dm(mynum, &[*friend], false);
-                        } else {
-                            println!("you're isolated");
-                        }
                     } else if istx == u8::MAX {
                         let amnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
                         let stkamnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
@@ -1648,6 +1631,26 @@ impl Future for StakerNode {
                         self.gui_sender.send(m1).expect("should be working");
                         self.gui_sender.send(m2).expect("should be working");
 
+                    } else if istx == 121 /* y */ {
+                        let mut mynum = self.bnum.to_le_bytes().to_vec();
+                        if self.is_user {
+                            mynum.push(108); //l
+                        } else {
+                            mynum.push(102); //f
+                        }
+                        mynum.push(121);
+                        let mut friend = self.outer.plumtree_node().all_push_peers();
+                        friend.remove(self.outer.plumtree_node().id());
+                        let friend = friend.into_iter().collect::<Vec<_>>();
+                        if let Some(friend) = friend.choose(&mut rand::thread_rng()) {
+                            println!("asking for help from {:?}",friend);
+                            self.outer.dm(mynum, &[*friend], false);
+                        } else {
+                            println!("you're isolated");
+                        }
+                    } else if istx == 42 /* * */ { // ips to talk to
+                        let m = String::from_utf8_lossy(&m);
+                        self.outer.dm(vec![],&[NodeId::new(m.parse::<SocketAddr>().unwrap(), LocalNodeId::new(0))],true);
                     }
                 }
             }
