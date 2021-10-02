@@ -149,6 +149,7 @@ fn main() -> Result<(), MainError> {
             votes: vec![0;NUMBER_OF_VALIDATORS],
             stkinfo: initial_history.clone(),
             lastblock: NextBlock::default(),
+            lastlightning: LightningSyncBlock::default(),
             queue: (0..max_shards).map(|_|(0..QUEUE_LENGTH).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
             exitqueue: (0..max_shards).map(|_|(0..QUEUE_LENGTH).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
             comittee: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>(),
@@ -188,6 +189,7 @@ fn main() -> Result<(), MainError> {
             stkreset: None,
             sync_returnaddr: None,
             sync_theirnum: 0u64,
+            sync_lightning: 'b',
             needtosend: None,
             outs: None,
         };
@@ -257,6 +259,7 @@ struct SavedNode {
     votes: Vec<i32>,
     stkinfo: Vec<(CompressedRistretto,u64)>,
     lastblock: NextBlock,
+    lastlightning: LightningSyncBlock,
     queue: Vec<VecDeque<usize>>,
     exitqueue: Vec<VecDeque<usize>>,
     comittee: Vec<Vec<usize>>,
@@ -293,6 +296,7 @@ struct StakerNode {
     votes: Vec<i32>,
     stkinfo: Vec<(CompressedRistretto,u64)>,
     lastblock: NextBlock,
+    lastlightning: LightningSyncBlock,
     queue: Vec<VecDeque<usize>>,
     exitqueue: Vec<VecDeque<usize>>,
     comittee: Vec<Vec<usize>>,
@@ -330,6 +334,7 @@ struct StakerNode {
     stkreset: Option<Vec<u8>>,
     sync_returnaddr: Option<NodeId>,
     sync_theirnum: u64,
+    sync_lightning: char,
     needtosend: Option<(Vec<u8>,Vec<u64>)>,
     outs: Option<Vec<(Account, Scalar)>>,
 }
@@ -347,6 +352,7 @@ impl StakerNode {
             votes: self.votes.clone(),
             stkinfo: self.stkinfo.clone(),
             lastblock: self.lastblock.clone(),
+            lastlightning: self.lastlightning.clone(),
             queue: self.queue.clone(),
             exitqueue: self.exitqueue.clone(),
             comittee: self.comittee.clone(),
@@ -406,6 +412,7 @@ impl StakerNode {
             votes: sn.votes.clone(),
             stkinfo: sn.stkinfo.clone(),
             lastblock: sn.lastblock.clone(),
+            lastlightning: sn.lastlightning.clone(),
             queue: sn.queue.clone(),
             exitqueue: sn.exitqueue.clone(),
             comittee: sn.comittee.clone(),
@@ -431,6 +438,7 @@ impl StakerNode {
             stkreset: sn.stkreset,
             sync_returnaddr: None,
             sync_theirnum: 0u64,
+            sync_lightning: 'b',
             needtosend: None,
             outs: None,
         }
@@ -468,6 +476,7 @@ impl StakerNode {
                 self.headshard = lastblock.shards[0] as usize;
 
                 self.lastblock = lastblock;
+                self.lastlightning = self.lastblock.tolightning();
                 println!("=========================================================\nyay!");
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
 
@@ -488,7 +497,7 @@ impl StakerNode {
                     self.bnum += 1;
                 }
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
-                if (self.lastblock.txs.len() > 0) | (self.bnum - self.lastbnum > 4) {
+                if (self.lastblock.txs.len() > 0) || (self.bnum - self.lastbnum > 4) {
                     let mut guitruster = !self.lastblock.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
                     if guitruster && self.is_validator {
                         guitruster = false;
@@ -503,7 +512,7 @@ impl StakerNode {
                         self.lastblock.update_bloom(&mut self.bloom);
                     }
 
-                    let lightning = bincode::serialize(&self.lastblock.tolightning()).unwrap();
+                    let lightning = bincode::serialize(&self.lastlightning).unwrap();
                     println!("saving block...");
                     let mut f = File::create(format!("blocks/b{}",self.lastblock.bnum)).unwrap();
                     f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
@@ -554,12 +563,202 @@ impl StakerNode {
                         y
                     }
                 }).unwrap().0].0;
-                let stkout = self.lastblock.tolightning().info.stkout;
                 self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
-                    if stkout.contains(&location) {
+                    if self.lastlightning.info.stkout.contains(&location) {
                         None
                     } else {
-                        let location = location - stkout.iter().map(|x| (*x < location) as u64).sum::<u64>();
+                        let location = location - self.lastlightning.info.stkout.iter().map(|x| (*x < location) as u64).sum::<u64>();
+                        Some((location,node))
+                    }
+                }).collect::<HashMap<_,_>>();
+                self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
+                    if self.queue[self.headshard].contains(&(location as usize)) | self.comittee[self.headshard].contains(&(location as usize)) {
+                        Some((location,node))
+                    } else {
+                        None
+                    }
+                }).collect::<HashMap<_,_>>();
+
+                if let Some(&x) = self.knownvalidators.iter().filter(|&x| self.stkinfo[*x.0 as usize].0 == self.leader).map(|(_,&x)| x).collect::<Vec<_>>().get(0) {
+                    self.leaderip = Some(x.with_id(1u64));
+                } else {
+                    self.leaderip = None;
+                }
+                /* LEADER CHOSEN BY VOTES */
+                let mut mymoney = self.mine.iter().map(|x| self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
+                mymoney.extend(self.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
+                mymoney.push(0);
+                println!("my money:\n---------------------------------\n{:?}",mymoney);
+                self.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
+                let mut thisbnum = self.bnum.to_le_bytes().to_vec();
+                thisbnum.push(2);
+                self.gui_sender.send(thisbnum).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
+                println!("block {} name: {:?}",self.bnum, self.lastname);
+
+                if self.moneyreset.is_some() || self.stkreset.is_some() {
+                    if self.mine.len() < (self.moneyreset.is_some() as usize + self.stkreset.is_some() as usize) {
+                        if let Some(x) = self.moneyreset.clone() {
+                            self.outer.broadcast(x);
+                        }
+                        if let Some(x) = self.stkreset.clone() {
+                            self.outer.broadcast(x);
+                        }
+                    } else {
+                        self.moneyreset = None;
+                        self.stkreset = None;
+                    }
+                }
+                if self.bnum % 128 == 0 {
+                    self.overthrown = HashSet::new();
+                }
+                let s = self.stkinfo.borrow();
+                self.txses.retain(|x| {
+                    if let Ok(x) = bincode::deserialize::<PolynomialTransaction>(x) {
+                        if x.inputs.last() == Some(&1) {
+                            x.verifystk(s).is_ok()
+                        } else {
+                            x.verify().is_ok()
+                        }
+                    } else {
+                        false
+                    }
+                });
+
+                if let Some(needtosend) = self.needtosend.clone() {
+                    if needtosend.1 == self.mine.iter().map(|x| *x.0).collect::<Vec<u64>>() {
+                        if self.knownvalidators.len() > 0 {
+                            self.outer.dm_now(needtosend.0.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
+                        } else {
+                            self.outer.broadcast_now(needtosend.0.clone());
+                        }
+                    } else {
+                        self.needtosend = None;
+                    }
+                }
+
+                if self.is_validator && self.inner.plumtree_node().all_push_peers().is_empty() {
+                    for n in self.knownvalidators.iter() {
+                        self.inner.join(*n.1);
+                    }
+                }
+
+                self.is_user = self.smine.is_empty();
+                self.sigs = vec![];
+                self.points = HashMap::new();
+                self.scalars = HashMap::new();
+                self.waitingforentrybool = true;
+                self.waitingforleaderbool = false;
+                self.waitingforleadertime = Instant::now();
+                self.waitingforentrytime = Instant::now();
+                self.timekeeper = Instant::now();
+                self.usurpingtime = Instant::now();
+                println!("block reading process done!!!");
+            }
+        }
+    }
+    fn readlightning(&mut self, lastblock: LightningSyncBlock, m: Vec<u8>) {
+        if lastblock.bnum >= self.bnum {
+            let com = self.comittee.par_iter().map(|x| x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
+            println!("someone's sending block {} with name: {:?}",lastblock.bnum,lastblock.last_name);
+            println!("names match up: {}",lastblock.last_name == self.lastname);
+            if lastblock.last_name != self.lastname {
+                println!("{:?}\n{:?}",self.lastname,lastblock.last_name);
+            }
+            println!("stkinfo: {:?}",self.stkinfo);
+            if lastblock.shards.len() == 0 {
+                println!("Error in block verification: there is no shard");
+                return ();
+            }
+            match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
+                Ok(_) => {self.save(); println!("block verified...")}, // save second newest state (prevents the leader from attacking you)
+                Err(x) => println!("Error in block verification: {}",x),
+            };
+            let v: bool;
+            if (lastblock.shards[0] as usize >= self.headshard) && (lastblock.last_name == self.lastname) {
+                v = lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok();
+            } else {
+                v = false;
+            }
+            if v  {
+                println!("smine: {:?}",self.smine);
+                println!("all outer push pears: {:?}",self.outer.plumtree_node().all_push_peers());
+                self.headshard = lastblock.shards[0] as usize;
+
+                self.lastblock = NextBlock::default();
+                self.lastlightning = lastblock;
+                println!("=========================================================\nyay!");
+                // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
+
+                self.overthrown.remove(&self.stkinfo[self.lastlightning.leader.pk as usize].0);
+                if self.stkinfo[self.lastlightning.leader.pk as usize].0 != self.leader {
+                    self.overthrown.insert(self.leader);
+                }
+
+                for _ in self.bnum..self.lastlightning.bnum { // add whole different scannings for empty blocks
+                    println!("I missed a block!");
+                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
+                    NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
+
+                    self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
+                    for i in 0..self.comittee.len() {
+                        select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                    }
+                    self.bnum += 1;
+                }
+                // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
+                if (self.lastlightning.info.txout.len() > 0) || (self.lastlightning.info.stkin.len() > 0) || (self.lastlightning.info.stkout.len() > 0) || (self.bnum - self.lastbnum > 4) {
+                    let guitruster = !self.lastlightning.scan(&self.me, &mut self.mine, &mut self.height, &mut self.sheight, &mut self.alltagsever);
+                    self.gui_sender.send(vec![guitruster as u8,1]).expect("there's a problem communicating to the gui!");
+                    self.keylocation = self.smine.iter().map(|x| x[0]).collect();
+                    self.lastlightning.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
+
+                    let lightning = bincode::serialize(&self.lastlightning).unwrap();
+                    println!("saving block...");
+                    let mut f = File::create(format!("blocks/l{}",self.lastlightning.bnum)).unwrap();
+                    f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
+                    self.lastbnum = self.bnum;
+                    let mut hasher = Sha3_512::new();
+                    hasher.update(lightning);
+                    self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
+                } else {
+                    self.gui_sender.send(vec![!NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine) as u8,1]).expect("there's a problem communicating to the gui!");
+                    NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
+                }
+                // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
+                self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
+                self.newest = self.queue[self.headshard][0] as u64;
+                for i in 0..self.comittee.len() {
+                    select_stakers(&self.lastname,&self.bnum, &(i as u128), &mut self.queue[i], &mut self.exitqueue[i], &mut self.comittee[i], &self.stkinfo);
+                }
+                self.bnum += 1;
+
+                if self.lastlightning.emptyness.is_some() {
+                    self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z - self.lastlightning.emptyness.clone().unwrap().pk.iter().filter(|&&y| self.comittee[self.headshard][y as usize] == x).count() as i32).collect::<Vec<_>>();
+                } else {
+                    self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z + self.lastlightning.validators.clone().unwrap().iter().filter(|y| y.pk == x as u64).count() as i32).collect::<Vec<_>>();
+                }
+
+                
+                // println!("-----------------------------------------------\n{}\n--------------------------------",self.comittee[self.headshard][self.exitqueue[self.headshard][0]]);
+                // println!("{:?}",self.keylocation);
+                println!("exitqueue: {:?}",self.exitqueue[self.headshard]);
+
+                
+                /* LEADER CHOSEN BY VOTES */
+                let mut abouttoleave = self.exitqueue[self.headshard].clone();
+                let abouttoleave = abouttoleave.drain(..10).collect::<Vec<_>>().into_iter().map(|z| self.comittee[self.headshard][z].clone()).collect::<HashSet<_>>();
+                self.leader = self.stkinfo[*self.comittee[self.headshard].iter().zip(self.votes.iter()).max_by_key(|(x,&y)| {
+                    if abouttoleave.contains(x) | self.overthrown.contains(&self.stkinfo[**x].0) {
+                        i32::MIN
+                    } else {
+                        y
+                    }
+                }).unwrap().0].0;
+                self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
+                    if self.lastlightning.info.stkout.contains(&location) {
+                        None
+                    } else {
+                        let location = location - self.lastlightning.info.stkout.iter().map(|x| (*x < location) as u64).sum::<u64>();
                         Some((location,node))
                     }
                 }).collect::<HashMap<_,_>>();
@@ -1087,21 +1286,34 @@ impl Future for StakerNode {
             if self.is_staker { // users have is_staker true
                 if let Some(addr) = self.sync_returnaddr {
                     for b in self.sync_theirnum..std::cmp::min(self.sync_theirnum+10, self.bnum) {
-                        let file = format!("blocks/b{}",b);
+                        let file = format!("blocks/{}{}",self.sync_lightning,b);
                         println!("checking for file {:?}...",file);
                         if let Ok(mut file) = File::open(file) {
                             let mut x = vec![];
                             file.read_to_end(&mut x).unwrap();
                             println!("sending block {} of {}\t{:?}",b,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
-                            x.push(3);
+                            if self.sync_lightning == 'l' {
+                                x.push(108); //l
+                            } else {
+                                x.push(3);
+                            }
                             self.outer.dm(x,&vec![addr],false);
                         }
                         self.sync_theirnum += 1;
                     }
                     if self.sync_theirnum == self.bnum {
-                        let mut x = bincode::serialize(&self.lastblock).unwrap();
-                        println!("sending block {} of {}\t{:?}",self.bnum,self.bnum,bincode::deserialize::<NextBlock>(&x).unwrap().last_name);
-                        x.push(3);
+                        let mut x: Vec<u8>;
+                        if self.sync_lightning == 'b' {
+                            x = bincode::serialize(&self.lastblock).unwrap();
+                        } else {
+                            x = bincode::serialize(&self.lastlightning).unwrap();
+                        }
+                        println!("sending block {} of {}\t{:?}",self.bnum,self.bnum,self.lastlightning.last_name);
+                        if self.sync_lightning == 'l' {
+                            x.push(108); //l
+                        } else {
+                            x.push(3);
+                        }
                         self.outer.dm(x,&vec![addr],false);
                         self.sync_returnaddr = None;
                     }
@@ -1126,6 +1338,10 @@ impl Future for StakerNode {
                                     self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
+                            } else if mtype == 108 {
+                                if let Ok(lastblock) = bincode::deserialize::<LightningSyncBlock>(&m) {
+                                    self.readlightning(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
+                                }
                             } else if mtype == 113 /* q */ { // they just sent you a ring member
                                 self.rmems.insert(u64::from_le_bytes(m[64..72].try_into().unwrap()),History::read_raw(&m));
                             } else if mtype == 114 /* r */ { // answer their ring question
@@ -1144,8 +1360,17 @@ impl Future for StakerNode {
                                 }
                             } else if mtype == 121 /* y */ {
                                 if self.sync_returnaddr.is_none() {
-                                    self.sync_returnaddr = Some(msg.id.node());
-                                    self.sync_theirnum = u64::from_le_bytes(m.try_into().unwrap());
+                                    if let Some(theyfast) = m.pop() {
+                                        if let Ok(m) = m.try_into() {
+                                            self.sync_returnaddr = Some(msg.id.node());
+                                            self.sync_theirnum = u64::from_le_bytes(m);
+                                            if theyfast == 108 {
+                                                self.sync_lightning = 'l';
+                                            } else {
+                                                self.sync_lightning = 'b';
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1339,6 +1564,11 @@ impl Future for StakerNode {
                         }
                     } else if istx == 121 /* y */ {
                         let mut mynum = self.bnum.to_le_bytes().to_vec();
+                        if self.is_user {
+                            mynum.push(108); //l
+                        } else {
+                            mynum.push(102); //f
+                        }
                         mynum.push(121);
                         let mut friend = self.outer.plumtree_node().all_push_peers();
                         friend.remove(self.outer.plumtree_node().id());
@@ -1354,8 +1584,6 @@ impl Future for StakerNode {
                         let stkamnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
                         let newacc = Account::new(&format!("{}",String::from_utf8_lossy(&m)));
                         println!("understood command");
-
-
                         if self.mine.len() > 0 {
                             let (loc, _acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(x.0,x.1.clone())).unzip();
 
