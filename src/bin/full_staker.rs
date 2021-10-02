@@ -1328,7 +1328,7 @@ impl Future for StakerNode {
                                     self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
                                     self.outer.handle_gossip_now(fullmsg);
                                 }
-                            } else if mtype == 60 /* < */{
+                            } else if mtype == 60 /* < */ { // redo sync request
                                 let mut mynum = self.bnum.to_le_bytes().to_vec();
                                 if self.is_user {
                                     mynum.push(108); //l
