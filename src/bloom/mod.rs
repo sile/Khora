@@ -475,4 +475,53 @@ mod tests {
         assert!(actual_rate < (rate+0.001));
         assert!(true_positives == cnt);
     }
+
+
+    #[test]
+    fn bloom_parallell_writing() {
+        let cnt = 500_000 as usize;
+        let bits = 4_000_000;
+        let hashes = 6; // the problem disapears when there's 1 hash..., problem starts at like 3ish
+        let rate = 0.021577141 as f32;
+
+        BloomFile::initialize_bloom_file();
+        let b: BloomFile = BloomFile::from_keys(1,2);
+        let mut set: HashSet<[u8;32]> = HashSet::new();
+
+
+        (0..cnt as u32).into_iter().for_each(|v| {
+            set.insert(*Scalar::from(v).as_bytes());
+        });
+
+        (0..cnt as u32).into_par_iter().for_each(|v| {
+            b.insert(&Scalar::from(v).as_bytes());
+        });
+        
+
+        let res = (0..2*cnt as u32).into_par_iter().map(|v| {
+            // let mut rng = rand::thread_rng();
+            // let v = rng.gen::<u32>();
+            match (b.contains(&Scalar::from(v).as_bytes()),set.contains(Scalar::from(v).as_bytes())) {
+                (true, false) => { return 0 }
+                (false, true) => { return -1 } // it may be allowed to have false negatives because the chance that 2 items in different threads try to write in the same place is (1 - HASHES/FILE_SIZE)*(1 - HASHES/(FILE_SIZE-1))...*(1 - HASHES/(FILE_SIZE-CORES+1))
+                (true, true) => { return 1 } // ~= (1 - HASHES/FILE_SIZE)^(CORES - 1) > 0.999 on most computers for out uses
+                (false, false) => { return 2 } // which is fine because there's 128 validators that need to agree and their errors are all in different places
+            }
+        }).collect::<Vec<_>>();
+        let false_positives = res.par_iter().filter(|&&x| x == 0).count();
+        let false_negatives = res.par_iter().filter(|&&x| x == -1).count();
+        let true_positives = res.par_iter().filter(|&&x| x == 1).count();
+        let true_negatives = res.par_iter().filter(|&&x| x == 2).count();
+
+        // make sure we're not too far off
+        let actual_rate = false_positives as f32 / (false_positives + true_negatives) as f32;
+        let error_rate = false_negatives as f32 / (false_negatives + true_negatives) as f32;
+        println!("fp: {}    tn: {}  tp: {}  fn: {}",false_positives,true_negatives,true_positives,false_negatives);
+        println!("expected: {}",rate);
+        println!("actual:   {}",actual_rate);
+        println!("error:    {}",error_rate);
+        assert!(actual_rate > (rate-0.001));
+        assert!(actual_rate < (rate+0.001));
+        assert!(error_rate < 0.001);
+    }
 }
