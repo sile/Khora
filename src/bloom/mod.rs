@@ -504,7 +504,7 @@ mod tests {
             match (b.contains(&Scalar::from(v).as_bytes()),set.contains(Scalar::from(v).as_bytes())) {
                 (true, false) => { return 0 }
                 (false, true) => { return -1 } // it may be allowed to have false negatives because the chance that 2 items in different threads try to write in the same place is (1 - HASHES/FILE_SIZE)*(1 - HASHES/(FILE_SIZE-1))...*(1 - HASHES/(FILE_SIZE-CORES+1))
-                (true, true) => { return 1 } // ~= (1 - HASHES/FILE_SIZE)^(CORES - 1) > 0.999 on most computers for out uses
+                (true, true) => { return 1 } // ~= (1 - HASHES/FILE_SIZE)^(CORES - 1) > 0.999 on most computers for our uses
                 (false, false) => { return 2 } // which is fine because there's 128 validators that need to agree and their errors are all in different places
             }
         }).collect::<Vec<_>>();
