@@ -373,6 +373,7 @@ mod tests {
     use std::collections::HashSet;
     use curve25519_dalek::scalar::Scalar;
     use rand::{self,Rng};
+    use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
     use super::BloomFile;
 
     #[test]
@@ -421,6 +422,49 @@ mod tests {
             }
             i+=1;
         }
+
+        // make sure we're not too far off
+        let actual_rate = false_positives as f32 / (false_positives + true_negatives) as f32;
+        println!("fp: {}    tn: {}  tp: {}",false_positives,true_negatives,true_positives);
+        println!("expected: {}",rate);
+        println!("actual:   {}",actual_rate);
+        assert!(actual_rate > (rate-0.001));
+        assert!(actual_rate < (rate+0.001));
+    }
+
+    #[test]
+    fn bloom_parallell() {
+        let cnt = 500_000 as u32;
+        let bits = 4_000_000;
+        let hashes = 6; // the problem disapears when there's 1 hash..., problem starts at like 3ish
+        let rate = 0.021577141 as f32;
+
+        BloomFile::initialize_bloom_file();
+        let b: BloomFile = BloomFile::from_keys(1,2);
+        let mut set: HashSet<[u8;32]> = HashSet::new();
+
+
+        (0..cnt).into_iter().for_each(|v| {
+            set.insert(*Scalar::from(v).as_bytes());
+        });
+
+        (0..cnt).into_par_iter().for_each(|v| {
+            b.insert(&Scalar::from(v).as_bytes());
+        });
+
+        let res = (0..2*cnt).into_par_iter().map(|v| {
+            // let mut rng = rand::thread_rng();
+            // let v = rng.gen::<u32>();
+            match (b.contains(&Scalar::from(v).as_bytes()),set.contains(Scalar::from(v).as_bytes())) {
+                (true, false) => { return 0 }
+                (false, true) => { assert!(false); return -1 } // should never happen
+                (true, true) => { return 1 }
+                (false, false) => { return 2 }
+            }
+        }).collect::<Vec<_>>();
+        let false_positives = res.par_iter().filter(|&&x| x == 0).count();
+        let true_positives = res.par_iter().filter(|&&x| x == 1).count();
+        let true_negatives = res.par_iter().filter(|&&x| x == 2).count();
 
         // make sure we're not too far off
         let actual_rate = false_positives as f32 / (false_positives + true_negatives) as f32;
