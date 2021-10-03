@@ -515,7 +515,7 @@ mod tests {
 
         // make sure we're not too far off
         let actual_rate = false_positives as f32 / (false_positives + true_negatives) as f32;
-        let error_rate = false_negatives as f32 / (false_negatives + true_negatives) as f32;
+        let error_rate = false_negatives as f32 / (false_negatives + true_positives) as f32;
         println!("fp: {}    tn: {}  tp: {}  fn: {}",false_positives,true_negatives,true_positives,false_negatives);
         println!("expected: {}",rate);
         println!("actual:   {}",actual_rate);
