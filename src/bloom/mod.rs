@@ -398,7 +398,6 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         let mut i = 0;
-
         while i < cnt {
             // let v = rng.gen::<u32>();
             let v = i as u32;
@@ -434,7 +433,7 @@ mod tests {
 
     #[test]
     fn bloom_parallell() {
-        let cnt = 500_000 as u32;
+        let cnt = 500_000 as usize;
         let bits = 4_000_000;
         let hashes = 6; // the problem disapears when there's 1 hash..., problem starts at like 3ish
         let rate = 0.021577141 as f32;
@@ -444,15 +443,16 @@ mod tests {
         let mut set: HashSet<[u8;32]> = HashSet::new();
 
 
-        (0..cnt).into_iter().for_each(|v| {
-            set.insert(*Scalar::from(v).as_bytes());
-        });
-
-        (0..cnt).into_par_iter().for_each(|v| {
+        let mut i = 0;
+        while i < cnt {
+            // let v = rng.gen::<u32>();
+            let v = i as u32;
+            assert!(set.insert(*Scalar::from(v).as_bytes()));
             b.insert(&Scalar::from(v).as_bytes());
-        });
+            i+=1;
+        }
 
-        let res = (0..2*cnt).into_par_iter().map(|v| {
+        let res = (0..2*cnt as u32).into_par_iter().map(|v| {
             // let mut rng = rand::thread_rng();
             // let v = rng.gen::<u32>();
             match (b.contains(&Scalar::from(v).as_bytes()),set.contains(Scalar::from(v).as_bytes())) {
@@ -473,5 +473,6 @@ mod tests {
         println!("actual:   {}",actual_rate);
         assert!(actual_rate > (rate-0.001));
         assert!(actual_rate < (rate+0.001));
+        assert!(true_positives == cnt);
     }
 }
