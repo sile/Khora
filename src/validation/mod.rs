@@ -924,7 +924,7 @@ impl NextBlock { // need to sign the staker inputs too
 
     }
     pub fn update_bloom(&self,bloom:&BloomFile) {
-        self.txs.par_iter().for_each(|x| x.tags.iter().for_each(|x| bloom.insert(&x.as_bytes())));
+        self.txs.iter().for_each(|x| x.tags.iter().for_each(|x| bloom.insert(&x.as_bytes())));
     }
     pub fn tolightning(&self) -> LightningSyncBlock {
         LightningSyncBlock {
