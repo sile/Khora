@@ -254,7 +254,7 @@ fn main() -> Result<(),std::io::Error> {
         println!("history: {}",history.len());
         println!("stkinfo: {}",stkinfo.len());
         println!("-------------------------------->"); /* right now, bloom filter filters staker exits? */
-        nextblock.update_bloom(&bloom);
+        nextblock.update_bloom(&bloom,&true);
 
     }
 
