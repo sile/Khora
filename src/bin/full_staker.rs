@@ -443,7 +443,7 @@ impl StakerNode {
             outs: None,
         }
     }
-    fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) {
+    fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) -> bool {
         if lastblock.bnum >= self.bnum {
             let com = self.comittee.par_iter().map(|x| x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
             println!("someone's sending block {} with name: {:?}",lastblock.bnum,lastblock.last_name);
@@ -454,7 +454,7 @@ impl StakerNode {
             println!("stkinfo: {:?}",self.stkinfo);
             if lastblock.shards.len() == 0 {
                 println!("Error in block verification: there is no shard");
-                return ();
+                return false;
             }
             match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
                 Ok(_) => {self.save(); println!("block verified...")}, // save second newest state (prevents the leader from attacking you)
@@ -654,7 +654,12 @@ impl StakerNode {
                 self.timekeeper = Instant::now();
                 self.usurpingtime = Instant::now();
                 println!("block reading process done!!!");
+                return true
+            } else {
+                return false
             }
+        } else {
+            return false
         }
     }
     fn readlightning(&mut self, lastblock: LightningSyncBlock, m: Vec<u8>) {
@@ -948,12 +953,7 @@ impl Future for StakerNode {
                             // println!("# MESSAGE TYPE: {:?}", mtype); // i dont do anything with lightning blocks because im a staker
 
 
-                            if mtype == 0 {
-                                if self.txses.len() < 1000 {
-                                    self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
-                                }
-                                self.inner.handle_gossip_now(fullmsg);
-                            } else if mtype == 1 {
+                            if mtype == 1 {
                                 // println!("bnum: {}",self.bnum);
                                 if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     print!(".");
@@ -1002,21 +1002,28 @@ impl Future for StakerNode {
                                             self.waitingforentrybool = false;
                                             self.waitingforleaderbool = true;
                                             self.waitingforleadertime = Instant::now();
-                                            self.inner.handle_gossip_now(fullmsg);
+                                            self.inner.handle_gossip_now(fullmsg, true);
+                                        } else {
+                                            self.inner.handle_gossip_now(fullmsg, false);
                                         }
+                                    } else {
+                                        self.inner.handle_gossip_now(fullmsg, false);
                                     }
                                 }
                             } else if mtype == 2 {
                                 if let Ok(sig) = bincode::deserialize(&m) {
                                     self.sigs.push(sig);
-                                    self.inner.handle_gossip_now(fullmsg);
+                                    self.inner.handle_gossip_now(fullmsg, true);
+                                } else {
+                                    self.inner.handle_gossip_now(fullmsg, false);
                                 }
                             } else if mtype == 3 {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
                                     self.readblock(lastblock, m);
-                                    self.inner.handle_gossip_now(fullmsg);
+                                    self.inner.handle_gossip_now(fullmsg, true);
+                                } else {
+                                    self.inner.handle_gossip_now(fullmsg, false);
                                 }
-                                // println!("{:?}",hash_to_scalar(&self.lastblock));
                             } else if mtype == 4 {
                                 println!("recieving points phase: {}\nleader: {:?}",!self.points.contains_key(&usize::MAX),self.leader);
                                 if !self.points.contains_key(&usize::MAX) {
@@ -1037,7 +1044,7 @@ impl Future for StakerNode {
                                         }
                                     }
                                 }
-                                self.inner.handle_gossip_now(fullmsg);
+                                self.inner.handle_gossip_now(fullmsg, true);
                             } else if mtype == 5 {
                                 if let Ok(m) = m.try_into() {
                                     let xt = CompressedRistretto(m);
@@ -1058,7 +1065,9 @@ impl Future for StakerNode {
                                         }
                                     }
                                     self.waitingforleadertime = Instant::now();
-                                    self.inner.handle_gossip_now(fullmsg);
+                                    self.inner.handle_gossip_now(fullmsg, true);
+                                } else {
+                                    self.inner.handle_gossip_now(fullmsg, false);
                                 }
                             } else if mtype == 6 {
                                 println!("recieving scalars phase: {}",self.points.contains_key(&usize::MAX));
@@ -1068,10 +1077,18 @@ impl Future for StakerNode {
                                         println!("got sent a scalar from {}",pk);
                                         if let Ok(m) = m.try_into() {
                                             self.scalars.insert(pk,Scalar::from_bits(m));
-                                            self.inner.handle_gossip_now(fullmsg);
+                                            self.inner.handle_gossip_now(fullmsg, true);
+                                        } else {
+                                            self.inner.handle_gossip_now(fullmsg, false);
                                         }
+                                    } else {
+                                        self.inner.handle_gossip_now(fullmsg, false);
                                     }
+                                } else {
+                                    self.inner.handle_gossip_now(fullmsg, false);
                                 }
+                            } else {
+                                self.inner.handle_gossip_now(fullmsg, false);
                             }
                         }
                     }
@@ -1321,12 +1338,26 @@ impl Future for StakerNode {
 
 
                             if mtype == 0 {
-                                self.txses.push(m[..std::cmp::min(m.len(),10_000)].to_vec());
-                                self.outer.handle_gossip_now(fullmsg);
+                                let m = m[..std::cmp::min(m.len(),10_000)].to_vec();
+                                if let Ok(t) = bincode::deserialize::<PolynomialTransaction>(&m) {
+                                    if !self.is_user {
+                                        let bloom = self.bloom.borrow();
+                                        if t.tags.par_iter().all(|y| !bloom.contains(y.as_bytes())) && t.verify().is_ok() {
+                                            self.txses.push(m);
+                                            self.outer.handle_gossip_now(fullmsg, true);
+                                        }
+                                    } else {
+                                        self.outer.handle_gossip_now(fullmsg, true);
+                                    }
+                                } else {
+                                    self.outer.handle_gossip_now(fullmsg, false);
+                                }
                             } else if mtype == 3 {
                                 if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
-                                    self.readblock(lastblock, m); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
-                                    self.outer.handle_gossip_now(fullmsg);
+                                    let s = self.readblock(lastblock, m);
+                                    self.outer.handle_gossip_now(fullmsg, s);
+                                } else {
+                                    self.outer.handle_gossip_now(fullmsg, false);
                                 }
                             } else if mtype == 60 /* < */ { // redo sync request
                                 let mut mynum = self.bnum.to_le_bytes().to_vec();
@@ -1364,7 +1395,9 @@ impl Future for StakerNode {
                                     if self.queue[self.headshard].contains(&(who as usize)) {
                                         self.knownvalidators.insert(who,m.with_id(0));
                                     }
-                                    self.outer.handle_gossip_now(fullmsg);
+                                    self.outer.handle_gossip_now(fullmsg, true);
+                                } else {
+                                    self.inner.handle_gossip_now(fullmsg, false);
                                 }
                             } else if mtype == 121 /* y */ {
                                 if !self.is_user {
@@ -1384,6 +1417,8 @@ impl Future for StakerNode {
                                 } else {
                                     self.outer.dm(vec![60], &[msg.id.node()], false);
                                 }
+                            } else {
+                                self.inner.handle_gossip_now(fullmsg, false);
                             }
                         }
                     }

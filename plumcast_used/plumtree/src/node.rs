@@ -365,14 +365,16 @@ impl<T: System> Node<T>
 
     #[allow(clippy::map_entry)]
     /// handles the gossip if you want to get the message delivered and read before you gossip it
-    pub fn handle_gossip_now(&mut self, gossip: GossipMessage<T>) {
+    pub fn handle_gossip_now(&mut self, gossip: GossipMessage<T>, send: bool) {
             if gossip.round != 0 {
-                self.eager_push_now(&gossip);
-                self.lazy_push_now(&gossip);
-                self.eager_push_peers.insert(gossip.sender.clone());
-                self.lazy_push_peers.remove(&gossip.sender);
-
-                self.optimize_now(&gossip);
+                if send {
+                    self.eager_push_now(&gossip);
+                    self.lazy_push_now(&gossip);
+                    self.eager_push_peers.insert(gossip.sender.clone());
+                    self.lazy_push_peers.remove(&gossip.sender);
+                    self.optimize_now(&gossip);
+    
+                }
                 self.missings.remove(&gossip.message.id);
                 self.messages
                     .insert(gossip.message.id, gossip.message.payload);

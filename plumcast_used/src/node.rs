@@ -233,8 +233,8 @@ impl<M: MessagePayload> Node<M> {
         id
     }
     /// gossips a message right now.
-    pub fn handle_gossip_now(&mut self, message_payload: GossipMessage<M>) {
-        self.plumtree_node.handle_gossip_now(message_payload);
+    pub fn handle_gossip_now(&mut self, message_payload: GossipMessage<M>, send: bool) {
+        self.plumtree_node.handle_gossip_now(message_payload, send);
 
         self.send_all_gossips();
     }
