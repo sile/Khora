@@ -923,8 +923,12 @@ impl NextBlock { // need to sign the staker inputs too
         changed
 
     }
-    pub fn update_bloom(&self,bloom:&BloomFile) {
-        self.txs.par_iter().for_each(|x| x.tags.iter().for_each(|x| bloom.insert(&x.as_bytes())));
+    pub fn update_bloom(&self,bloom:&BloomFile,parallel:&bool) {
+        if *parallel {
+            self.txs.par_iter().for_each(|x| x.tags.iter().for_each(|x| bloom.insert(&x.as_bytes())));
+        } else {
+            self.txs.iter().for_each(|x| x.tags.iter().for_each(|x| bloom.insert(&x.as_bytes())));
+        }
     }
     pub fn tolightning(&self) -> LightningSyncBlock {
         LightningSyncBlock {

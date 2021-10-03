@@ -509,7 +509,7 @@ impl StakerNode {
                     self.keylocation = self.smine.iter().map(|x| x[0]).collect();
                     self.lastblock.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
                     if !self.is_user {
-                        self.lastblock.update_bloom(&mut self.bloom);
+                        self.lastblock.update_bloom(&mut self.bloom,&self.is_validator);
                     }
 
                     let lightning = bincode::serialize(&self.lastlightning).unwrap();
