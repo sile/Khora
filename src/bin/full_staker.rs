@@ -1415,7 +1415,9 @@ impl Future for StakerNode {
                                         }
                                     }
                                 } else {
-                                    self.outer.dm(vec![60], &[msg.id.node()], false);
+                                    if msg.id.node() != *self.outer.plumtree_node().id() {
+                                        self.outer.dm(vec![60], &[msg.id.node()], false);
+                                    }
                                 }
                             } else {
                                 self.inner.handle_gossip_now(fullmsg, false);
