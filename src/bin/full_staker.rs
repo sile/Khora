@@ -97,7 +97,6 @@ fn main() -> Result<(), MainError> {
 
 
 
-    let (message_tx, message_rx) = mpsc::channel();
     let (ui_sender, urecv) = mpsc::channel();
     let (usend, ui_reciever) = channel::unbounded();
 
@@ -137,7 +136,6 @@ fn main() -> Result<(), MainError> {
         node = StakerNode {
             inner: frontnode,
             outer: backnode,
-            message_rx: message_rx,
             save_history: (matches.value_of("SAVE_HISTORY").unwrap() != "0"),
             me: me,
             mine: HashMap::new(),
@@ -194,7 +192,7 @@ fn main() -> Result<(), MainError> {
             outs: None,
         };
     } else {
-        node = StakerNode::load(frontnode, backnode, message_rx, usend, urecv);
+        node = StakerNode::load(frontnode, backnode, usend, urecv);
     }
     let staked: String;
     if let Some(founder) = node.smine.get(0) {
@@ -204,22 +202,6 @@ fn main() -> Result<(), MainError> {
     }
 
 
-    std::thread::spawn(move || { // replace this thread and the loop with gui in the main thread
-        use std::io::BufRead;
-        let stdin = std::io::stdin();
-        for line in stdin.lock().lines() {
-            // println!("line sent: {:?}",line);
-            let line = if let Ok(line) = line {
-                line
-            } else {
-                break;
-            };
-            if message_tx.send(line).is_err() {
-                println!("message send was error!");
-                break;
-            }
-        }
-    });
     println!("starting!");
     let app = gui::TemplateApp::new(
         ui_reciever,
@@ -282,7 +264,6 @@ struct SavedNode {
 struct StakerNode {
     inner: Node<Vec<u8>>, // for sending and recieving messages as a validator (as in inner sanctum)
     outer: Node<Vec<u8>>, // for sending and recieving messages as a non validator (as in not inner)
-    message_rx: mpsc::Receiver<String>,
     gui_sender: channel::Sender<Vec<u8>>,
     gui_reciever: mpsc::Receiver<Vec<u8>>,
     save_history: bool, //just testing. in real code this is true; but i need to pretend to be different people on the same computer
@@ -375,7 +356,7 @@ impl StakerNode {
         let mut f = File::create("myNode").unwrap();
         f.write_all(&mut sn).unwrap();
     }
-    fn load(inner: Node<Vec<u8>>, outer: Node<Vec<u8>>, message_rx: mpsc::Receiver<String>, gui_sender: channel::Sender<Vec<u8>>, gui_reciever: mpsc::Receiver<Vec<u8>>) -> StakerNode {
+    fn load(inner: Node<Vec<u8>>, outer: Node<Vec<u8>>, gui_sender: channel::Sender<Vec<u8>>, gui_reciever: mpsc::Receiver<Vec<u8>>) -> StakerNode {
         let mut buf = Vec::<u8>::new();
         let mut f = File::open("myNode").unwrap();
         f.read_to_end(&mut buf).unwrap();
@@ -386,7 +367,6 @@ impl StakerNode {
         StakerNode {
             inner: inner,
             outer: outer,
-            message_rx,
             gui_sender,
             gui_reciever,
             timekeeper: Instant::now(),
@@ -1579,8 +1559,7 @@ impl Future for StakerNode {
                                     println!("you can't make that transaction!");
                                 }
                             }
-                        } else {
-                            println!("unstaking!");
+                        } else if txtype == 63 /* ? */ {
                             let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.iter().map(|x|(x[0] as u64,x[1].clone())).unzip();
                             let inps = amnt.into_iter().map(|x| self.me.receive_ot(&self.me.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
                             let tx = Transaction::spend_ring(&inps, &outs.iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
@@ -1597,6 +1576,9 @@ impl Future for StakerNode {
                                 txbin = vec![];
                                 println!("you can't make that transaction!");
                             }
+                        } else {
+                            txbin = vec![];
+                            println!("somethings wrong with your query!");
 
                         }
                         if !txbin.is_empty() {
@@ -1713,51 +1695,6 @@ impl Future for StakerNode {
                     }
                 }
             }
-
-
-            /* THIS CODE WILL NOT BE USED, ALL INTERACTIONS WILL BE THROUGH THE GUI */
-            while let Async::Ready(Some(m)) = self.message_rx.poll().expect("Never fails") { // this would be for terminal (all the messages here are good)
-                if m.len() > 0 {
-                    println!("# MESSAGE (sent): {:?}", m);
-                    let mut m = str::to_ascii_lowercase(&m).as_bytes().to_vec();
-                    let istx = m.pop().unwrap();
-                    if istx == 42 /* * */ { // ips to talk to
-                        // 192.168.000.101:09876 192.168.000.101:09875*
-                        let addrs = String::from_utf8_lossy(&m);
-                        let addrs = addrs.split(" ").collect::<Vec<_>>().par_iter().map(|x| NodeId::new(x.parse::<SocketAddr>().unwrap(), LocalNodeId::new(0))).collect::<Vec<_>>();
-                        self.outer.dm(vec![],&addrs,true);
-                    } else if istx == 105 /* i */ {
-                        // println!("\nmy name:\n---------------------------------------------\n{:?}\n",self.me.name());
-                        // println!("\nmy outer addr:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().id());
-                        // println!("\nmy inner addr:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().id());
-                        // println!("\nmy staker name:\n---------------------------------------------\n{:?}\n",self.me.stake_acc().name());
-                        let scalarmoney = self.mine.iter().map(|x|self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>();
-                        // println!("\nmy scalar money:\n---------------------------------------------\n{:?}\n",scalarmoney);
-                        // println!("\nstake state:\n---------------------------------------------\n{:?}\n",self.stkinfo);
-                        // println!("\ncomittee:\n---------------------------------------------\n{:?}\n",self.comittee[self.headshard]);
-                        // println!("\nleadership:\n---------------------------------------------\nmyself: {:?}\nleader: {:?}\n",self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress().as_bytes(), self.leader.as_bytes());
-                        // println!("\ntime:\n---------------------------------------------\n{:?}s\n",self.timekeeper.elapsed().as_secs());
-                        // println!("\nis validating:\n---------------------------------------------\n{:?}\n",self.is_validator);
-                        // println!("\nis staking:\n---------------------------------------------\n{:?}\n",self.is_staker);
-                        // println!("\nknown validators:\n---------------------------------------------\n{:?}\n",self.knownvalidators);
-                        let moniez = u64::from_le_bytes(scalarmoney.as_bytes()[..8].try_into().unwrap());
-                        println!("\nmy money:\n---------------------------------------------\n{:?}\n",moniez);
-                        println!("\nmy money locations:\n---------------------------------------------\n{:?}\n",self.mine.iter().map(|x| *x.0 as u64).collect::<Vec<_>>());
-                        println!("\nmy stake:\n---------------------------------------------\n{:?}\n",self.smine);
-                        // println!("\nsheight:\n---------------------------------------------\n{:?}\n",self.sheight);
-                        println!("\nblock number:\n---------------------------------------------\n{:?}\n",self.bnum);
-                        println!("\nblock name:\n---------------------------------------------\n{:?}\n",self.lastname);
-                        println!("\ninner friends:\n---------------------------------------------\n{:?}\n",self.inner.plumtree_node().all_push_peers());
-                        println!("\nouter friends:\n---------------------------------------------\n{:?}\n",self.outer.plumtree_node().all_push_peers());
-                        println!("\ntxs known: {:?}\n",self.txses.len());
-                        println!("\nheight: {:?}\n",self.height);
-                    } else if istx == 115 /* s */ {
-                        self.save();
-                    }
-                }
-                did_something = true;
-            }
-            /* THIS CODE WILL NOT BE USED, ALL INTERACTIONS WILL BE THROUGH THE GUI */
 
 
 

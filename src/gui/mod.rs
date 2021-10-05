@@ -71,6 +71,7 @@ pub struct TemplateApp {
     next_pswrd: String,
     panic_fee: String,
     entrypoint: String,
+    stkspeand: bool,
 }
 impl Default for TemplateApp {
     fn default() -> Self {
@@ -102,6 +103,7 @@ impl Default for TemplateApp {
             next_pswrd: random_pswrd(),
             panic_fee: "1".to_string(),
             entrypoint: "".to_string(),
+            stkspeand: false,
         }
     }
 }
@@ -199,6 +201,7 @@ impl epi::App for TemplateApp {
             next_pswrd,
             panic_fee,
             entrypoint,
+            stkspeand,
         } = self;
 
  
@@ -445,17 +448,24 @@ impl epi::App for TemplateApp {
                                     tot += x;
                                 }
                             }
-                            let x = unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
+                            let x = staked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
                             if x > 0 {
-                                m.extend(str::to_ascii_lowercase(&addr).as_bytes());
+                                m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
                                 m.extend(x.to_le_bytes());
                             }
-                            m.push(33);
+                            if *stkspeand {
+                                m.push(63);
+                            } else {
+                                m.push(33);
+                            }
                             m.push(33);
                             sender.send(m).expect("something's wrong with communication from the gui");
                         }
                     }
                 });
+                if *staking {
+                    ui.add(Checkbox::new(stkspeand,"Spend with staked money"));
+                }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                     ui.add(
                         egui::Hyperlink::new("https://github.com/emilk/egui/").text("powered by egui"),
