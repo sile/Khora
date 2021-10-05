@@ -1530,7 +1530,7 @@ impl Future for StakerNode {
                                 }
                                 txbin = vec![];
                             } else {
-                                let rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &5, &self.height);
+                                let rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &(loc.len() as u16 + 4), &self.height);
                                 let ring = recieve_ring(&rname).expect("shouldn't fail");
                                 println!("ring: {:?}",ring);
                                 println!("mine: {:?}",acc.iter().map(|x|x.pk.compress()).collect::<Vec<_>>());
@@ -1593,7 +1593,7 @@ impl Future for StakerNode {
                             }).collect::<HashMap<_,_>>();
                             self.outer.broadcast_now(txbin);
                         }
-                    } else if istx == u8::MAX {
+                    } else if istx == u8::MAX /* panic button */ {
                         let amnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
                         let stkamnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
                         let newacc = Account::new(&format!("{}",String::from_utf8_lossy(&m)));
