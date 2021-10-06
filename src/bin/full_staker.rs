@@ -1131,9 +1131,7 @@ impl Future for StakerNode {
                             println!("failed to make a block :(");
 
                             self.sigs = vec![];
-                            let m = bincode::serialize(&lastblock.txs.par_iter().map(|x| bincode::serialize(&x).unwrap()).collect::<Vec<_>>()).unwrap();
-                            // println!("bnum: {}",self.bnum);
-        
+                            let m = bincode::serialize(&self.txses).unwrap();
                             let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum);
                             m.push(1u8);
                             self.inner.broadcast(m);
@@ -1232,18 +1230,12 @@ impl Future for StakerNode {
                                 self.timekeeper = Instant::now();
                             }
                         } else {
-                            self.points.remove(&usize::MAX);
-                            let points = self.points.par_iter().map(|x| *x.1).collect::<Vec<_>>();
-                            let mut m = MultiSignature::sum_group_x(&points).as_bytes().to_vec();
-                            m.push(5u8);
+                            let m = bincode::serialize(&self.txses).unwrap();
+                            let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum);
+                            m.push(1u8);
                             self.inner.broadcast(m);
-                            // self.points = HashMap::new();
-                            self.points.insert(usize::MAX,MultiSignature::sum_group_x(&points).decompress().unwrap());
-                            println!("scalar time!");
-                            self.timekeeper = Instant::now() - Duration::from_secs(2);
                         }
                         did_something = true;
-        
                     }
                 }
                 // }
