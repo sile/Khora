@@ -91,18 +91,20 @@ impl PartialEq for MultiSignature {
 }
 
 impl MultiSignature {
-    pub fn gen_group_x(key: &Scalar) -> CompressedRistretto { // this will give you some scalar to use that no one will use and is reproducable
+    pub fn gen_group_x(key: &Scalar, nonce: &u64) -> CompressedRistretto { // this will give you some scalar to use that no one will use and is reproducable
         let mut s = Sha3_512::new();
         s.update(&key.as_bytes());
+        s.update(nonce.to_le_bytes());
         let m = ((Scalar::from_hash(s))*PEDERSEN_H()).compress();
         m
     }
     pub fn sum_group_x<'a, I: IntoParallelRefIterator<'a, Item = &'a RistrettoPoint>>(x: &'a I) -> CompressedRistretto {
         x.par_iter().sum::<RistrettoPoint>().compress()
     }
-    pub fn try_get_y(key: &Scalar, message: &Vec<u8>, xt: &CompressedRistretto) -> Scalar {
+    pub fn try_get_y(key: &Scalar, message: &Vec<u8>, xt: &CompressedRistretto, nonce: &u64) -> Scalar {
         let mut s = Sha3_512::new();
         s.update(&key.as_bytes());
+        s.update(nonce.to_le_bytes());
         let r = Scalar::from_hash(s);
 
         let mut s = Sha3_512::new();
@@ -1347,9 +1349,9 @@ mod tests {
         let sk = (0..100).into_iter().map(|_| Scalar::from(rand::random::<u64>())).collect::<Vec<_>>();
         let pk = sk.iter().map(|x| x*PEDERSEN_H()).collect::<Vec<_>>();
 
-        let x = sk.iter().map(|k| MultiSignature::gen_group_x(&k).decompress().unwrap()).collect::<Vec<_>>();
+        let x = sk.iter().map(|k| MultiSignature::gen_group_x(&k, &0).decompress().unwrap()).collect::<Vec<_>>();
         let xt = MultiSignature::sum_group_x(&x);
-        let y = sk.iter().map(|k| MultiSignature::try_get_y(&k, &message, &xt)).collect::<Vec<_>>();
+        let y = sk.iter().map(|k| MultiSignature::try_get_y(&k, &message, &xt, &0)).collect::<Vec<_>>();
         let yt = MultiSignature::sum_group_y(&y);
 
 

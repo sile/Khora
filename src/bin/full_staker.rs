@@ -190,6 +190,7 @@ fn main() -> Result<(), MainError> {
             sync_lightning: 'b',
             // needtosend: None,
             outs: None,
+            groupsent: [false;2],
         };
     } else {
         node = StakerNode::load(frontnode, backnode, usend, urecv);
@@ -318,6 +319,7 @@ struct StakerNode {
     sync_lightning: char,
     // needtosend: Option<(Vec<u8>,Vec<u64>)>,
     outs: Option<Vec<(Account, Scalar)>>,
+    groupsent: [bool;2],
 }
 impl StakerNode {
     fn save(&self) {
@@ -421,6 +423,7 @@ impl StakerNode {
             sync_lightning: 'b',
             // needtosend: None,
             outs: None,
+            groupsent: [false;2],
         }
     }
     fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) -> bool {
@@ -626,6 +629,7 @@ impl StakerNode {
 
                 self.is_user = self.smine.is_empty();
                 self.sigs = vec![];
+                self.groupsent = [false;2];
                 self.points = HashMap::new();
                 self.scalars = HashMap::new();
                 self.waitingforentrybool = true;
@@ -952,7 +956,7 @@ impl Future for StakerNode {
 
                                             for keylocation in &self.keylocation {
                                                 let m = NextBlock::valicreate(&self.key, &keylocation, &self.leader, &m, &(self.headshard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
-                                                if m.txs.len() > 0 {
+                                                if m.txs.len() > 0 || self.groupsent[0] {
                                                     println!("{:?}",m.txs.len());
                                                     let mut m = bincode::serialize(&m).unwrap();
                                                     m.push(2);
@@ -965,17 +969,20 @@ impl Future for StakerNode {
                                                     }
                                                 } else if (m.txs.len() == 0) && (m.emptyness.is_none()){
                                                     println!("going for empty block");
-                                                    let m = MultiSignature::gen_group_x(&self.key).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
-                                                    let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
-                                                    m.push(4u8);
-                                                    if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
-                                                        // self.inner.broadcast(m.clone());
-                                                        if let Some(x) = self.leaderip {
-                                                            println!("I'm dm'ing a MESSAGE TYPE 4 to {:?}",x);
-                                                            self.inner.dm(m, vec![&x], false);
-                                                        } else {
-                                                            println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
-                                                            self.inner.broadcast(m);
+                                                    if !self.groupsent[0] {
+                                                        self.groupsent[0] = true;
+                                                        let m = MultiSignature::gen_group_x(&self.key,&self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
+                                                        let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
+                                                        m.push(4u8);
+                                                        if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
+                                                            // self.inner.broadcast(m.clone());
+                                                            if let Some(x) = self.leaderip {
+                                                                println!("I'm dm'ing a MESSAGE TYPE 4 to {:?}",x);
+                                                                self.inner.dm(m, vec![&x], false);
+                                                            } else {
+                                                                println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
+                                                                self.inner.broadcast(m);
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -1028,25 +1035,30 @@ impl Future for StakerNode {
                                 self.inner.handle_gossip_now(fullmsg, true);
                             } else if mtype == 5 {
                                 if let Ok(m) = m.try_into() {
-                                    let xt = CompressedRistretto(m);
-                                    let mut mess = self.leader.as_bytes().to_vec();
-                                    mess.extend(&self.lastname);
-                                    mess.extend(&(self.headshard as u16).to_le_bytes().to_vec());
-                                    // println!("from the me: {:?}",mess);
-                                    println!("you're trying to send a scalar!");
-                                    for keylocation in self.keylocation.iter() {
-                                        let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &mess, &xt).as_bytes().to_vec(), keylocation, &self.bnum);
-                                        m.push(6u8);
-                                        if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
-                                            if let Some(x) = self.leaderip {
-                                                self.inner.dm(m, vec![&x], true);
-                                            } else {
-                                                self.inner.broadcast(m);
+                                    if self.groupsent[1] {
+                                        self.inner.handle_gossip_now(fullmsg, true);
+                                    } else {
+                                        self.groupsent[1] = true;
+                                        let xt = CompressedRistretto(m);
+                                        let mut mess = self.leader.as_bytes().to_vec();
+                                        mess.extend(&self.lastname);
+                                        mess.extend(&(self.headshard as u16).to_le_bytes().to_vec());
+                                        // println!("from the me: {:?}",mess);
+                                        println!("you're trying to send a scalar!");
+                                        for keylocation in self.keylocation.iter() {
+                                            let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &mess, &xt, &self.bnum).as_bytes().to_vec(), keylocation, &self.bnum);
+                                            m.push(6u8);
+                                            if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
+                                                if let Some(x) = self.leaderip {
+                                                    self.inner.dm(m, vec![&x], true);
+                                                } else {
+                                                    self.inner.broadcast(m);
+                                                }
                                             }
                                         }
+                                        self.waitingforleadertime = Instant::now();
+                                        self.inner.handle_gossip_now(fullmsg, true);
                                     }
-                                    self.waitingforleadertime = Instant::now();
-                                    self.inner.handle_gossip_now(fullmsg, true);
                                 } else {
                                     self.inner.handle_gossip_now(fullmsg, false);
                                 }
@@ -1212,25 +1224,12 @@ impl Future for StakerNode {
                                 
                                 self.timekeeper = Instant::now();
                             } else { // need an extra round to weed out liers
-                                let points = keys.iter().map(|x| self.points[x]).collect::<Vec<_>>();
-                                if keys.len() > SIGNING_CUTOFF {
-                                    let p = MultiSignature::sum_group_x(&points);
-                                    self.points.insert(usize::MAX,p.decompress().unwrap());
-                                    let mut m = p.as_bytes().to_vec();
-                                    m.push(5u8);
-                                    self.inner.broadcast(m);
-                                    self.points = keys.iter().map(|&x| (*x,self.points[x])).collect::<HashMap<_,_>>();
-                                    self.scalars = HashMap::new();
-                                    self.timekeeper -= Duration::from_secs(1);
-                                } else {
-                                    let m = bincode::serialize(&self.txses).unwrap();
-                                    let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
-                                    m.push(1u8);
-                                    println!("a validator was corrupted I'm restarting this bitch");
-                                    self.inner.broadcast(m);
-                                    self.timekeeper = Instant::now();
-                                }
-            
+                                let m = bincode::serialize(&self.txses).unwrap();
+                                let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
+                                m.push(1u8);
+                                println!("a validator was corrupted I'm restarting this bitch");
+                                self.inner.broadcast(m);
+                                self.timekeeper = Instant::now();
                             }
                         } else {
                             self.points.remove(&usize::MAX);
@@ -1251,12 +1250,15 @@ impl Future for StakerNode {
                 if self.waitingforentrybool && (self.waitingforentrytime.elapsed().as_secs() > 5) {
                     self.waitingforentrybool = false;
                     for keylocation in &self.keylocation {
-                        let m = MultiSignature::gen_group_x(&self.key).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
-                        let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
-                        m.push(4u8);
-                        if self.comittee[self.headshard].contains(&(*keylocation as usize)) {
-                            println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
-                            self.inner.broadcast(m);
+                        if !self.groupsent[0] {
+                            self.groupsent[0] = true;
+                            let m = MultiSignature::gen_group_x(&self.key, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
+                            let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
+                            m.push(4u8);
+                            if self.comittee[self.headshard].contains(&(*keylocation as usize)) {
+                                println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
+                                self.inner.broadcast(m);
+                            }
                         }
                     }
                 }
