@@ -188,7 +188,7 @@ fn main() -> Result<(), MainError> {
             sync_returnaddr: None,
             sync_theirnum: 0u64,
             sync_lightning: 'b',
-            needtosend: None,
+            // needtosend: None,
             outs: None,
         };
     } else {
@@ -316,7 +316,7 @@ struct StakerNode {
     sync_returnaddr: Option<NodeId>,
     sync_theirnum: u64,
     sync_lightning: char,
-    needtosend: Option<(Vec<u8>,Vec<u64>)>,
+    // needtosend: Option<(Vec<u8>,Vec<u64>)>,
     outs: Option<Vec<(Account, Scalar)>>,
 }
 impl StakerNode {
@@ -419,7 +419,7 @@ impl StakerNode {
             sync_returnaddr: None,
             sync_theirnum: 0u64,
             sync_lightning: 'b',
-            needtosend: None,
+            // needtosend: None,
             outs: None,
         }
     }
@@ -575,19 +575,6 @@ impl StakerNode {
                 self.gui_sender.send(thisbnum).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
-                if self.moneyreset.is_some() || self.stkreset.is_some() {
-                    if self.mine.len() < (self.moneyreset.is_some() as usize + self.stkreset.is_some() as usize) {
-                        if let Some(x) = self.moneyreset.clone() {
-                            self.outer.broadcast(x);
-                        }
-                        if let Some(x) = self.stkreset.clone() {
-                            self.outer.broadcast(x);
-                        }
-                    } else {
-                        self.moneyreset = None;
-                        self.stkreset = None;
-                    }
-                }
                 if self.bnum % 128 == 0 {
                     self.overthrown = HashSet::new();
                 }
@@ -605,15 +592,29 @@ impl StakerNode {
                     }
                 });
 
-                if let Some(needtosend) = self.needtosend.clone() {
-                    if needtosend.1 == self.mine.iter().map(|x| *x.0).collect::<Vec<u64>>() {
-                        if self.knownvalidators.len() > 0 {
-                            self.outer.dm_now(needtosend.0.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
-                        } else {
-                            self.outer.broadcast_now(needtosend.0.clone());
+                // if let Some(needtosend) = self.needtosend.clone() {
+                //     if needtosend.1 == self.mine.iter().map(|x| *x.0).collect::<Vec<u64>>() {
+                //         if self.knownvalidators.len() > 0 {
+                //             self.outer.dm_now(needtosend.0.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
+                //         } else {
+                //             self.outer.broadcast_now(needtosend.0.clone());
+                //         }
+                //     } else {
+                //         self.needtosend = None;
+                //     }
+                // }
+
+                if self.moneyreset.is_some() || self.stkreset.is_some() {
+                    if self.mine.len() < (self.moneyreset.is_some() as usize + self.stkreset.is_some() as usize) {
+                        if let Some(x) = self.moneyreset.clone() {
+                            self.outer.broadcast(x);
+                        }
+                        if let Some(x) = self.stkreset.clone() {
+                            self.outer.broadcast(x);
                         }
                     } else {
-                        self.needtosend = None;
+                        self.moneyreset = None;
+                        self.stkreset = None;
                     }
                 }
 
@@ -772,6 +773,20 @@ impl StakerNode {
                 self.gui_sender.send(thisbnum).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
+                if self.bnum % 128 == 0 {
+                    self.overthrown = HashSet::new();
+                }
+                // if let Some(needtosend) = self.needtosend.clone() {
+                //     if needtosend.1 == self.mine.iter().map(|x| *x.0).collect::<Vec<u64>>() {
+                //         if self.knownvalidators.len() > 0 {
+                //             self.outer.dm_now(needtosend.0.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
+                //         } else {
+                //             self.outer.broadcast_now(needtosend.0.clone());
+                //         }
+                //     } else {
+                //         self.needtosend = None;
+                //     }
+                // }
                 if self.moneyreset.is_some() || self.stkreset.is_some() {
                     if self.mine.len() < (self.moneyreset.is_some() as usize + self.stkreset.is_some() as usize) {
                         if let Some(x) = self.moneyreset.clone() {
@@ -783,20 +798,6 @@ impl StakerNode {
                     } else {
                         self.moneyreset = None;
                         self.stkreset = None;
-                    }
-                }
-                if self.bnum % 128 == 0 {
-                    self.overthrown = HashSet::new();
-                }
-                if let Some(needtosend) = self.needtosend.clone() {
-                    if needtosend.1 == self.mine.iter().map(|x| *x.0).collect::<Vec<u64>>() {
-                        if self.knownvalidators.len() > 0 {
-                            self.outer.dm_now(needtosend.0.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
-                        } else {
-                            self.outer.broadcast_now(needtosend.0.clone());
-                        }
-                    } else {
-                        self.needtosend = None;
                     }
                 }
 
@@ -1461,7 +1462,7 @@ impl Future for StakerNode {
                         let mut txbin = bincode::serialize(&tx).unwrap();
                         txbin.push(0);
                         let needtosend = (txbin,self.mine.iter().map(|x| *x.0).collect::<Vec<_>>());
-                        self.needtosend = Some(needtosend.clone());
+                        // self.needtosend = Some(needtosend.clone());
                         if self.knownvalidators.len() > 0 {
                             self.outer.dm_now(needtosend.0.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
                         } else {
@@ -1553,7 +1554,7 @@ impl Future for StakerNode {
                                 if tx.verify().is_ok() {
                                     txbin = bincode::serialize(&tx).unwrap();
                                     println!("transaction made!");
-                                    self.needtosend = Some((txbin.iter().chain(vec![&0u8]).map(|x| *x).collect(),self.mine.iter().map(|x| *x.0).collect::<Vec<_>>()));
+                                    // self.needtosend = Some((txbin.iter().chain(vec![&0u8]).map(|x| *x).collect(),self.mine.iter().map(|x| *x.0).collect::<Vec<_>>()));
                                 } else {
                                     txbin = vec![];
                                     println!("you can't make that transaction!");
@@ -1584,13 +1585,7 @@ impl Future for StakerNode {
                         if !txbin.is_empty() {
                             self.txses.push(txbin.clone());
                             txbin.push(0);
-                            self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
-                                if self.queue[self.headshard].contains(&(location as usize)) {
-                                    Some((location,node))
-                                } else {
-                                    None
-                                }
-                            }).collect::<HashMap<_,_>>();
+                            self.outer.dm_now(txbin.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
                             self.outer.broadcast_now(txbin);
                         }
                     } else if istx == u8::MAX /* panic button */ {
