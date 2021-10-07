@@ -184,13 +184,13 @@ fn main() -> Result<(), MainError> {
             gui_sender: usend,
             gui_reciever: urecv,
             moneyreset: None,
-            stkreset: None,
             sync_returnaddr: None,
             sync_theirnum: 0u64,
             sync_lightning: 'b',
             // needtosend: None,
             outs: None,
             groupsent: [false;2],
+            oldstk: None,
         };
     } else {
         node = StakerNode::load(frontnode, backnode, usend, urecv);
@@ -259,7 +259,7 @@ struct SavedNode {
     rname: Vec<u8>,
     is_user: bool,
     moneyreset: Option<Vec<u8>>,
-    stkreset: Option<Vec<u8>>,
+    oldstk: Option<(Account, Vec<[u64;2]>, Scalar)>,
 }
 
 struct StakerNode {
@@ -313,13 +313,13 @@ struct StakerNode {
     rname: Vec<u8>,
     is_user: bool,
     moneyreset: Option<Vec<u8>>,
-    stkreset: Option<Vec<u8>>,
     sync_returnaddr: Option<NodeId>,
     sync_theirnum: u64,
     sync_lightning: char,
     // needtosend: Option<(Vec<u8>,Vec<u64>)>,
     outs: Option<Vec<(Account, Scalar)>>,
     groupsent: [bool;2],
+    oldstk: Option<(Account, Vec<[u64;2]>, Scalar)>,
 }
 impl StakerNode {
     fn save(&self) {
@@ -352,7 +352,7 @@ impl StakerNode {
             rname: self.rname.clone(),
             is_user: self.is_user,
             moneyreset: self.moneyreset.clone(),
-            stkreset: self.stkreset.clone(),
+            oldstk: self.oldstk.clone()
         }; // just redo initial conditions on the rest
         let mut sn = bincode::serialize(&sn).unwrap();
         let mut f = File::create("myNode").unwrap();
@@ -417,13 +417,13 @@ impl StakerNode {
             rname: vec![],
             is_user: sn.is_user,
             moneyreset: sn.moneyreset,
-            stkreset: sn.stkreset,
             sync_returnaddr: None,
             sync_theirnum: 0u64,
             sync_lightning: 'b',
             // needtosend: None,
             outs: None,
             groupsent: [false;2],
+            oldstk: sn.oldstk,
         }
     }
     fn readblock(&mut self, lastblock: NextBlock, mut m: Vec<u8>) -> bool {
@@ -607,17 +607,47 @@ impl StakerNode {
                 //     }
                 // }
 
-                if self.moneyreset.is_some() || self.stkreset.is_some() {
-                    if self.mine.len() < (self.moneyreset.is_some() as usize + self.stkreset.is_some() as usize) {
-                        if let Some(x) = self.moneyreset.clone() {
-                            self.outer.broadcast(x);
+                if self.moneyreset.is_some() || self.oldstk.is_some() {
+                    if self.mine.len() < (self.moneyreset.is_some() as usize + self.oldstk.is_some() as usize) {
+                        let mut oldstkcheck = false;
+                        if let Some(oldstk) = &mut self.oldstk {
+                            if !self.mine.iter().all(|x| x.1.com.amount.unwrap() != oldstk.2) {
+                                oldstkcheck = true;
+                            }
+                            if (self.lastblock.txs.len() > 0) || (self.bnum - self.lastbnum > 4) {
+                                self.lastblock.scanstk(&oldstk.0, &mut oldstk.1, &mut self.sheight.clone(), &self.comittee, &self.stkinfo);
+                            } else {
+                                NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut oldstk.1);
+                            }
+                            oldstk.2 = Scalar::from(oldstk.1.iter().map(|x| x[1]).sum::<u64>()); // maybe add a fee here?
+                            let (loc, amnt): (Vec<u64>,Vec<u64>) = oldstk.1.iter().map(|x|(x[0],x[1])).unzip();
+                            let inps = amnt.into_iter().map(|x| oldstk.0.receive_ot(&oldstk.0.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
+                            let tx = Transaction::spend_ring(&inps, &vec![(&self.me,&oldstk.2)]);
+                            println!("about to verify!");
+                            tx.verify().unwrap();
+                            println!("finished to verify!");
+                            let mut loc = loc.into_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
+                            loc.push(1);
+                            let tx = tx.polyform(&loc); // push 0
+                            if tx.verifystk(&self.stkinfo).is_ok() {
+                                let mut txbin = bincode::serialize(&tx).unwrap();
+                                self.txses.push(txbin.clone());
+                                txbin.push(0);
+                                self.outer.broadcast_now(txbin.clone());
+                                self.inner.broadcast_now(txbin.clone());
+                            }
                         }
-                        if let Some(x) = self.stkreset.clone() {
+                        if oldstkcheck {
+                            self.oldstk = None;
+                        }
+                        if self.mine.len() > 0 && self.oldstk.is_some() {
+                            self.moneyreset = None;
+                        }
+                        if let Some(x) = self.moneyreset.clone() {
                             self.outer.broadcast(x);
                         }
                     } else {
                         self.moneyreset = None;
-                        self.stkreset = None;
                     }
                 }
 
@@ -791,17 +821,48 @@ impl StakerNode {
                 //         self.needtosend = None;
                 //     }
                 // }
-                if self.moneyreset.is_some() || self.stkreset.is_some() {
-                    if self.mine.len() < (self.moneyreset.is_some() as usize + self.stkreset.is_some() as usize) {
-                        if let Some(x) = self.moneyreset.clone() {
-                            self.outer.broadcast(x);
+
+                if self.moneyreset.is_some() || self.oldstk.is_some() {
+                    if self.mine.len() < (self.moneyreset.is_some() as usize + self.oldstk.is_some() as usize) {
+                        let mut oldstkcheck = false;
+                        if let Some(oldstk) = &mut self.oldstk {
+                            if !self.mine.iter().all(|x| x.1.com.amount.unwrap() != oldstk.2) {
+                                oldstkcheck = true;
+                            }
+                            if (self.lastblock.txs.len() > 0) || (self.bnum - self.lastbnum > 4) {
+                                self.lastblock.scanstk(&oldstk.0, &mut oldstk.1, &mut self.sheight.clone(), &self.comittee, &self.stkinfo);
+                            } else {
+                                NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut oldstk.1);
+                            }
+                            oldstk.2 = Scalar::from(oldstk.1.iter().map(|x| x[1]).sum::<u64>()); // maybe add a fee here?
+                            let (loc, amnt): (Vec<u64>,Vec<u64>) = oldstk.1.iter().map(|x|(x[0],x[1])).unzip();
+                            let inps = amnt.into_iter().map(|x| oldstk.0.receive_ot(&oldstk.0.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
+                            let tx = Transaction::spend_ring(&inps, &vec![(&self.me,&oldstk.2)]);
+                            println!("about to verify!");
+                            tx.verify().unwrap();
+                            println!("finished to verify!");
+                            let mut loc = loc.into_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
+                            loc.push(1);
+                            let tx = tx.polyform(&loc); // push 0
+                            if tx.verifystk(&self.stkinfo).is_ok() {
+                                let mut txbin = bincode::serialize(&tx).unwrap();
+                                self.txses.push(txbin.clone());
+                                txbin.push(0);
+                                self.outer.broadcast_now(txbin.clone());
+                                self.inner.broadcast_now(txbin.clone());
+                            }
                         }
-                        if let Some(x) = self.stkreset.clone() {
+                        if oldstkcheck {
+                            self.oldstk = None;
+                        }
+                        if self.mine.len() > 0 && self.oldstk.is_some() {
+                            self.moneyreset = None;
+                        }
+                        if let Some(x) = self.moneyreset.clone() {
                             self.outer.broadcast(x);
                         }
                     } else {
                         self.moneyreset = None;
-                        self.stkreset = None;
                     }
                 }
 
@@ -1584,7 +1645,10 @@ impl Future for StakerNode {
                         }
                     } else if istx == u8::MAX /* panic button */ {
                         let amnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
-                        let stkamnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
+                        let mut stkamnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
+                        if stkamnt == amnt {
+                            stkamnt -= Scalar::one();
+                        }
                         let newacc = Account::new(&format!("{}",String::from_utf8_lossy(&m)));
                         println!("understood command");
                         if self.mine.len() > 0 {
@@ -1639,9 +1703,7 @@ impl Future for StakerNode {
                                 txbin.push(0);
                                 self.outer.broadcast_now(txbin.clone());
                                 self.inner.broadcast_now(txbin.clone());
-                                self.outer.broadcast(txbin.clone());
-                                self.inner.broadcast(txbin.clone());
-                                self.stkreset = Some(txbin);
+                                self.oldstk = Some((self.me.clone(),self.smine.clone(),stkamnt));
                                 println!("sending tx!");
                             } else {
                                 println!("you can't make that transaction!");
@@ -1654,6 +1716,7 @@ impl Future for StakerNode {
                         self.me = newacc;
                         self.key = self.me.stake_acc().receive_ot(&self.me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap().sk.unwrap();
                         self.keylocation = HashSet::new();
+                        self.save();
                         let mut m1 = self.me.name().as_bytes().to_vec();
                         m1.extend([0,u8::MAX]);
                         let mut m2 = self.me.stake_acc().name().as_bytes().to_vec();
