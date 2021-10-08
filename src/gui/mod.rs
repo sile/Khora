@@ -347,7 +347,7 @@ impl epi::App for TemplateApp {
             egui::warn_if_debug_build(ui);
         });
 
-        if *show_reset && *pswd_shown && (pswd_guess == password) { // add warning to not panic 2ce in a row
+        if *pswd_shown && (pswd_guess == password) { // add warning to not panic 2ce in a row
             egui::Window::new("Reset Options").open(show_reset).show(ctx, |ui| {
                 if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
                     ui.small("If you're worried that someone got your password, this section sends all of your money to a new account with the new password.");
