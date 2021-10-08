@@ -144,13 +144,18 @@ impl epi::App for TemplateApp {
         // Note that you must enable the `persistence` feature for this to work.
         #[cfg(feature = "persistence")]
         if let Some(storage) = _storage {
-            let x: Self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
-            println!("{:?}",x.friends);
-            self.friend_names = x.friend_names;
-            self.friends = x.friends;
-            self.send_amount = x.send_amount;
-            self.edit_names = self.friends.iter().map(|_| false).collect();
-            println!("{:?}",self.friends);
+            let r = self.reciever.clone();
+            let s = self.sender.clone();
+            *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
+            self.sender = s;
+            self.reciever = r;
+            // let x: Self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
+            // println!("{:?}",x.friends);
+            // self.friend_names = x.friend_names;
+            // self.friends = x.friends;
+            // self.send_amount = x.send_amount;
+            // self.edit_names = self.friends.iter().map(|_| false).collect();
+            // println!("{:?}",self.friends);
             // *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
         }
     }
