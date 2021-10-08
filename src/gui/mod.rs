@@ -139,11 +139,19 @@ impl epi::App for TemplateApp {
         _frame: &mut epi::Frame<'_>,
         _storage: Option<&dyn epi::Storage>,
     ) {
+        println!("This is printing before the first frame!");
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         #[cfg(feature = "persistence")]
         if let Some(storage) = _storage {
-            *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
+            let x: Self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
+            println!("{:?}",x.friends);
+            self.friend_names = x.friend_names;
+            self.friends = x.friends;
+            self.send_amount = x.send_amount;
+            self.edit_names = self.friends.iter().map(|_| false).collect();
+            println!("{:?}",self.friends);
+            // *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
         }
     }
 
