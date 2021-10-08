@@ -350,16 +350,21 @@ impl epi::App for TemplateApp {
         if *pswd_shown && (pswd_guess == password) { // add warning to not panic 2ce in a row
             egui::Window::new("Reset Options").open(show_reset).show(ctx, |ui| {
                 if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
-                    ui.small("If you're worried that someone got your password, this section sends all of your money to a new account with the new password.");
+                    ui.small("If you're worried that someone got your password, this section sends all of your money to a new account with the new password. If you click this button, do not turn off this app because you will send a transaction but your new information will not be savedd until it is confirmed.");
                 }
-                ui.add(Checkbox::new(show_next_pswrd,"Show Password On Reset"));
+                ui.horizontal(|ui| {
+                    ui.add(Checkbox::new(show_next_pswrd,"Show Password On Reset"));
+                    if ui.button("Suggest Password").clicked() {
+                        *next_pswrd = random_pswrd();
+                    }
+                });
                 ui.horizontal(|ui| {
                     ui.label("Next Password");
                     ui.text_edit_singleline(next_pswrd);
                 });
                 ui.horizontal(|ui| {
                     ui.label("Password Reset Fee");
-                    ui.text_edit_singleline(panic_fee)
+                    ui.text_edit_singleline(panic_fee);
                 });
                 
                 if ui.button("Reset").clicked() {
@@ -385,7 +390,7 @@ impl epi::App for TemplateApp {
                     if *show_next_pswrd {
                         *pswd_guess = next_pswrd.clone();
                     }
-                    *next_pswrd = random_pswrd();
+                    // *next_pswrd = random_pswrd();
                 }
             });
         }
