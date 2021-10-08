@@ -323,40 +323,42 @@ struct StakerNode {
 }
 impl StakerNode {
     fn save(&self) {
-        let sn = SavedNode {
-            save_history: self.save_history,
-            me: self.me,
-            mine: self.mine.clone(),
-            smine: self.smine.clone(), // [location, amount]
-            key: self.key,
-            keylocation: self.keylocation.clone(),
-            leader: self.leader.clone(),
-            overthrown: self.overthrown.clone(),
-            votes: self.votes.clone(),
-            stkinfo: self.stkinfo.clone(),
-            lastblock: self.lastblock.clone(),
-            lastlightning: self.lastlightning.clone(),
-            queue: self.queue.clone(),
-            exitqueue: self.exitqueue.clone(),
-            comittee: self.comittee.clone(),
-            lastname: self.lastname.clone(),
-            bloom: self.bloom.get_keys(),
-            bnum: self.bnum,
-            lastbnum: self.lastbnum,
-            height: self.height,
-            sheight: self.sheight,
-            alltagsever: self.alltagsever.clone(),
-            headshard: self.headshard.clone(),
-            view: self.inner.hyparview_node().active_view().iter().map(|x| x.address()).collect::<Vec<_>>(),
-            rmems: self.rmems.clone(),
-            rname: self.rname.clone(),
-            is_user: self.is_user,
-            moneyreset: self.moneyreset.clone(),
-            oldstk: self.oldstk.clone()
-        }; // just redo initial conditions on the rest
-        let mut sn = bincode::serialize(&sn).unwrap();
-        let mut f = File::create("myNode").unwrap();
-        f.write_all(&mut sn).unwrap();
+        if !self.moneyreset.is_some() && !self.oldstk.is_some() {
+            let sn = SavedNode {
+                save_history: self.save_history,
+                me: self.me,
+                mine: self.mine.clone(),
+                smine: self.smine.clone(), // [location, amount]
+                key: self.key,
+                keylocation: self.keylocation.clone(),
+                leader: self.leader.clone(),
+                overthrown: self.overthrown.clone(),
+                votes: self.votes.clone(),
+                stkinfo: self.stkinfo.clone(),
+                lastblock: self.lastblock.clone(),
+                lastlightning: self.lastlightning.clone(),
+                queue: self.queue.clone(),
+                exitqueue: self.exitqueue.clone(),
+                comittee: self.comittee.clone(),
+                lastname: self.lastname.clone(),
+                bloom: self.bloom.get_keys(),
+                bnum: self.bnum,
+                lastbnum: self.lastbnum,
+                height: self.height,
+                sheight: self.sheight,
+                alltagsever: self.alltagsever.clone(),
+                headshard: self.headshard.clone(),
+                view: self.inner.hyparview_node().active_view().iter().map(|x| x.address()).collect::<Vec<_>>(),
+                rmems: self.rmems.clone(),
+                rname: self.rname.clone(),
+                is_user: self.is_user,
+                moneyreset: self.moneyreset.clone(),
+                oldstk: self.oldstk.clone()
+            }; // just redo initial conditions on the rest
+            let mut sn = bincode::serialize(&sn).unwrap();
+            let mut f = File::create("myNode").unwrap();
+            f.write_all(&mut sn).unwrap();
+        }
     }
     fn load(inner: Node<Vec<u8>>, outer: Node<Vec<u8>>, gui_sender: channel::Sender<Vec<u8>>, gui_reciever: mpsc::Receiver<Vec<u8>>) -> StakerNode {
         let mut buf = Vec::<u8>::new();
@@ -439,10 +441,10 @@ impl StakerNode {
                 println!("Error in block verification: there is no shard");
                 return false;
             }
-            match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
-                Ok(_) => {self.save(); println!("block verified...")}, // save second newest state (prevents the leader from attacking you)
-                Err(x) => println!("Error in block verification: {}",x),
-            };
+            // match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
+            //     Ok(_) => {self.save(); println!("block verified...")}, // save second newest state (prevents the leader from attacking you)
+            //     Err(x) => println!("Error in block verification: {}",x),
+            // };
             let v: bool;
             if (lastblock.shards[0] as usize >= self.headshard) && (lastblock.last_name == self.lastname) {
                 if self.is_validator {
@@ -454,6 +456,7 @@ impl StakerNode {
                 v = false;
             }
             if v  {
+                self.save();
                 println!("smine: {:?}",self.smine);
                 println!("all outer push pears: {:?}",self.outer.plumtree_node().all_push_peers());
                 self.headshard = lastblock.shards[0] as usize;
@@ -690,10 +693,10 @@ impl StakerNode {
                 println!("Error in block verification: there is no shard");
                 return ();
             }
-            match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
-                Ok(_) => {self.save(); println!("block verified...")}, // save second newest state (prevents the leader from attacking you)
-                Err(x) => println!("Error in block verification: {}",x),
-            };
+            // match lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo) {
+            //     Ok(_) => {self.save(); println!("block verified...")}, // save second newest state (prevents the leader from attacking you)
+            //     Err(x) => println!("Error in block verification: {}",x),
+            // };
             let v: bool;
             if (lastblock.shards[0] as usize >= self.headshard) && (lastblock.last_name == self.lastname) {
                 v = lastblock.verify(&com[lastblock.shards[0] as usize], &self.stkinfo).is_ok();
@@ -701,6 +704,7 @@ impl StakerNode {
                 v = false;
             }
             if v  {
+                self.save();
                 println!("smine: {:?}",self.smine);
                 println!("all outer push pears: {:?}",self.outer.plumtree_node().all_push_peers());
                 self.headshard = lastblock.shards[0] as usize;
@@ -1677,8 +1681,6 @@ impl Future for StakerNode {
                                 txbin.push(0);
                                 self.outer.broadcast_now(txbin.clone());
                                 self.inner.broadcast_now(txbin.clone());
-                                self.outer.broadcast(txbin.clone());
-                                self.inner.broadcast(txbin.clone());
                                 self.moneyreset = Some(txbin);
                                 println!("transaction made!");
                             } else {
@@ -1716,7 +1718,6 @@ impl Future for StakerNode {
                         self.me = newacc;
                         self.key = self.me.stake_acc().receive_ot(&self.me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap().sk.unwrap();
                         self.keylocation = HashSet::new();
-                        self.save();
                         let mut m1 = self.me.name().as_bytes().to_vec();
                         m1.extend([0,u8::MAX]);
                         let mut m2 = self.me.stake_acc().name().as_bytes().to_vec();

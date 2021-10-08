@@ -72,6 +72,7 @@ pub struct TemplateApp {
     panic_fee: String,
     entrypoint: String,
     stkspeand: bool,
+    show_reset: bool,
 }
 impl Default for TemplateApp {
     fn default() -> Self {
@@ -104,6 +105,7 @@ impl Default for TemplateApp {
             panic_fee: "1".to_string(),
             entrypoint: "".to_string(),
             stkspeand: false,
+            show_reset: false,
         }
     }
 }
@@ -202,6 +204,7 @@ impl epi::App for TemplateApp {
             panic_fee,
             entrypoint,
             stkspeand,
+            show_reset,
         } = self;
 
  
@@ -235,6 +238,9 @@ impl epi::App for TemplateApp {
                     }
                     if ui.button("Quit").clicked() {
                         frame.quit();
+                    }
+                    if ui.button("Reset Password Options").clicked() {
+                        *show_reset = !*show_reset;
                     }
                 });
                 ui.label("entry address");
@@ -341,10 +347,10 @@ impl epi::App for TemplateApp {
             egui::warn_if_debug_build(ui);
         });
 
-        if *pswd_shown && (pswd_guess == password) { // add warning to not panic 2ce in a row
-            egui::Window::new("Reset Options").show(ctx, |ui| {
+        if *show_reset && *pswd_shown && (pswd_guess == password) { // add warning to not panic 2ce in a row
+            egui::Window::new("Reset Options").open(show_reset).show(ctx, |ui| {
                 if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
-                    ui.small("This section sends all of your money to a new account with the new password.");
+                    ui.small("If you're worried that someone got your password, this section sends all of your money to a new account with the new password.");
                 }
                 ui.add(Checkbox::new(show_next_pswrd,"Show Password On Reset"));
                 ui.horizontal(|ui| {
@@ -352,11 +358,11 @@ impl epi::App for TemplateApp {
                     ui.text_edit_singleline(next_pswrd);
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Panic Fee");
+                    ui.label("Password Reset Fee");
                     ui.text_edit_singleline(panic_fee)
                 });
                 
-                if ui.button("Panic").clicked() {
+                if ui.button("Reset").clicked() {
                     let mut x = vec![];
                     let pf = panic_fee.parse::<u64>().unwrap();
 
