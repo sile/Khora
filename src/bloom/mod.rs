@@ -31,7 +31,6 @@ use std::cmp::{min,max};
 use std::hash::Hasher;
 use std::iter::Iterator;
 use std::fs;
-use std::os::unix::prelude::FileExt;
 use ahash::AHasher;
 use std::fs::OpenOptions;
 use std::fs::File;
@@ -238,7 +237,8 @@ impl BloomFile {
             byte[0] |= delta;
             // println!("{:#8b}",byte[0]);
             assert!(byte[0] & delta != 0b00000000u8);
-            f.write_at(&byte,h/8).expect("Unable to write data");
+            f.seek(SeekFrom::Start(h/8)).expect("Seek failed");
+            f.write(&byte).expect("Unable to write data");
 
             
             // let mut byte = [0u8];
@@ -255,8 +255,16 @@ impl BloomFile {
         for h in self.get_hashes(item) {
             let h = h % FILE_SIZE;
             let mut byte = [0u8];
-            let r = File::open(FILE_NAME).unwrap();
-            r.read_at(&mut byte, h/8).expect("Unable to read data");
+            // let r = File::open(FILE_NAME).unwrap();
+            let mut r = OpenOptions::new()
+                .read(true)
+                .write(false)
+                .create(false)
+                .open(FILE_NAME)
+                .unwrap();
+            r.seek(SeekFrom::Start(h/8)).expect("Seek failed");
+
+            r.read(&mut byte).expect("Unable to read data");
             let mut delta = 0b00000001u8;
             delta <<= h%8;
             if (byte[0] & delta) == 0b00000000u8 {
