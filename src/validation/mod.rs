@@ -80,7 +80,7 @@ impl Syncedtx {
 pub struct MultiSignature{
     pub x: CompressedRistretto,
     pub y: Scalar,
-    pub pk: Vec<u8>, // whose not in it... maybe this should be comitte index not stake index to save space? -7 bytes per sig not in -> 42 - 0 sigs -> 0 to 294 bytes saved per block
+    pub pk: Vec<u8>,
 }
 
 impl PartialEq for MultiSignature {
@@ -90,7 +90,7 @@ impl PartialEq for MultiSignature {
 }
 
 impl MultiSignature {
-    pub fn gen_group_x(key: &Scalar, nonce: &u64) -> CompressedRistretto { // this will give you some scalar to use that no one will use and is reproducable
+    pub fn gen_group_x(key: &Scalar, nonce: &u64) -> CompressedRistretto {
         let mut s = Sha3_512::new();
         s.update(&key.as_bytes());
         s.update(nonce.to_le_bytes());
@@ -121,12 +121,8 @@ impl MultiSignature {
         s.update(&message);
         s.update(&xt.as_bytes());
         let e = Scalar::from_hash(s);
-        // println!("e: {:?}",e);
-        // println!("y: {:?}",yt);
-        // println!("x: {:?}",xt);
-        // println!("who: {:?}",who);
         (yt*PEDERSEN_H()) == (xt.decompress().unwrap() + e*who.into_par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>())
-    } // -------------this should fail on user validator leader codes because of this ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ which i added for full_staker.rs
+    }
 }
 
 
@@ -278,7 +274,7 @@ pub struct NextBlock {
     pub leader: Signature,
     pub txs: Vec<PolynomialTransaction>,
     pub last_name: Vec<u8>,
-    pub shards: Vec<u16>, // shard numbers involved
+    pub shards: Vec<u16>,
     pub bnum: u64,
 }
 impl PartialEq for NextBlock {
@@ -286,7 +282,7 @@ impl PartialEq for NextBlock {
         bincode::serialize(self).unwrap() == bincode::serialize(other).unwrap()
     }
 }
-impl NextBlock { // need to sign the staker inputs too
+impl NextBlock {
     pub fn valicreate(key: &Scalar, location: &u64, leader: &CompressedRistretto, txs: &Vec<PolynomialTransaction>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, bloom: &BloomFile,/* _history: &Vec<OTAccount>,*/ stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock {
         let stks = txs.par_iter().filter_map(|x| 
             if x.inputs.last() == Some(&1) {if x.verifystk(&stkstate).is_ok() {Some(x.to_owned())} else {None}} else {None}
@@ -315,15 +311,11 @@ impl NextBlock { // need to sign the staker inputs too
                     Some(x.to_owned())
                 }
                 else {None}
-        }).collect::<Vec<PolynomialTransaction>>(); /* input of 1 tx -> it's from a staker */
+        }).collect::<Vec<PolynomialTransaction>>();
         txs.append(&mut stks);
 
 
         let m = vec![leader.to_bytes().to_vec(),bincode::serialize(&vec![pool]).unwrap(),Syncedtx::to_sign(&txs),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-        // println!("block making: {:?}",hash_to_scalar(&m));
-        // println!("\n\nval: {:?}\n\n",hash_to_scalar(&m));
-        // println!("\n\nval: {:?}\n\n",hash_to_scalar(&leader.to_bytes().to_vec()));
-        // println!("\n\nval: {:?}\n\n",bnum);
         let mut s = Sha3_512::new();
         s.update(&m);
         NextBlock {
@@ -383,9 +375,7 @@ impl NextBlock { // need to sign the staker inputs too
         
         
         let mut blks: Vec<NextBlock> = blks.par_iter().zip(val_pools).filter_map(|(x,y)| if x.verify(&y,&stkstate).is_ok() {Some(x.to_owned())} else {None}).collect();
-        let mut blk = blks.remove(0); // their own shard should be this one!
-        // blk.shards = vec![*mypoolnum].into_iter().chain(blk.shards.into_iter()).collect::<Vec<_>>(); // main shard should be contributing as a shard while waiting
-        // blk.shards.par_extend(blk.validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>());
+        let mut blk = blks.remove(0); // their own shard should be this one! (main shard should be contributing as a shard while waiting)
         let mut tags = blk.txs.par_iter().map(|x| x.tags.clone()).flatten().collect::<HashSet<Tag>>();
         for mut b in blks {
             if b.bnum == *bnum {
@@ -397,16 +387,10 @@ impl NextBlock { // need to sign the staker inputs too
                 let x = b.txs.len();
                 tags = tags.union(&b.txs.into_par_iter().map(|x| x.tags).flatten().collect::<HashSet<Tag>>()).map(|&x| x).collect::<HashSet<CompressedRistretto>>();
                 if x > 63 {
-                    // println!("pool {:?} is valid",b.shards);
-                    // blk.shards.par_extend(b.shards);
                     blk.shards.par_extend(b.shards);
-                    // blk.shards.par_extend(blk.validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>());
                 }
             }
         }
-        // let s = blk.shards.clone();
-        // blk.shards = blk.shards.par_iter().enumerate().filter_map(|(i,x)| if s[..i].par_iter().all(|y| stkstate[*x as usize].0 != stkstate[*y as usize].0) {Some(x.to_owned())} else {None}).collect::<Vec<u64>>();
-        
 
 
         let m = vec![leader.to_bytes().to_vec(),bincode::serialize(&blk.shards).unwrap(),Syncedtx::to_sign(&blk.txs),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
@@ -462,18 +446,13 @@ impl NextBlock { // need to sign the staker inputs too
             s.update(&bincode::serialize(&validators).unwrap().to_vec());
             let c = s.finalize();
             let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
-            // println!("\n\nleader view: {:?}",hash_to_scalar(&m));
-            // println!("\n\nleader view: {:?}",hash_to_scalar(&self.leader));
-            // println!("block checking: {:?}",hash_to_scalar(&m));
             let mut s = Sha3_512::new();
             s.update(&m);
-            // println!("\n\nleader view: {:?}",self.leader.verify(&mut s.clone(), &stkstate));
 
             if !self.leader.verify(&mut s, &stkstate) {
                 return Err("leader is fake")
             }
             let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(),bincode::serialize(&self.shards).unwrap(),Syncedtx::to_sign(&self.txs),self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-            // println!("block checking: {:?}",hash_to_scalar(/&m));
             let mut h = Sha3_512::new();
             h.update(&m);
             if !validators.par_iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
@@ -490,8 +469,8 @@ impl NextBlock { // need to sign the staker inputs too
                 return Err("there's multiple signatures from the same validator")
             }
         } else if let Some(emptyness) = self.emptyness.clone() {
-            if self.txs.len() > 0 { //this is neccesary so that you cant just add transactions that no one signed off on (unless I also have them sign an empty vector)
-                return Err("the block isn't empty!") // i should allow multisignatures for full blocks
+            if self.txs.len() > 0 {
+                return Err("the block isn't empty!")
             }
             if emptyness.pk.len() != emptyness.pk.par_iter().collect::<HashSet<_>>().len() {
                 return Err("someone failed to sign twice as the same validator")
@@ -499,7 +478,7 @@ impl NextBlock { // need to sign the staker inputs too
             let who = validator_pool.into_par_iter().filter_map(|&x|
                 if emptyness.pk.par_iter().all(|&y| validator_pool[y as usize]!=x) {
                     Some(stkstate[x as usize].0)
-                } else { // may need to add more checks here
+                } else {
                     None
                 }
             ).collect::<Vec<_>>();
@@ -512,11 +491,6 @@ impl NextBlock { // need to sign the staker inputs too
             let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
             m.extend(&self.last_name);
             m.extend(&self.shards[0].to_le_bytes().to_vec());
-            // println!("from the block: {:?}",m);
-            // println!("emptyness: {:?}",self.emptyness);
-            // println!("who: {:?}",who);
-            // println!("who sum: {:?}",who.par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>().compress());
-            // println!("leader pk: {:?}",self.leader);
             if !MultiSignature::verify_group(&emptyness.y,&emptyness.x,&m,&who) {
                 return Err("multisignature can not be verified")
             }
@@ -540,18 +514,13 @@ impl NextBlock { // need to sign the staker inputs too
             s.update(&bincode::serialize(&validators).unwrap().to_vec());
             let c = s.finalize();
             let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
-            // println!("\n\nleader view: {:?}",hash_to_scalar(&m));
-            // println!("\n\nleader view: {:?}",hash_to_scalar(&self.leader));
-            // println!("block checking: {:?}",hash_to_scalar(&m));
             let mut s = Sha3_512::new();
             s.update(&m);
-            // println!("\n\nleader view: {:?}",self.leader.verify(&mut s.clone(), &stkstate));
 
             if !self.leader.verify(&mut s, &stkstate) {
                 return Err("leader is fake")
             }
             let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(),bincode::serialize(&self.shards).unwrap(),Syncedtx::to_sign(&self.txs),self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-            // println!("block checking: {:?}",hash_to_scalar(/&m));
             let mut h = Sha3_512::new();
             h.update(&m);
             if !validators.iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
@@ -569,7 +538,7 @@ impl NextBlock { // need to sign the staker inputs too
             }
         } else if let Some(emptyness) = self.emptyness.clone() {
             if self.txs.len() > 0 { //this is neccesary so that you cant just add transactions that no one signed off on (unless I also have them sign an empty vector)
-                return Err("the block isn't empty!") // i should allow multisignatures for full blocks
+                return Err("the block isn't empty!")
             }
             if emptyness.pk.len() != emptyness.pk.iter().collect::<HashSet<_>>().len() {
                 return Err("someone failed to sign twice as the same validator")
@@ -590,11 +559,6 @@ impl NextBlock { // need to sign the staker inputs too
             let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
             m.extend(&self.last_name);
             m.extend(&self.shards[0].to_le_bytes().to_vec());
-            // println!("from the block: {:?}",m);
-            // println!("emptyness: {:?}",self.emptyness);
-            // println!("who: {:?}",who);
-            // println!("who sum: {:?}",who.par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>().compress());
-            // println!("leader pk: {:?}",self.leader);
             if !MultiSignature::verify_group(&emptyness.y,&emptyness.x,&m,&who) {
                 return Err("multisignature can not be verified")
             }
@@ -1202,6 +1166,13 @@ impl LightningSyncBlock {
         let changed = *changed.read().unwrap();
         changed
 
+    }
+    pub fn update_bloom(&self,bloom:&BloomFile,parallel:&bool) {
+        if *parallel {
+            self.info.tags.par_iter().for_each(|x| bloom.insert(&x.as_bytes()));
+        } else {
+            self.info.tags.iter().for_each(|x| bloom.insert(&x.as_bytes()));
+        }
     }
 
 
