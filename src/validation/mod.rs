@@ -64,8 +64,8 @@ impl Syncedtx {
         let txout = txs.into_iter().map(|x|
             x.outputs.to_owned().into_iter().filter(|x| stakereader_acc().read_ot(x).is_err()).collect::<Vec<_>>()
         ).flatten().collect::<Vec<OTAccount>>();
-        let tags = txs.iter().map(|x|
-            x.tags.clone()
+        let tags = txs.iter().filter_map(|x|
+            if x.inputs.last() != Some(&1) {Some(x.tags.clone())} else {None}
         ).flatten().collect::<Vec<CompressedRistretto>>();
         let fees = txs.iter().map(|x|x.fee).sum::<u64>();
         Syncedtx{stkout,stkin,txout,tags,fees}

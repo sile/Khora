@@ -579,6 +579,7 @@ impl StakerNode {
                 }
                 let s = self.stkinfo.borrow();
                 let bloom = self.bloom.borrow();
+                println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nhad {} tx",self.txses.len());
                 self.txses.retain(|x| {
                     if let Ok(x) = bincode::deserialize::<PolynomialTransaction>(x) {
                         if x.inputs.last() == Some(&1) {
@@ -590,6 +591,7 @@ impl StakerNode {
                         false
                     }
                 });
+                println!("have {} tx",self.txses.len());
                 
 
                 if self.moneyreset.is_some() || self.oldstk.is_some() {
@@ -771,7 +773,26 @@ impl Future for StakerNode {
                             // println!("# MESSAGE TYPE: {:?}", mtype); // i dont do anything with lightning blocks because im a staker
 
 
-                            if mtype == 1 {
+                            if mtype == 0 {
+                                let m = m[..std::cmp::min(m.len(),10_000)].to_vec();
+                                if let Ok(t) = bincode::deserialize::<PolynomialTransaction>(&m) {
+                                    let ok = {
+                                        if t.inputs.last() == Some(&1) {
+                                            t.verifystk(&self.stkinfo).is_ok()
+                                        } else {
+                                            t.verify().is_ok()
+                                        }
+                                    };
+                                    let bloom = self.bloom.borrow();
+                                    if t.tags.par_iter().all(|y| !bloom.contains(y.as_bytes())) && ok {
+                                        self.txses.push(m);
+                                        print!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\ngot a tx, now at {}!",self.txses.len());
+                                        self.inner.handle_gossip_now(fullmsg, true);
+                                    }
+                                } else {
+                                    self.inner.handle_gossip_now(fullmsg, false);
+                                }
+                            } else if mtype == 1 {
                                 // println!("bnum: {}",self.bnum);
                                 if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     print!(".");
@@ -952,6 +973,7 @@ impl Future for StakerNode {
 
                             self.sigs = vec![];
                             let m = bincode::serialize(&self.txses).unwrap();
+                            println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
                             let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum);
                             m.push(1u8);
                             self.inner.broadcast(m);
@@ -1033,6 +1055,7 @@ impl Future for StakerNode {
                                 } else {
                                     println!("block NOT verified... this shouldn't happen... restarting this selection stuff");
                                     let m = bincode::serialize(&self.txses).unwrap();
+                                    println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
                                     let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
                                     m.push(1u8);
                                 }
@@ -1043,6 +1066,7 @@ impl Future for StakerNode {
                                 self.timekeeper = Instant::now();
                             } else { // need an extra round to weed out liers
                                 let m = bincode::serialize(&self.txses).unwrap();
+                                println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
                                 let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
                                 m.push(1u8);
                                 println!("a validator was corrupted I'm restarting this bitch");
@@ -1051,6 +1075,7 @@ impl Future for StakerNode {
                             }
                         } else {
                             let m = bincode::serialize(&self.txses).unwrap();
+                            println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
                             let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum);
                             m.push(1u8);
                             self.inner.broadcast(m);
@@ -1120,9 +1145,17 @@ impl Future for StakerNode {
                                 let m = m[..std::cmp::min(m.len(),10_000)].to_vec();
                                 if let Ok(t) = bincode::deserialize::<PolynomialTransaction>(&m) {
                                     if !self.is_user {
+                                        let ok = {
+                                            if t.inputs.last() == Some(&1) {
+                                                t.verifystk(&self.stkinfo).is_ok()
+                                            } else {
+                                                t.verify().is_ok()
+                                            }
+                                        };
                                         let bloom = self.bloom.borrow();
-                                        if t.tags.par_iter().all(|y| !bloom.contains(y.as_bytes())) && t.verify().is_ok() {
+                                        if t.tags.par_iter().all(|y| !bloom.contains(y.as_bytes())) && ok {
                                             self.txses.push(m);
+                                            print!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\ngot a tx, now at {}!",self.txses.len());
                                             self.outer.handle_gossip_now(fullmsg, true);
                                         }
                                     } else {
