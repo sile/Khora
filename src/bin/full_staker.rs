@@ -770,11 +770,9 @@ impl Future for StakerNode {
                             self.clogging += 1;
                             if mtype == 2 {print!("#{:?}", mtype);}
                             else {println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id.node());}
-                            // println!("# MESSAGE TYPE: {:?}", mtype); // i dont do anything with lightning blocks because im a staker
 
 
                             if mtype == 1 {
-                                // println!("bnum: {}",self.bnum);
                                 if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     print!(".");
                                     if (who == self.newest) || (self.stkinfo[who as usize].0 == self.leader) {
@@ -850,14 +848,10 @@ impl Future for StakerNode {
                             } else if mtype == 4 {
                                 println!("recieving points phase: {}\nleader: {:?}",!self.points.contains_key(&usize::MAX),self.leader);
                                 if !self.points.contains_key(&usize::MAX) {
-                                    print!(".");
                                     if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
-                                        print!(".");
                                         let pk = pk as usize;
                                         if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
-                                            print!(".");
                                             if let Ok(m) = m.try_into() {
-                                                print!(".");
                                                 if let Some(m) = CompressedRistretto(m).decompress() {
                                                     println!("got sent point from {}",pk);
                                                     self.points.insert(pk,m);
@@ -878,7 +872,6 @@ impl Future for StakerNode {
                                         let mut mess = self.leader.as_bytes().to_vec();
                                         mess.extend(&self.lastname);
                                         mess.extend(&(self.headshard as u16).to_le_bytes().to_vec());
-                                        // println!("from the me: {:?}",mess);
                                         println!("you're trying to send a scalar!");
                                         for keylocation in self.keylocation.iter() {
                                             let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &mess, &xt, &self.bnum).as_bytes().to_vec(), keylocation, &self.bnum);
@@ -1328,7 +1321,7 @@ impl Future for StakerNode {
                                     }
                                     
                                     // maybe have bigger rings than 5? it's a choice i dont forbid anything
-                                    self.rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &5, &self.height);
+                                    self.rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &(loc.len() as u16 + 4), &self.height);
                                     let ring = recieve_ring(&self.rname).expect("shouldn't fail");
                                     let ring = ring.into_iter().filter(|x| loc.iter().all(|y|x!=y)).collect::<Vec<_>>();
                                     println!("ring:----------------------------------\n{:?}",ring);
