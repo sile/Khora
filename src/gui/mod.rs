@@ -363,7 +363,7 @@ impl epi::App for TemplateApp {
         if *pswd_shown && (pswd_guess == password) { // add warning to not panic 2ce in a row
             egui::Window::new("Reset Options").open(show_reset).show(ctx, |ui| {
                 if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
-                    ui.small("If you're worried that someone got your password, this section sends all of your money to a new account with the new password. If you click this button, do not turn off this app because you will send a transaction but your new information will not be savedd until it is confirmed.");
+                    ui.small("If you're worried that someone got your password, this section sends all of your money to a new account with the new password. If you click this button, do not turn off this app because you will send a transaction but your new information will not be savedd until it is confirmed. After recieving 1 transaction (2 for stakers), the old account information will be deleted.");
                 }
                 ui.horizontal(|ui| {
                     ui.add(Checkbox::new(show_next_pswrd,"Show Password On Reset"));
