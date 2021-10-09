@@ -281,7 +281,6 @@ pub struct NextBlock {
     pub last_name: Vec<u8>,
     pub shards: Vec<u16>, // shard numbers involved
     pub bnum: u64,
-    pub forker: Option<([Signature;2],[Vec<u8>;2],u64)>,
 }
 impl PartialEq for NextBlock {
     fn eq(&self, other: &Self) -> bool {
@@ -336,7 +335,6 @@ impl NextBlock { // need to sign the staker inputs too
             last_name: last_name.to_owned(),
             shards: vec![*pool],
             bnum: *bnum,
-            forker: None,
         }
     }
     pub fn finish(key: &Scalar, location: &u64, sigs: &Vec<NextBlock>, validator_pool: &Vec<u64>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock { // <----do i need to reference previous block explicitly?
@@ -372,7 +370,7 @@ impl NextBlock { // need to sign the staker inputs too
                 s.update(&m);
                 let leader = Signature::sign(&key, &mut s,&location);
                 if validator_pool.par_iter().filter(|x| !sigfinale.par_iter().all(|y| x.to_owned() != &y.leader.pk)).count() > SIGNING_CUTOFF {
-                    return NextBlock{emptyness: None, validators: Some(sigs), leader, txs: sigfinale[0].txs.to_owned(), last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned(), forker: None}
+                    return NextBlock{emptyness: None, validators: Some(sigs), leader, txs: sigfinale[0].txs.to_owned(), last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned()}
                 } else {
                     print!("not enough sigs... ");
                     break
@@ -456,30 +454,13 @@ impl NextBlock { // need to sign the staker inputs too
         s.update(&bincode::serialize(&sigs).unwrap().to_vec());
         let c = s.finalize();
 
-        let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&blk.shards).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone(),c.to_vec(),bincode::serialize(&blk.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
+        let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&blk.shards).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone(),c.to_vec(),].into_par_iter().flatten().collect::<Vec<u8>>();
         let mut s = Sha3_512::new();
         s.update(&m);
         let leader = Signature::sign(&key, &mut s, &location);
-        NextBlock{emptyness: None, validators: Some(sigs), leader, txs: blk.txs, last_name: last_name.clone(), shards: blk.shards, bnum: bnum.to_owned(), forker: None}
+        NextBlock{emptyness: None, validators: Some(sigs), leader, txs: blk.txs, last_name: last_name.clone(), shards: blk.shards, bnum: bnum.to_owned()}
     }
     pub fn verify(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
-        if let Some((s,v,b)) = &self.forker { // this is mostly here to instill fear i dont think we'd ever use it even if someone did try to fork us
-            if s[0].pk != s[1].pk { /* leader could cause a fork by messing with fork section or which members sign */
-                return Err("forker is not 1 person")
-            }
-            if (s[0].c == s[1].c) & (s[0].r == s[1].r) {
-                return Err("forker is not a forker")
-            }
-            let x = vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[0].to_owned()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let y = vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[1].to_owned()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut h = Sha3_512::new();
-            h.update(&x);
-            let mut a = Sha3_512::new();
-            a.update(&y);
-            if !s[0].verify(&mut h, &stkstate) | !s[1].verify(&mut a, &stkstate) {
-                return Err("the forker was framed")
-            }
-        }
         if let Some(validators) = self.validators.clone() {
             if self.emptyness.is_some() {
                 return Err("both the validators and the emptyness are some")
@@ -487,7 +468,7 @@ impl NextBlock { // need to sign the staker inputs too
             let mut s = Sha3_512::new();
             s.update(&bincode::serialize(&validators).unwrap().to_vec());
             let c = s.finalize();
-            let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec(),bincode::serialize(&self.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
             // println!("\n\nleader view: {:?}",hash_to_scalar(&m));
             // println!("\n\nleader view: {:?}",hash_to_scalar(&self.leader));
             // println!("block checking: {:?}",hash_to_scalar(&m));
@@ -558,23 +539,6 @@ impl NextBlock { // need to sign the staker inputs too
         return Ok(true)
     }
     pub fn verify_single_thread(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
-        if let Some((s,v,b)) = &self.forker { // this is mostly here to instill fear i dont think we'd ever use it even if someone did try to fork us
-            if s[0].pk != s[1].pk { /* leader could cause a fork by messing with fork section or which members sign */
-                return Err("forker is not 1 person")
-            }
-            if (s[0].c == s[1].c) & (s[0].r == s[1].r) {
-                return Err("forker is not a forker")
-            }
-            let x = vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[0].to_owned()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let y = vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[1].to_owned()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut h = Sha3_512::new();
-            h.update(&x);
-            let mut a = Sha3_512::new();
-            a.update(&y);
-            if !s[0].verify(&mut h, &stkstate) | !s[1].verify(&mut a, &stkstate) {
-                return Err("the forker was framed")
-            }
-        }
         if let Some(validators) = self.validators.clone() {
             if self.emptyness.is_some() {
                 return Err("both the validators and the emptyness are some")
@@ -582,7 +546,7 @@ impl NextBlock { // need to sign the staker inputs too
             let mut s = Sha3_512::new();
             s.update(&bincode::serialize(&validators).unwrap().to_vec());
             let c = s.finalize();
-            let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec(),bincode::serialize(&self.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
             // println!("\n\nleader view: {:?}",hash_to_scalar(&m));
             // println!("\n\nleader view: {:?}",hash_to_scalar(&self.leader));
             // println!("block checking: {:?}",hash_to_scalar(&m));
@@ -808,14 +772,6 @@ impl NextBlock { // need to sign the staker inputs too
 
 
 
-        if let Some(evil) = self.forker.to_owned() {
-            let x = valinfo.par_iter().enumerate().filter_map(|x|
-                if x.1.0 == valinfo[evil.0[0].pk as usize].0 {Some(x.0)} else {None}
-            ).collect::<Vec<usize>>();
-            for x in x.iter().rev() {
-                valinfo.remove(*x as usize);
-            }
-        }
     }
     pub fn save_history_to_ram(&self, history: &mut Vec<OTAccount>) {
         let info = Syncedtx::from(&self.txs);
@@ -941,7 +897,6 @@ impl NextBlock { // need to sign the staker inputs too
             shards: self.shards.to_owned(),
             bnum: self.bnum.to_owned(),
             last_name: self.last_name.to_owned(),
-            forker: self.forker.to_owned(),
         }
     }
 }
@@ -955,27 +910,9 @@ pub struct LightningSyncBlock {
     pub shards: Vec<u16>,
     pub bnum: u64,
     pub last_name: Vec<u8>,
-    pub forker: Option<([Signature;2],[Vec<u8>;2],u64)>,
 }
 impl LightningSyncBlock {
     pub fn verify(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
-        if let Some((s,v,b)) = &self.forker {
-            if s[0].pk != s[1].pk {
-                return Err("forker is not 1 person")
-            }
-            if (s[0].c == s[1].c) & (s[0].r == s[1].r) {
-                return Err("forker is not a forker")
-            }
-            let x = vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[0].to_owned()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let y = vec![BLOCK_KEYWORD.to_vec(),b.to_le_bytes().to_vec(),v[1].to_owned()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut h = Sha3_512::new();
-            h.update(&x);
-            let mut a = Sha3_512::new();
-            a.update(&y);
-            if !s[0].verify(&mut h, &stkstate) | !s[1].verify(&mut a, &stkstate) {
-                return Err("the forker was framed")
-            }
-        }
         if let Some(validators) = self.validators.clone() {
             if self.emptyness.is_some() {
                 return Err("both the validators and the emptyness are some")
@@ -983,13 +920,13 @@ impl LightningSyncBlock {
             let mut s = Sha3_512::new();
             s.update(&bincode::serialize(&validators).unwrap().to_vec());
             let c = s.finalize();
-            let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec(),bincode::serialize(&self.forker).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
             let mut h = Sha3_512::new();
             h.update(&m);
             if !self.leader.verify(&mut h, &stkstate) {
                 return Err("leader is fake")
             }
-            let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(),bincode::serialize(&self.shards).unwrap(),bincode::serialize(&self.info).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(), bincode::serialize(&self.shards).unwrap(), bincode::serialize(&self.info).unwrap(), self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
             let mut h = Sha3_512::new();
             h.update(&m);
             if !validators.par_iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
@@ -1173,14 +1110,6 @@ impl LightningSyncBlock {
             valinfo.remove(*x as usize);
         }
         valinfo.extend(&self.info.stkin);
-        if let Some(evil) = self.forker.to_owned() {
-            let x = valinfo.par_iter().enumerate().filter_map(|x|
-                if x.1.0 == valinfo[evil.0[0].pk as usize].0 {Some(x.0)} else {None}
-            ).collect::<Vec<usize>>();
-            for x in x.iter().rev() {
-                valinfo.remove(*x as usize);
-            }
-        }
 
 
     }
