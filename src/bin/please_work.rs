@@ -165,6 +165,7 @@ fn main() -> Result<(),std::io::Error> {
         let shards = 2u64.pow(bnum as u32) as usize; /* max of 512 shard without lazyness because number of validators fits inside a u16 */
         let tx_per_shard = tx_processed/shards;
         bnum+=1;
+        println!("shard {} block {}",shards,bnum);
         let start = Instant::now();
         let mut hasher = Sha3_512::new();
         hasher.update(&bincode::serialize(&nextblock).unwrap());
@@ -228,6 +229,7 @@ fn main() -> Result<(),std::io::Error> {
         }
 
         let start = Instant::now();
+        println!("main valpool: {:?}",val_pool[0]);
         nextblock.verify(&val_pool[0],&stkinfo).unwrap();
         println!("time to verify next block: {:?} ms",start.elapsed().as_millis());
         let start = Instant::now();

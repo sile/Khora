@@ -25,7 +25,6 @@ pub const NUMBER_OF_VALIDATORS: usize = 3;
 pub const SIGNING_CUTOFF: usize = 2*NUMBER_OF_VALIDATORS/3;
 pub const QUEUE_LENGTH: usize = 10;
 pub const REPLACERATE: usize = 2;
-pub const BLOCK_KEYWORD: [u8;6] = [107,105,109,98,101,114]; // todo: make this something else (a less obvious version of her name)
 pub const INFLATION_CONSTANT: f64 = 2u64.pow(30) as f64;
 pub const INFLATION_EXPONENT: f64 = 100f64;
 pub const PUNISHMENT_FRACTION: u64 = 1000;
@@ -54,21 +53,21 @@ impl PartialEq for Syncedtx {
 
 impl Syncedtx {
     pub fn from(txs: &Vec<PolynomialTransaction>)->Syncedtx {
-        let stkout = txs.par_iter().filter_map(|x|
+        let stkout = txs.iter().filter_map(|x|
             if x.inputs.last() == Some(&1) {Some(x.inputs.par_chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>())} else {None}
         ).flatten().collect::<Vec<u64>>();
-        let stkin = txs.par_iter().map(|x|
-            x.outputs.par_iter().filter_map(|y| 
+        let stkin = txs.iter().map(|x|
+            x.outputs.iter().filter_map(|y| 
                 if let Ok(z) = stakereader_acc().read_ot(y) {Some((z.pk.compress(),u64::from_le_bytes(z.com.amount.unwrap().as_bytes()[..8].try_into().unwrap())))} else {None}
             ).collect::<Vec<_>>()
         ).flatten().collect::<Vec<(CompressedRistretto,u64)>>();
-        let txout = txs.into_par_iter().map(|x|
-            x.outputs.to_owned().into_par_iter().filter(|x| stakereader_acc().read_ot(x).is_err()).collect::<Vec<_>>()
+        let txout = txs.into_iter().map(|x|
+            x.outputs.to_owned().into_iter().filter(|x| stakereader_acc().read_ot(x).is_err()).collect::<Vec<_>>()
         ).flatten().collect::<Vec<OTAccount>>();
-        let tags = txs.par_iter().map(|x|
+        let tags = txs.iter().map(|x|
             x.tags.clone()
         ).flatten().collect::<Vec<CompressedRistretto>>();
-        let fees = txs.par_iter().map(|x|x.fee).sum::<u64>();
+        let fees = txs.iter().map(|x|x.fee).sum::<u64>();
         Syncedtx{stkout,stkin,txout,tags,fees}
     }
     pub fn to_sign(txs: &Vec<PolynomialTransaction>)->Vec<u8> {
@@ -348,8 +347,7 @@ impl NextBlock { // need to sign the staker inputs too
                 sigfinale.push(b);
                 println!("they agree on tx in block validation");
                 let sigfinale = sigfinale.par_iter().enumerate().filter_map(|(i,x)| if sigs[..i].par_iter().all(|y| x.leader.pk != y.leader.pk) {Some(x.to_owned())} else {None}).collect::<Vec<NextBlock>>();
-                let shortcut = Syncedtx::to_sign(&sigfinale[0].txs); /* moving this to after the for loop made this code 3x faster. this is just a reminder to optimize everything later. (i can use [0]) */
-                let m = vec![leader.clone(),bincode::serialize(&vec![pool]).unwrap(),shortcut.to_owned(),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+                let m = vec![leader.clone(),bincode::serialize(&vec![pool]).unwrap(),Syncedtx::to_sign(&sigfinale[0].txs),bnum.to_le_bytes().to_vec(), last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
                 let mut s = Sha3_512::new();
                 s.update(&m);
                 let sigfinale = sigfinale.into_par_iter().filter(|x| Signature::verify(&x.leader, &mut s.clone(),&stkstate)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
@@ -365,7 +363,7 @@ impl NextBlock { // need to sign the staker inputs too
                 let mut s = Sha3_512::new();
                 s.update(&bincode::serialize(&sigs).unwrap().to_vec());
                 let c = s.finalize();
-                let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&vec![pool]).unwrap(),bnum.to_le_bytes().to_vec(),last_name.clone(),c.to_vec(),bincode::serialize(&None::<([Signature;2],[Vec<u8>;2],u64)>).unwrap()].into_par_iter().flatten().collect::<Vec<u8>>();
+                let m = vec![bincode::serialize(&vec![pool]).unwrap(),bnum.to_le_bytes().to_vec(),last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
                 let mut s = Sha3_512::new();
                 s.update(&m);
                 let leader = Signature::sign(&key, &mut s,&location);
@@ -420,8 +418,7 @@ impl NextBlock { // need to sign the staker inputs too
         let headpool = headpool.into_par_iter().map(|x|stkstate[*x as usize].0).collect::<Vec<CompressedRistretto>>();
         let mut blks: Vec<NextBlock> = blks.par_iter().zip(val_pools).filter_map(|(x,y)| if x.verify(&y, &stkstate).is_ok() {Some(x.to_owned())} else {None}).collect();
         let mut blk = blks.remove(0);
-        // blk.shards = vec![*mypoolnum].into_iter().chain(blk.shards.into_iter()).collect::<Vec<_>>(); // main shard should be contributing as a shard while waiting
-        // blk.shards.par_extend(blk.validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>());
+        
         let mut tags = blk.txs.par_iter().map(|x| x.tags.clone()).flatten().collect::<HashSet<Tag>>();
         for mut b in blks.into_iter() {
             b.txs = b.txs.into_par_iter().filter(|t| {
@@ -433,12 +430,8 @@ impl NextBlock { // need to sign the staker inputs too
             // println!("tx: {}",x);
             if x > 63 {
                 blk.shards.par_extend(b.shards);
-                // blk.shards.par_extend(b.shards);
-                // blk.shards.par_extend(blk.validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>());
             }
         }
-        // let s = blk.shards.clone();
-        // blk.shards = blk.shards.into_par_iter().enumerate().filter(|(i,x)| s[..*i].par_iter().all(|y| stkstate[*x as usize].0 != stkstate[*y as usize].0)).map(|(_,x)|x).collect::<Vec<u64>>();
         
         let leader = (key*PEDERSEN_H()).compress().as_bytes().to_vec();
         let m = vec![leader.clone(),bincode::serialize(&blk.shards).unwrap(),Syncedtx::to_sign(&blk.txs),bnum.to_le_bytes().to_vec(),last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
@@ -454,7 +447,7 @@ impl NextBlock { // need to sign the staker inputs too
         s.update(&bincode::serialize(&sigs).unwrap().to_vec());
         let c = s.finalize();
 
-        let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&blk.shards).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone(),c.to_vec(),].into_par_iter().flatten().collect::<Vec<u8>>();
+        let m = vec![bincode::serialize(&blk.shards).unwrap(),bnum.to_le_bytes().to_vec(), last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
         let mut s = Sha3_512::new();
         s.update(&m);
         let leader = Signature::sign(&key, &mut s, &location);
@@ -468,7 +461,7 @@ impl NextBlock { // need to sign the staker inputs too
             let mut s = Sha3_512::new();
             s.update(&bincode::serialize(&validators).unwrap().to_vec());
             let c = s.finalize();
-            let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
             // println!("\n\nleader view: {:?}",hash_to_scalar(&m));
             // println!("\n\nleader view: {:?}",hash_to_scalar(&self.leader));
             // println!("block checking: {:?}",hash_to_scalar(&m));
@@ -527,7 +520,7 @@ impl NextBlock { // need to sign the staker inputs too
             if !MultiSignature::verify_group(&emptyness.y,&emptyness.x,&m,&who) {
                 return Err("multisignature can not be verified")
             }
-            let m = vec![BLOCK_KEYWORD.to_vec(),self.shards[0].to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let m = vec![self.shards[0].to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
             let mut s = Sha3_512::new();
             s.update(&m);
             if !self.leader.verify(&mut s,&stkstate) {
@@ -546,7 +539,7 @@ impl NextBlock { // need to sign the staker inputs too
             let mut s = Sha3_512::new();
             s.update(&bincode::serialize(&validators).unwrap().to_vec());
             let c = s.finalize();
-            let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
             // println!("\n\nleader view: {:?}",hash_to_scalar(&m));
             // println!("\n\nleader view: {:?}",hash_to_scalar(&self.leader));
             // println!("block checking: {:?}",hash_to_scalar(&m));
@@ -605,7 +598,7 @@ impl NextBlock { // need to sign the staker inputs too
             if !MultiSignature::verify_group(&emptyness.y,&emptyness.x,&m,&who) {
                 return Err("multisignature can not be verified")
             }
-            let m = vec![BLOCK_KEYWORD.to_vec(),self.shards[0].to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let m = vec![self.shards[0].to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
             let mut s = Sha3_512::new();
             s.update(&m);
             if !self.leader.verify(&mut s,&stkstate) {
@@ -920,7 +913,7 @@ impl LightningSyncBlock {
             let mut s = Sha3_512::new();
             s.update(&bincode::serialize(&validators).unwrap().to_vec());
             let c = s.finalize();
-            let m = vec![BLOCK_KEYWORD.to_vec(),bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
             let mut h = Sha3_512::new();
             h.update(&m);
             if !self.leader.verify(&mut h, &stkstate) {
@@ -965,7 +958,7 @@ impl LightningSyncBlock {
             if !MultiSignature::verify_group(&emptyness.y,&emptyness.x,&m,&who) {
                 return Err("there's a problem with the multisignature")
             }
-            let m = vec![BLOCK_KEYWORD.to_vec(),self.shards[0].to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+            let m = vec![self.shards[0].to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
             let mut s = Sha3_512::new();
             s.update(&m);
             if !self.leader.verify(&mut s,&stkstate) {
@@ -1120,15 +1113,95 @@ impl LightningSyncBlock {
         if !newtags.par_iter().all(|x| alltagsever.par_iter().all(|y|y!=x)) {
             println!("you got burnt (someone sent you faerie gold!)"); // i want this in a seperate function
         }
-        alltagsever.par_extend(&newtags);
+        alltagsever.extend(&newtags);
 
         *mine = mine.into_iter().filter_map(|(j,a)| if self.info.tags.par_iter().all(|x| x != &a.tag.unwrap()) {imtrue = false; Some((*j,a.clone()))} else {None} ).collect::<HashMap<u64,OTAccount>>();
         *height += self.info.txout.len() as u64;
-        mine.par_extend(newmine);
+        mine.extend(newmine);
 
         *sheight += self.info.stkin.len() as u64;
         *sheight -= self.info.stkout.len() as u64;
         imtrue
+    }
+    pub fn scanstk(&self, me: &Account, mine: &mut Vec<[u64;2]>, height: &mut u64, comittee: &Vec<Vec<usize>>, valinfo: &Vec<(CompressedRistretto,u64)>) -> bool {
+
+        let winners: Vec<usize>;
+        let masochists: Vec<usize>;
+        let lucky: Vec<usize>;
+        let feelovers: Vec<usize>;
+        if let Some(x) = self.validators.clone() {
+            let x = x.iter().map(|x| x.pk as usize).collect::<HashSet<_>>();
+
+            winners = comittee[self.shards[0] as usize].iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            masochists = comittee[self.shards[0] as usize].iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            if self.shards.len() > 1 {
+                feelovers = self.shards[1..].iter().map(|x| comittee[*x as usize].clone()).flatten().chain(winners.clone()).collect::<Vec<_>>();
+            } else {
+                feelovers = winners.clone();
+            }
+            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
+        } else {
+            let x = self.emptyness.clone().unwrap().pk.iter().map(|x| *x as usize).collect::<HashSet<_>>();
+
+            winners = comittee[self.shards[0] as usize].iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            masochists = comittee[self.shards[0] as usize].iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
+            feelovers = winners.clone();
+        }
+        let fees = self.info.fees/(feelovers.len() as u64);
+        let inflation = (INFLATION_CONSTANT/2f64.powf(self.bnum as f64/INFLATION_EXPONENT)) as u64/winners.len() as u64;
+
+        let changed = std::sync::Arc::new(std::sync::RwLock::new(false));
+        for i in winners {
+            mine.iter_mut().for_each(|x| if x[0] == i as u64 {*changed.write().unwrap() = true; x[1] += inflation;});
+        }
+        for i in feelovers {
+            mine.iter_mut().for_each(|x| if x[0] == i as u64 {*changed.write().unwrap() = true; x[1] += fees;});
+        }
+        let mut punishments = 0u64;
+        for i in masochists {
+            punishments += valinfo[i].1/PUNISHMENT_FRACTION;
+            mine.iter_mut().for_each(|x| if x[0] == i as u64 {*changed.write().unwrap() = true; x[1] -= valinfo[i].1/PUNISHMENT_FRACTION;});
+        }
+        punishments = punishments/lucky.len() as u64;
+        for i in lucky {
+            mine.iter_mut().for_each(|x| if x[0] == i as u64 {*changed.write().unwrap() = true; x[1] += punishments;});
+        }
+
+
+    
+
+
+
+        for (i,m) in mine.clone().iter().enumerate().rev() {
+            for v in self.info.stkout.iter() {
+                if m[0] == *v {
+                    *changed.write().unwrap() = true;
+                    mine.remove(i as usize);
+                }
+            }
+        }
+        for (i,m) in mine.clone().iter().enumerate().rev() {
+            for n in self.info.stkout.iter() {
+                if *n < m[0] {
+                    *changed.write().unwrap() = true;
+                    mine[i][0] -= 1;
+                }
+                else {
+                    break;
+                }
+            }
+        }
+        *height -= self.info.stkout.len() as u64;
+        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
+        
+        let stkcr = me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        mine.extend(self.info.stkin.iter().enumerate().filter_map(|(i,x)| if stkcr == x.0 {Some([i as u64+*height,x.1])} else {None}).collect::<Vec<[u64;2]>>());
+        *height += self.info.stkin.len() as u64;
+
+        let changed = *changed.read().unwrap();
+        changed
+
     }
 
 
@@ -1140,19 +1213,19 @@ impl LightningSyncBlock {
 
 
 pub fn select_stakers(block: &Vec<u8>, bnum: &u64, shard: &u128, queue: &mut VecDeque<usize>, exitqueue: &mut VecDeque<usize>, comittee: &mut Vec<usize>, stkstate: &Vec<(CompressedRistretto,u64)>) {
-    let (_pool,y): (Vec<CompressedRistretto>,Vec<u128>) = stkstate.into_par_iter().map(|(x,y)| (x.to_owned(),*y as u128)).unzip();
-    let tot_stk: u128 = y.par_iter().sum(); /* initial queue will be 0 for all non0 shards... */
+    let (_pool,y): (Vec<CompressedRistretto>,Vec<u128>) = stkstate.into_iter().map(|(x,y)| (x.to_owned(),*y as u128)).unzip();
+    let tot_stk: u128 = y.iter().sum(); /* initial queue will be 0 for all non0 shards... */
 
     let bnum = bnum.to_le_bytes();
     // println!("average stake:     {}",tot_stk/(y.len() as u128));
     // println!("number of stakers: {}",y.len());
-    // println!("new money:         {}",y[8..].par_iter().sum::<u128>());
+    // println!("new money:         {}",y[8..].iter().sum::<u128>());
     // println!("total stake:       {}",tot_stk);
     // println!("random drawn from: {}",u64::MAX);
     let mut s = AHasher::new_with_keys(0, *shard);
     s.write(&block);
     s.write(&bnum);
-    let mut winner = (0..REPLACERATE).collect::<Vec<usize>>().par_iter().map(|x| {
+    let mut winner = (0..REPLACERATE).collect::<Vec<usize>>().iter().map(|x| {
         let mut s = s.clone();
         s.write(&x.to_le_bytes()[..]);
         let c = s.finish() as u128;
@@ -1175,7 +1248,7 @@ pub fn select_stakers(block: &Vec<u8>, bnum: &u64, shard: &u128, queue: &mut Vec
     let mut s = AHasher::new_with_keys(1, *shard);
     s.write(&block);
     s.write(&bnum);
-    let mut loser = (0..REPLACERATE).collect::<Vec<usize>>().par_iter().map(|x| {
+    let mut loser = (0..REPLACERATE).collect::<Vec<usize>>().iter().map(|x| {
         let mut s = s.clone();
         s.write(&x.to_le_bytes()[..]);
         let c = s.finish() as usize;
@@ -1223,9 +1296,9 @@ impl History {
         OTAccount::summon_ota(&[CompressedRistretto::from_slice(&bytes[..32]),CompressedRistretto::from_slice(&bytes[32..64])]) // OTAccount::summon_ota() from there
     }
     pub fn append(accs: &Vec<OTAccount>) {
-        let buf = accs.into_par_iter().map(|x| [x.pk.compress().as_bytes().to_owned(),x.com.com.compress().as_bytes().to_owned()].to_owned()).flatten().flatten().collect::<Vec<u8>>();
+        let buf = accs.into_iter().map(|x| [x.pk.compress().as_bytes().to_owned(),x.com.com.compress().as_bytes().to_owned()].to_owned()).flatten().flatten().collect::<Vec<u8>>();
         let mut f = OpenOptions::new().append(true).open(FILE_NAME).unwrap();
-        f.write_all(&buf.par_iter().map(|x|*x).collect::<Vec<u8>>()).unwrap();
+        f.write_all(&buf.iter().map(|x|*x).collect::<Vec<u8>>()).unwrap();
 
     }
 }
