@@ -773,26 +773,7 @@ impl Future for StakerNode {
                             // println!("# MESSAGE TYPE: {:?}", mtype); // i dont do anything with lightning blocks because im a staker
 
 
-                            if mtype == 0 {
-                                let m = m[..std::cmp::min(m.len(),10_000)].to_vec();
-                                if let Ok(t) = bincode::deserialize::<PolynomialTransaction>(&m) {
-                                    let ok = {
-                                        if t.inputs.last() == Some(&1) {
-                                            t.verifystk(&self.stkinfo).is_ok()
-                                        } else {
-                                            t.verify().is_ok()
-                                        }
-                                    };
-                                    let bloom = self.bloom.borrow();
-                                    if t.tags.par_iter().all(|y| !bloom.contains(y.as_bytes())) && ok {
-                                        self.txses.push(m);
-                                        print!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\ngot a tx, now at {}!",self.txses.len());
-                                        self.inner.handle_gossip_now(fullmsg, true);
-                                    }
-                                } else {
-                                    self.inner.handle_gossip_now(fullmsg, false);
-                                }
-                            } else if mtype == 1 {
+                            if mtype == 1 {
                                 // println!("bnum: {}",self.bnum);
                                 if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     print!(".");
@@ -1452,7 +1433,6 @@ impl Future for StakerNode {
                                 self.txses.push(txbin.clone());
                                 txbin.push(0);
                                 self.outer.broadcast_now(txbin.clone());
-                                self.inner.broadcast_now(txbin.clone());
                                 self.moneyreset = Some(txbin);
                                 println!("transaction made!");
                             } else {
@@ -1476,7 +1456,6 @@ impl Future for StakerNode {
                                 self.txses.push(txbin.clone());
                                 txbin.push(0);
                                 self.outer.broadcast_now(txbin.clone());
-                                self.inner.broadcast_now(txbin.clone());
                                 self.oldstk = Some((self.me.clone(),self.smine.clone(),stkamnt));
                                 println!("sending tx!");
                             } else {
