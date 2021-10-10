@@ -40,11 +40,11 @@ fn random_pswrd() -> String {
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
     // this how you opt-out of serialization of a member
-    #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for reciever i think
+    #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for reciever
     reciever: channel::Receiver<Vec<u8>>,
 
     // this how you opt-out of serialization of a member
-    #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for reciever i think
+    #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for sender
     sender: mpsc::Sender<Vec<u8>>,
 
     // Example stuff:
@@ -73,6 +73,10 @@ pub struct TemplateApp {
     entrypoint: String,
     stkspeand: bool,
     show_reset: bool,
+
+    // this how you opt-out of serialization of a member
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    you_cant_do_that: bool,
 }
 impl Default for TemplateApp {
     fn default() -> Self {
@@ -106,6 +110,7 @@ impl Default for TemplateApp {
             entrypoint: "".to_string(),
             stkspeand: false,
             show_reset: false,
+            you_cant_do_that: false,
         }
     }
 }
@@ -218,6 +223,7 @@ impl epi::App for TemplateApp {
             entrypoint,
             stkspeand,
             show_reset,
+            you_cant_do_that,
         } = self;
 
  
@@ -357,6 +363,11 @@ impl epi::App for TemplateApp {
             if *dont_trust_amounts {
                 ui.add(Label::new("money owned is not yet verified").text_color(egui::Color32::RED));
             }
+            if *you_cant_do_that {
+                if ui.add(Label::new("you don't have the funds to make that transaction").text_color(egui::Color32::RED).sense(Sense::hover())).hovered() {
+                    *you_cant_do_that = false;
+                }
+            }
             egui::warn_if_debug_build(ui);
         });
 
@@ -472,18 +483,27 @@ impl epi::App for TemplateApp {
                                     tot += x;
                                 }
                             }
-                            let x = staked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
-                            if x > 0 {
-                                m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
-                                m.extend(x.to_le_bytes());
-                            }
                             if *stkspeand {
+                                let x = staked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
+                                if x > 0 {
+                                    m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
+                                    m.extend(x.to_le_bytes());
+                                }
                                 m.push(63);
+                                *you_cant_do_that = staked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
                             } else {
+                                let x = unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
+                                if x > 0 {
+                                    m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
+                                    m.extend(x.to_le_bytes());
+                                }
                                 m.push(33);
+                                *you_cant_do_that = unstaked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
                             }
-                            m.push(33);
-                            sender.send(m).expect("something's wrong with communication from the gui");
+                            if !*you_cant_do_that {
+                                m.push(33);
+                                sender.send(m).expect("something's wrong with communication from the gui");
+                            }
                         }
                     }
                 });
