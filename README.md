@@ -1,7 +1,4 @@
 # Kora
 
-eventually fast AND anonymous??!!!?! yeah...
-AND ECO FRIENDLY?!!!! Yeah
-AND IT ACTUALLY HAS A WHITEPAPER?!!!!!!!!! YEAH!!!!!!!!!
-
-(also it's on rust which is the best possible coding languege)
+Fast, anonymous, cryptocurrency. 
+Ring signature omniring scheme - one time accounts - proof of stake. 
