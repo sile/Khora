@@ -25,7 +25,7 @@ pub const NUMBER_OF_VALIDATORS: usize = 3;
 pub const SIGNING_CUTOFF: usize = 2*NUMBER_OF_VALIDATORS/3;
 pub const QUEUE_LENGTH: usize = 10;
 pub const REPLACERATE: usize = 2;
-pub const INFLATION_CONSTANT: f64 = 2u64.pow(30) as f64;
+pub const INFLATION_CONSTANT: f64 = 10u64.pow(16) as f64;
 pub const INFLATION_EXPONENT: f64 = 100f64;
 pub const PUNISHMENT_FRACTION: u64 = 1000;
 
@@ -1301,6 +1301,8 @@ impl StakerState {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use crate::constants::PEDERSEN_H;
 
 
@@ -1352,5 +1354,19 @@ mod tests {
         let mut m = Signature::sign_message_nonced(&sk,&message,&0u64,&80u64);
         assert!(0 == Signature::recieve_signed_message_nonced(&mut m,&stkstate,&80u64).unwrap());
         assert!(m == message);
+    }
+
+    #[test]
+    fn many_block_time_calculations() {
+        
+        let seconds_per_year = 31_536_000f64;
+
+        let runtime = Instant::now();
+        let mut t0 = 0f64;
+        for _ in 0..1_000_000 {
+            let t = 1f64/(2f64*t0+2f64).ln();
+            t0 += t/seconds_per_year;
+        }
+        println!("runtime: {}ms",runtime.elapsed().as_millis());
     }
 }

@@ -254,6 +254,8 @@ impl PolynomialTransaction {
 #[cfg(test)]
 mod tests {
     #![allow(dead_code)]
+    use std::time::Instant;
+
     use super::*;
 
     #[test]
@@ -266,5 +268,21 @@ mod tests {
 
         let tx = Transaction::spend(&vec![ota1,ota2,ota3], &vec![(&acct,&Scalar::from(6u64)),(&acct,&Scalar::from(3u64)),(&acct,&Scalar::from(12u64))], &get_test_ring(123),&Scalar::one());
         assert!(tx.verify().is_ok());
+    }
+
+    #[test]
+    fn time_testing() {
+
+        let acct = Account::new(&"hi".to_string());
+        let ota1 = acct.derive_ot(&Scalar::from(6u64));
+        let ota2 = acct.derive_ot(&Scalar::from(10u64));
+        let ota3 = acct.derive_ot(&Scalar::from(5u64));
+        let tx = Transaction::spend(&vec![ota1,ota2,ota3], &vec![(&acct,&Scalar::from(5u64)),(&acct,&Scalar::from(3u64)),(&acct,&Scalar::from(12u64))], &get_test_ring(5+3),&Scalar::one());
+
+        let t0 = Instant::now();
+        for _ in 0..1_000 {
+            assert!(tx.verify().is_ok());
+        }
+        println!("Time for 1000 tx: {}s",t0.elapsed().as_secs());
     }
 }
