@@ -141,10 +141,17 @@ fn main() -> Result<(), MainError> {
         eframe::run_native(Box::new(app), native_options);
         println!("You closed the app...");
         let pswrd: String;
+        let will_stk: bool;
         loop {
             if let Async::Ready(Some(m)) = urecv.poll().expect("Shouldn't fail") {
                 pswrd = String::from_utf8_lossy(&m).to_string();
                 println!("Got password: {}",pswrd);
+                break
+            }
+        }
+        loop {
+            if let Async::Ready(Some(m)) = urecv.poll().expect("Shouldn't fail") {
+                will_stk = m[0] == 1;
                 break
             }
         }
@@ -154,8 +161,10 @@ fn main() -> Result<(), MainError> {
         let key = validator.sk.unwrap();
         let mut keylocation = HashSet::new();
 
-        History::initialize();
-        BloomFile::initialize_bloom_file();
+        if will_stk {
+            History::initialize();
+            BloomFile::initialize_bloom_file();    
+        }
         let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this IMPORTANT TO CHANGR
 
         let mut smine = vec![];
@@ -650,20 +659,24 @@ impl StakerNode {
                 if self.bnum % 128 == 0 {
                     self.overthrown = HashSet::new();
                 }
-                let s = self.stkinfo.borrow();
-                let bloom = self.bloom.borrow();
-                println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nhad {} tx",self.txses.len());
-                self.txses.retain(|x| {
-                    if let Ok(x) = bincode::deserialize::<PolynomialTransaction>(x) {
-                        if x.inputs.last() == Some(&1) {
-                            x.verifystk(s).is_ok()
+                if !self.is_user {
+                    let s = self.stkinfo.borrow();
+                    let bloom = self.bloom.borrow();
+                    println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nhad {} tx",self.txses.len());
+                    self.txses.retain(|x| {
+                        if let Ok(x) = bincode::deserialize::<PolynomialTransaction>(x) {
+                            if x.inputs.last() == Some(&1) {
+                                x.verifystk(s).is_ok()
+                            } else {
+                                x.tags.iter().all(|x| !bloom.contains(x.as_bytes())) && x.verify().is_ok()
+                            }
                         } else {
-                            x.tags.iter().all(|x| !bloom.contains(x.as_bytes())) && x.verify().is_ok()
+                            false
                         }
-                    } else {
-                        false
-                    }
-                });
+                    });
+                } else {
+                    self.txses = vec![];
+                }
                 println!("have {} tx",self.txses.len());
                 
 

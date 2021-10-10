@@ -174,6 +174,11 @@ impl epi::App for TemplateApp {
                     break
                 }
             }
+            loop {
+                if self.sender.send((self.friend_names.len() == 0) as u8).is_ok() {
+                    break
+                }
+            }
         }
         self.setup = false;
         self.password = self.pswd_guess.clone();
@@ -371,7 +376,7 @@ impl epi::App for TemplateApp {
                 }
             });
             if *setup {
-                ui.add(Label::new("Welcome to Khora! Type your password into the password box then turn me off to create your wallet!").text_color(egui::Color32::RED));
+                ui.add(Label::new("Welcome to Khora! Type your password into the password box then turn me off to create your wallet!\nIf you are planning on being a staker, you need to save the history... Add a friend to do so!").text_color(egui::Color32::RED));
             } else if pswd_guess != password {
                 ui.add(Label::new("password incorrect, features disabled").text_color(egui::Color32::RED));
             }
