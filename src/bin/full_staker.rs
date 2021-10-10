@@ -49,11 +49,11 @@ fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
 const WARNINGTIME: usize = REPLACERATE*5;
 const BLANKS_IN_A_ROW: u64 = 60;
 fn blocktime(cumtime: f64) -> f64 {
-    // 60f64/(3.306878E-6f64*cumtime+2f64).ln()
+    // 60f64/(6.337618E-8f64*cumtime+2f64).ln()
     10.0
 }
 fn reward(cumtime: f64, blocktime: f64) -> f64 {
-    (1.0/(cumtime + 1.0) - 1.0/(cumtime + blocktime + 1.0))*10E16f64
+    (1.0/(1.653439E-6*cumtime + 1.0) - 1.0/(1.653439E-6*(cumtime + blocktime) + 1.0))*10E16f64
 }
 fn main() -> Result<(), MainError> {
     let matches = app_from_crate!()
