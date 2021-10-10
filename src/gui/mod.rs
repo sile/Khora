@@ -1,4 +1,4 @@
-use std::{convert::TryInto};
+use std::{convert::TryInto, fs};
 
 use eframe::{egui::{self, Checkbox, Label, Sense}, epi};
 use crossbeam::channel;
@@ -73,6 +73,7 @@ pub struct TemplateApp {
     entrypoint: String,
     stkspeand: bool,
     show_reset: bool,
+    setup: bool,
 
     // this how you opt-out of serialization of a member
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -101,7 +102,7 @@ impl Default for TemplateApp {
             stkaddr: "".to_string(),
             dont_trust_amounts: false,
             password: "".to_string(),
-            pswd_guess: "password".to_string(),
+            pswd_guess: "".to_string(),
             pswd_shown: true,
             block_number: 0,
             show_next_pswrd: true,
@@ -111,6 +112,7 @@ impl Default for TemplateApp {
             stkspeand: false,
             show_reset: false,
             you_cant_do_that: false,
+            setup: false,
         }
     }
 }
@@ -118,7 +120,7 @@ impl TemplateApp {
     pub fn new_minimal(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>) -> Self {
         TemplateApp{reciever, sender, ..Default::default()}
     }
-    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String, addr: String, stkaddr: String, password: String) -> Self {
+    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String, addr: String, stkaddr: String, password: String, setup: bool) -> Self {
         TemplateApp{
             reciever,
             sender,
@@ -126,7 +128,7 @@ impl TemplateApp {
             staked,
             addr,
             stkaddr,
-            pswd_guess: password.clone(),
+            setup,
             password,
             ..Default::default()
         }
@@ -147,21 +149,16 @@ impl epi::App for TemplateApp {
         println!("This is printing before the first frame!");
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
-        #[cfg(feature = "persistence")]
-        if let Some(storage) = _storage {
-            let r = self.reciever.clone();
-            let s = self.sender.clone();
-            *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
-            self.sender = s;
-            self.reciever = r;
-            // let x: Self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
-            // println!("{:?}",x.friends);
-            // self.friend_names = x.friend_names;
-            // self.friends = x.friends;
-            // self.send_amount = x.send_amount;
-            // self.edit_names = self.friends.iter().map(|_| false).collect();
-            // println!("{:?}",self.friends);
-            // *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
+        if !self.setup {
+            println!("Attempting to load app state");
+            #[cfg(feature = "persistence")]
+            if let Some(storage) = _storage {
+                let r = self.reciever.clone();
+                let s = self.sender.clone();
+                *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
+                self.sender = s;
+                self.reciever = r;
+            }
         }
     }
 
@@ -169,6 +166,17 @@ impl epi::App for TemplateApp {
     /// Note that you must enable the `persistence` feature for this to work.
     #[cfg(feature = "persistence")]
     fn save(&mut self, storage: &mut dyn epi::Storage) {
+        println!("App closing procedures beginning...");
+        if self.setup {
+            println!("Setting password...");
+            loop {
+                if self.sender.send(self.pswd_guess.as_bytes().to_vec()).is_ok() {
+                    break
+                }
+            }
+        }
+        self.setup = false;
+        self.password = self.pswd_guess.clone();
         epi::set_value(storage, epi::APP_KEY, self);
     }
 
@@ -224,6 +232,7 @@ impl epi::App for TemplateApp {
             stkspeand,
             show_reset,
             you_cant_do_that,
+            setup,
         } = self;
 
  
@@ -260,6 +269,10 @@ impl epi::App for TemplateApp {
                     }
                     if ui.button("Panic Options").clicked() {
                         *show_reset = !*show_reset;
+                    }
+                    if ui.button("Go To Setup").clicked() {
+                        fs::remove_file("account");
+                        frame.quit();
                     }
                 });
                 ui.label("entry address");
@@ -357,7 +370,9 @@ impl epi::App for TemplateApp {
                     ui.text_edit_singleline(pswd_guess);
                 }
             });
-            if pswd_guess != password {
+            if *setup {
+                ui.add(Label::new("Welcome to Khora! Type your password into the password box then turn me off to create your wallet!").text_color(egui::Color32::RED));
+            } else if pswd_guess != password {
                 ui.add(Label::new("password incorrect, features disabled").text_color(egui::Color32::RED));
             }
             if *dont_trust_amounts {

@@ -27,7 +27,7 @@ pub const QUEUE_LENGTH: usize = 10;
 pub const REPLACERATE: usize = 2;
 pub const PUNISHMENT_FRACTION: u64 = 1000;
 
-pub fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
+fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
     let message = bincode::serialize(message).unwrap();
     let mut hasher = Sha3_512::new();
     hasher.update(&message);

@@ -13,9 +13,10 @@ use plumcast::service::ServiceBuilder;
 use rand::prelude::SliceRandom;
 use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::Build;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::net::SocketAddr;
+use std::path::Path;
 use trackable::error::MainError;
 use crossbeam::channel;
 
@@ -57,8 +58,8 @@ fn reward(cumtime: f64, blocktime: f64) -> f64 {
 }
 fn main() -> Result<(), MainError> {
     let matches = app_from_crate!()
-        .arg(Arg::with_name("PORT").index(1).required(true))
-        .arg(Arg::with_name("PASSWORD").index(2).required(true))
+        .arg(Arg::with_name("PORT").index(1).required(false))
+        .arg(Arg::with_name("PASSWORD").index(2).required(false))
         .arg(Arg::with_name("SAVE_HISTORY").index(3).default_value("1").required(false))
         .arg(Arg::with_name("CONTACT_SERVER").index(4).required(false))
         .arg(
@@ -74,8 +75,8 @@ fn main() -> Result<(), MainError> {
         .destination(Destination::Stderr)
         .level(log_level)
         .build())?;
-    let port = matches.value_of("PORT").unwrap();
-    let pswrd = matches.value_of("PASSWORD").unwrap();
+    let port = matches.value_of("PORT").unwrap_or("9876");
+    let pswrd = matches.value_of("PASSWORD").unwrap_or("load");
     
     let addr: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), port).parse())?;
     println!("addr: {:?}",addr);
@@ -111,7 +112,10 @@ fn main() -> Result<(), MainError> {
 
 
     let node: StakerNode;
-    if pswrd != "load" {
+    let pswrd_chosen: String;
+    let setup = !Path::new("account").exists();
+    if setup {
+        fs::File::create("account").expect("should work");
         let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         // let initial_history = vec![(leader,1u64)];
         let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
@@ -121,6 +125,30 @@ fn main() -> Result<(), MainError> {
         // let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
 
 
+        let (ui_sender, mut urecv) = mpsc::channel();
+        let (_, ui_reciever) = channel::unbounded();
+
+        let app = gui::TemplateApp::new(
+            ui_reciever,
+            ui_sender,
+            "0".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            setup,
+        );
+        let native_options = eframe::NativeOptions::default();
+        eframe::run_native(Box::new(app), native_options);
+        println!("You closed the app...");
+        let pswrd: String;
+        loop {
+            if let Async::Ready(Some(m)) = urecv.poll().expect("Shouldn't fail") {
+                pswrd = String::from_utf8_lossy(&m).to_string();
+                println!("Got password: {}",pswrd);
+                break
+            }
+        }
+        pswrd_chosen = pswrd.clone();
         let me = Account::new(&format!("{}",pswrd));
         let validator = me.stake_acc().receive_ot(&me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
         let key = validator.sk.unwrap();
@@ -199,8 +227,10 @@ fn main() -> Result<(), MainError> {
             cumtime: 0f64,
             blocktime: blocktime(0.0),
         };
+        node.save();
     } else {
         node = StakerNode::load(frontnode, backnode, usend, urecv);
+        pswrd_chosen = "doesnt matter this is loaded".to_string();
     }
     let staked: String;
     if let Some(founder) = node.smine.get(0) {
@@ -217,7 +247,8 @@ fn main() -> Result<(), MainError> {
         staked,
         node.me.name(),
         node.me.stake_acc().name(),
-        pswrd.to_string(),
+        pswrd_chosen,
+        false,
     );
     println!("starting!");
     let native_options = eframe::NativeOptions::default();
