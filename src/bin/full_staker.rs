@@ -464,6 +464,14 @@ impl StakerNode {
             if v  {
                 self.save();
 
+                if self.exitqueue[self.headshard].range(..REPLACERATE).map(|&x| self.comittee[self.headshard][x]).any(|x| self.keylocation.contains(&(x as u64))) {
+                    if let Some(mut lastblock) = largeblock.clone() {
+                        lastblock.push(3);
+                        println!("-----------------------------------------------\nsending out the new block {}!\n-----------------------------------------------",lastlightning.bnum);
+                        self.outer.broadcast_now(lastblock); /* broadcast the block to the outside world */
+                    }
+
+                }
                 println!("smine: {:?}",self.smine);
                 println!("all outer push pears: {:?}",self.outer.plumtree_node().all_push_peers());
                 self.headshard = lastlightning.shards[0] as usize;
@@ -508,7 +516,6 @@ impl StakerNode {
                 let reward = reward(self.cumtime,self.blocktime);
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 if !(lastlightning.info.txout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.stkout.is_empty()) || (self.bnum - self.lastbnum > BLANKS_IN_A_ROW) {
-                    let oldlocs = self.smine.iter().map(|x| x[0]).collect::<Vec<_>>();
                     let mut guitruster = !lastlightning.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, reward, &self.stkinfo);
                     guitruster = !lastlightning.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever) && guitruster;
                     self.gui_sender.send(vec![guitruster as u8,1]).expect("there's a problem communicating to the gui!");
@@ -516,7 +523,7 @@ impl StakerNode {
                     if !self.is_user {
                         lastlightning.update_bloom(&mut self.bloom,&self.is_validator);
                     }
-                    if let Some(mut lastblock) = largeblock {
+                    if let Some(lastblock) = largeblock {
                         if !self.is_user {
                             println!("saving block...");
                             let mut f = File::create(format!("blocks/b{}",lastlightning.bnum)).unwrap();
@@ -526,11 +533,6 @@ impl StakerNode {
 
                         }
 
-                        if self.keylocation.contains(&(self.comittee[self.headshard][self.exitqueue[self.headshard][0]] as u64)) || self.keylocation.contains(&(self.comittee[self.headshard][self.exitqueue[self.headshard][1]] as u64)) || oldlocs != self.smine.iter().map(|x| x[0]).collect::<Vec<_>>() {
-                            lastblock.push(3);
-                            println!("-----------------------------------------------\nsending out the new block {}!\n-----------------------------------------------",lastlightning.bnum);
-                            self.outer.broadcast_now(lastblock); /* broadcast the block to the outside world */
-                        }
                     }
                     // as a user you dont save the file
                     self.keylocation = self.smine.iter().map(|x| x[0]).collect();
