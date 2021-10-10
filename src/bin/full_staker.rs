@@ -151,7 +151,7 @@ fn main() -> Result<(), MainError> {
         }
         loop {
             if let Async::Ready(Some(m)) = urecv.poll().expect("Shouldn't fail") {
-                will_stk = m[0] == 1;
+                will_stk = m[0] == 0;
                 break
             }
         }
