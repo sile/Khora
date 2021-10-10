@@ -39,7 +39,7 @@ use kora::validation::{NUMBER_OF_VALIDATORS, SIGNING_CUTOFF, QUEUE_LENGTH, REPLA
 
 use local_ipaddress;
 
-pub fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
+fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
     let message = bincode::serialize(message).unwrap();
     let mut hasher = Sha3_512::new();
     hasher.update(&message);
@@ -48,6 +48,12 @@ pub fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
 
 const WARNINGTIME: usize = REPLACERATE*5;
 const BLANKS_IN_A_ROW: u64 = 60;
+fn blocktime(cumtime: f64) -> f64 {
+    60f64/(3.306878E-6f64*cumtime+2f64).ln()
+}
+fn reward(cumtime: f64, blocktime: f64) -> f64 {
+    (1.0/(cumtime + 1.0) - 1.0/(cumtime + blocktime + 1.0))*10E16f64
+}
 fn main() -> Result<(), MainError> {
     let matches = app_from_crate!()
         .arg(Arg::with_name("PORT").index(1).required(true))
@@ -191,7 +197,7 @@ fn main() -> Result<(), MainError> {
             groupsent: [false;2],
             oldstk: None,
             cumtime: 0f64,
-            blocktime: 1f64/(2f64*0f64+2f64).ln(),
+            blocktime: blocktime(0.0),
         };
     } else {
         node = StakerNode::load(frontnode, backnode, usend, urecv);
@@ -476,9 +482,9 @@ impl StakerNode {
 
                 for _ in self.bnum..lastlightning.bnum { // add whole different scannings for empty blocks
                     println!("I missed a block!");
-                    let reward = (1.0/(self.cumtime + 1.0) - 1.0/(self.cumtime + self.blocktime + 1.0))*10E16f64;
+                    let reward = reward(self.cumtime,self.blocktime);
                     self.cumtime += self.blocktime;
-                    self.blocktime = 60f64/(3.306878E-6f64*self.cumtime+2f64).ln();
+                    self.blocktime = blocktime(self.cumtime);
 
                     NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut self.smine, reward);
                     NextBlock::pay_all_empty(&self.headshard, &mut self.comittee, &mut self.stkinfo, reward);
@@ -500,7 +506,7 @@ impl StakerNode {
 
 
 
-                let reward = (1.0/(self.cumtime + 1.0) - 1.0/(self.cumtime + self.blocktime + 1.0))*10E16f64;
+                let reward = reward(self.cumtime,self.blocktime);
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 if !(lastlightning.info.txout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.stkout.is_empty()) || (self.bnum - self.lastbnum > BLANKS_IN_A_ROW) {
                     let oldlocs = self.smine.iter().map(|x| x[0]).collect::<Vec<_>>();
@@ -639,7 +645,7 @@ impl StakerNode {
 
 
                 self.cumtime += self.blocktime;
-                self.blocktime = 60f64/(3.306878E-6f64*self.cumtime+2f64).ln();
+                self.blocktime = blocktime(self.cumtime);
 
                 self.is_user = self.smine.is_empty();
                 self.sigs = vec![];
