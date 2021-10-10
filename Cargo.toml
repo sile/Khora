@@ -7,10 +7,6 @@ edition = "2018"
 # cargo build
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [[bin]]
-name = "please_work"
-path = "src/bin/please_work.rs"
-
-[[bin]]
 name = "full_staker"
 path = "src/bin/full_staker.rs"
 
