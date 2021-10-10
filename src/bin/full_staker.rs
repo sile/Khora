@@ -190,6 +190,8 @@ fn main() -> Result<(), MainError> {
             outs: None,
             groupsent: [false;2],
             oldstk: None,
+            cumtime: 0f64,
+            blocktime: 1f64/(2f64*0f64+2f64).ln(),
         };
     } else {
         node = StakerNode::load(frontnode, backnode, usend, urecv);
@@ -257,6 +259,8 @@ struct SavedNode {
     is_user: bool,
     moneyreset: Option<Vec<u8>>,
     oldstk: Option<(Account, Vec<[u64;2]>, u64)>,
+    cumtime: f64,
+    blocktime: f64,
 }
 
 struct StakerNode {
@@ -315,6 +319,8 @@ struct StakerNode {
     outs: Option<Vec<(Account, Scalar)>>,
     groupsent: [bool;2],
     oldstk: Option<(Account, Vec<[u64;2]>, u64)>,
+    cumtime: f64,
+    blocktime: f64,
 }
 impl StakerNode {
     fn save(&self) {
@@ -346,7 +352,9 @@ impl StakerNode {
                 rname: self.rname.clone(),
                 is_user: self.is_user,
                 moneyreset: self.moneyreset.clone(),
-                oldstk: self.oldstk.clone()
+                oldstk: self.oldstk.clone(),
+                cumtime: self.cumtime,
+                blocktime: self.blocktime,
             }; // just redo initial conditions on the rest
             let mut sn = bincode::serialize(&sn).unwrap();
             let mut f = File::create("myNode").unwrap();
@@ -417,6 +425,8 @@ impl StakerNode {
             outs: None,
             groupsent: [false;2],
             oldstk: sn.oldstk,
+            cumtime: sn.cumtime,
+            blocktime: sn.blocktime,
         }
     }
     fn readblock(&mut self, lastblock: NextBlock, m: Vec<u8>) -> bool {
@@ -466,8 +476,20 @@ impl StakerNode {
 
                 for _ in self.bnum..lastlightning.bnum { // add whole different scannings for empty blocks
                     println!("I missed a block!");
-                    NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine);
-                    NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
+                    let reward = (1.0/(self.cumtime + 1.0) - 1.0/(self.cumtime + self.blocktime + 1.0))*10E16f64;
+                    self.cumtime += self.blocktime;
+                    self.blocktime = 1f64/(3.306878E-6f64*self.cumtime+2f64).ln();
+
+                    NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut self.smine, reward);
+                    NextBlock::pay_all_empty(&self.headshard, &mut self.comittee, &mut self.stkinfo, reward);
+
+
+                    if let Some(oldstk) = &mut self.oldstk {
+                        NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut oldstk.1, reward);
+                    }
+
+
+
 
                     self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
                     for i in 0..self.comittee.len() {
@@ -475,9 +497,13 @@ impl StakerNode {
                     }
                     self.bnum += 1;
                 }
+
+
+
+                let reward = (1.0/(self.cumtime + 1.0) - 1.0/(self.cumtime + self.blocktime + 1.0))*10E16f64;
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 if !(lastlightning.info.txout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.stkout.is_empty()) || (self.bnum - self.lastbnum > 4) {
-                    let mut guitruster = !lastlightning.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, &self.stkinfo);
+                    let mut guitruster = !lastlightning.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, reward, &self.stkinfo);
                     if !guitruster && self.is_validator {
                         self.inner.broadcast_now(m.clone());
                         self.outer.broadcast_now(m.clone());
@@ -485,7 +511,7 @@ impl StakerNode {
                     guitruster = !lastlightning.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever) && guitruster;
                     self.gui_sender.send(vec![guitruster as u8,1]).expect("there's a problem communicating to the gui!");
                     self.keylocation = self.smine.iter().map(|x| x[0]).collect();
-                    lastlightning.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, self.save_history);
+                    lastlightning.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, reward, self.save_history);
 
                     if !self.is_user {
                         lastlightning.update_bloom(&mut self.bloom,&self.is_validator);
@@ -511,8 +537,8 @@ impl StakerNode {
                     hasher.update(m);
                     self.lastname = Scalar::from_hash(hasher).as_bytes().to_vec();
                 } else {
-                    self.gui_sender.send(vec![!NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut self.smine) as u8,1]).expect("there's a problem communicating to the gui!");
-                    NextBlock::pay_all_empty(&self.bnum, &self.headshard, &mut self.comittee, &mut self.stkinfo);
+                    self.gui_sender.send(vec![!NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut self.smine, reward) as u8,1]).expect("there's a problem communicating to the gui!");
+                    NextBlock::pay_all_empty(&self.headshard, &mut self.comittee, &mut self.stkinfo, reward);
                 }
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
@@ -595,63 +621,18 @@ impl StakerNode {
                 println!("have {} tx",self.txses.len());
                 
 
-                if self.moneyreset.is_some() || self.oldstk.is_some() {
-                    if self.mine.len() < (self.moneyreset.is_some() as usize + self.oldstk.is_some() as usize) {
-                        let mut oldstkcheck = false;
-                        if let Some(oldstk) = &mut self.oldstk {
-                            if !self.mine.iter().all(|x| x.1.com.amount.unwrap() != Scalar::from(oldstk.2)) {
-                                oldstkcheck = true;
-                            }
-                            if !(lastlightning.info.stkout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.txout.is_empty()) || (self.bnum - self.lastbnum > 4) {
-                                lastlightning.scanstk(&oldstk.0, &mut oldstk.1, &mut self.sheight.clone(), &self.comittee, &self.stkinfo);
-                            } else {
-                                NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut oldstk.1);
-                            }
-                            oldstk.2 = oldstk.1.iter().map(|x| x[1]).sum::<u64>(); // maybe add a fee here?
-                            let (loc, amnt): (Vec<u64>,Vec<u64>) = oldstk.1.iter().map(|x|(x[0],x[1])).unzip();
-                            let inps = amnt.into_iter().map(|x| oldstk.0.receive_ot(&oldstk.0.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
-
-
-                            let mut outs = vec![];
-                            let y = oldstk.2/2u64.pow(BETA as u32) + 1;
-                            for _ in 0..y {
-                                let stkamnt = Scalar::from(oldstk.2/y);
-                                outs.push((&self.me,stkamnt));
-                            }
-                            let tx = Transaction::spend_ring(&inps, &outs.iter().map(|x|(x.0,&x.1)).collect());
-                            println!("about to verify!");
-                            tx.verify().unwrap();
-                            println!("finished to verify!");
-                            let mut loc = loc.into_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
-                            loc.push(1);
-                            let tx = tx.polyform(&loc); // push 0
-                            if tx.verifystk(&self.stkinfo).is_ok() {
-                                let mut txbin = bincode::serialize(&tx).unwrap();
-                                self.txses.push(txbin.clone());
-                                txbin.push(0);
-                                self.outer.broadcast_now(txbin.clone());
-                                self.inner.broadcast_now(txbin.clone());
-                            }
-                        }
-                        if oldstkcheck {
-                            self.oldstk = None;
-                        }
-                        if self.mine.len() > 0 && self.oldstk.is_some() {
-                            self.moneyreset = None;
-                        }
-                        if let Some(x) = self.moneyreset.clone() {
-                            self.outer.broadcast(x);
-                        }
-                    } else {
-                        self.moneyreset = None;
-                    }
-                }
+                self.send_panic_or_stop(&lastlightning, reward);
 
                 if self.is_validator && self.inner.plumtree_node().all_push_peers().is_empty() {
                     for n in self.knownvalidators.iter() {
                         self.inner.join(*n.1);
                     }
                 }
+
+
+                self.cumtime += self.blocktime;
+                self.blocktime = 1f64/(3.306878E-6f64*self.cumtime+2f64).ln();
+
                 self.is_user = self.smine.is_empty();
                 self.sigs = vec![];
                 self.groupsent = [false;2];
@@ -669,6 +650,59 @@ impl StakerNode {
         }
         false
     }
+    fn send_panic_or_stop(&mut self, lastlightning: &LightningSyncBlock, reward: f64) {
+        if self.moneyreset.is_some() || self.oldstk.is_some() {
+            if self.mine.len() < (self.moneyreset.is_some() as usize + self.oldstk.is_some() as usize) {
+                let mut oldstkcheck = false;
+                if let Some(oldstk) = &mut self.oldstk {
+                    if !self.mine.iter().all(|x| x.1.com.amount.unwrap() != Scalar::from(oldstk.2)) {
+                        oldstkcheck = true;
+                    }
+                    if !(lastlightning.info.stkout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.txout.is_empty()) || (self.bnum - self.lastbnum > 4) {
+                        lastlightning.scanstk(&oldstk.0, &mut oldstk.1, &mut self.sheight.clone(), &self.comittee, reward, &self.stkinfo);
+                    } else {
+                        NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut oldstk.1, reward);
+                    }
+                    oldstk.2 = oldstk.1.iter().map(|x| x[1]).sum::<u64>(); // maybe add a fee here?
+                    let (loc, amnt): (Vec<u64>,Vec<u64>) = oldstk.1.iter().map(|x|(x[0],x[1])).unzip();
+                    let inps = amnt.into_iter().map(|x| oldstk.0.receive_ot(&oldstk.0.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
+                    let mut outs = vec![];
+                    let y = oldstk.2/2u64.pow(BETA as u32) + 1;
+                    for _ in 0..y {
+                        let stkamnt = Scalar::from(oldstk.2/y);
+                        outs.push((&self.me,stkamnt));
+                    }
+                    let tx = Transaction::spend_ring(&inps, &outs.iter().map(|x|(x.0,&x.1)).collect());
+                    println!("about to verify!");
+                    tx.verify().unwrap();
+                    println!("finished to verify!");
+                    let mut loc = loc.into_iter().map(|x| x.to_le_bytes().to_vec()).flatten().collect::<Vec<_>>();
+                    loc.push(1);
+                    let tx = tx.polyform(&loc); // push 0
+                    if tx.verifystk(&self.stkinfo).is_ok() {
+                        let mut txbin = bincode::serialize(&tx).unwrap();
+                        self.txses.push(txbin.clone());
+                        txbin.push(0);
+                        self.outer.broadcast_now(txbin.clone());
+                        self.inner.broadcast_now(txbin.clone());
+                    }
+                }
+                if oldstkcheck {
+                    self.oldstk = None;
+                }
+                if self.mine.len() > 0 && self.oldstk.is_some() {
+                    self.moneyreset = None;
+                }
+                if let Some(x) = self.moneyreset.clone() {
+                    self.outer.broadcast(x);
+                }
+            } else {
+                self.moneyreset = None;
+            }
+        }
+    }
+
+    
 }
 impl Future for StakerNode {
     type Item = ();

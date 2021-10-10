@@ -249,9 +249,10 @@ fn main() -> Result<(),std::io::Error> {
         // stkinfo = StakerState::read();
 
         lastheight = height;
+        let nextblock = nextblock.tolightning();
         nextblock.scan(&ryan, &mut mine, &mut height, &mut alltagsever);
-        nextblock.scanstk(&ryan, &mut smine, &mut sheight, &comittee, &stkinfo);
-        nextblock.scan_as_noone(&mut stkinfo,&mut queue, &mut exitqueue,&mut comittee, true);
+        nextblock.scanstk(&ryan, &mut smine, &mut sheight, &comittee, 1000000.0,&stkinfo);
+        nextblock.scan_as_noone(&mut stkinfo,&mut queue, &mut exitqueue,&mut comittee, 1000000.0, true);
         nextblock.save_history_to_ram(&mut history);
         println!("history: {}",history.len());
         println!("stkinfo: {}",stkinfo.len());
