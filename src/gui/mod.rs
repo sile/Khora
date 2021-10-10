@@ -258,7 +258,7 @@ impl epi::App for TemplateApp {
                     if ui.button("Quit").clicked() {
                         frame.quit();
                     }
-                    if ui.button("Show Panic Button").clicked() {
+                    if ui.button("Panic Options").clicked() {
                         *show_reset = !*show_reset;
                     }
                 });
