@@ -175,7 +175,7 @@ impl epi::App for TemplateApp {
                 }
             }
             loop {
-                if self.sender.send((self.friend_names.len() == 0) as u8).is_ok() {
+                if self.sender.send(vec![(self.friend_names.len() == 0) as u8]).is_ok() {
                     break
                 }
             }

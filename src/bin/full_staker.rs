@@ -236,6 +236,11 @@ fn main() -> Result<(), MainError> {
             cumtime: 0f64,
             blocktime: blocktime(0.0),
         };
+        let mut mymoney = node.mine.iter().map(|x| node.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
+        mymoney.extend(node.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
+        mymoney.push(0);
+        println!("my money:\n---------------------------------\n{:?}",mymoney);
+        node.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
         node.save();
     } else {
         node = StakerNode::load(frontnode, backnode, usend, urecv);
