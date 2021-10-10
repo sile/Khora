@@ -1,10 +1,12 @@
 use std::{convert::TryInto, fs};
 
+use curve25519_dalek::scalar::Scalar;
 use eframe::{egui::{self, Checkbox, Label, Sense}, epi};
 use crossbeam::channel;
 use fibers::sync::mpsc;
 
 use getrandom::getrandom;
+use sha3::{Digest, Sha3_512};
 
 /*
 cargo run --bin full_staker --release 9876 pig
@@ -35,6 +37,13 @@ fn random_pswrd() -> String {
     });
     chars.into_iter().map(char::from).collect()
 }
+fn get_pswrd(a: &String, b: &String, c: &String) -> Vec<u8> {
+    let mut hasher = Sha3_512::new();
+    hasher.update(&a.as_bytes());
+    hasher.update(&b.as_bytes());
+    hasher.update(&c.as_bytes());
+    Scalar::from_hash(hasher).as_bytes().to_vec()
+}
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
@@ -63,12 +72,18 @@ pub struct TemplateApp {
     stkaddr: String,
     edit_names: Vec<bool>,
     dont_trust_amounts: bool,
-    password: String,
-    pswd_guess: String,
+    password0: String,
+    pswd_guess0: String,
+    password1: String,
+    pswd_guess1: String,
+    secret_key: String,
+    secret_key_guess: String,
     pswd_shown: bool,
     block_number: u64,
     show_next_pswrd: bool,
-    next_pswrd: String,
+    next_pswrd0: String,
+    next_pswrd1: String,
+    next_pswrd2: String,
     panic_fee: String,
     entrypoint: String,
     stkspeand: bool,
@@ -101,12 +116,18 @@ impl Default for TemplateApp {
             addr: "".to_string(),
             stkaddr: "".to_string(),
             dont_trust_amounts: false,
-            password: "".to_string(),
-            pswd_guess: "".to_string(),
+            password0: "".to_string(),
+            pswd_guess0: "".to_string(),
+            password1: "".to_string(),
+            pswd_guess1: "".to_string(),
+            secret_key: "".to_string(),
+            secret_key_guess: "".to_string(),
             pswd_shown: true,
             block_number: 0,
             show_next_pswrd: true,
-            next_pswrd: random_pswrd(),
+            next_pswrd0: random_pswrd(),
+            next_pswrd1: random_pswrd(),
+            next_pswrd2: random_pswrd()[..5].to_string(),
             panic_fee: "1".to_string(),
             entrypoint: "".to_string(),
             stkspeand: false,
@@ -120,7 +141,7 @@ impl TemplateApp {
     pub fn new_minimal(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>) -> Self {
         TemplateApp{reciever, sender, ..Default::default()}
     }
-    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String, addr: String, stkaddr: String, password: String, setup: bool) -> Self {
+    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String, addr: String, stkaddr: String, password0: String, password1: String, setup: bool) -> Self {
         TemplateApp{
             reciever,
             sender,
@@ -129,7 +150,8 @@ impl TemplateApp {
             addr,
             stkaddr,
             setup,
-            password,
+            password0,
+            password1,
             ..Default::default()
         }
     }
@@ -170,7 +192,7 @@ impl epi::App for TemplateApp {
         if self.setup {
             println!("Setting password...");
             loop {
-                if self.sender.send(self.pswd_guess.as_bytes().to_vec()).is_ok() {
+                if self.sender.send(get_pswrd(&*next_pswrd0,&*next_pswrd1,&*next_pswrd2)).is_ok() {
                     break
                 }
             }
@@ -226,12 +248,18 @@ impl epi::App for TemplateApp {
             addr,
             stkaddr,
             dont_trust_amounts,
-            password,
-            pswd_guess,
+            password0,
+            pswd_guess0,
+            password1,
+            pswd_guess1,
+            secret_key,
+            secret_key_guess,
             pswd_shown,
             block_number,
             show_next_pswrd,
-            next_pswrd,
+            next_pswrd0,
+            next_pswrd1,
+            next_pswrd2,
             panic_fee,
             entrypoint,
             stkspeand,
@@ -322,7 +350,7 @@ impl epi::App for TemplateApp {
 
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(stake);
-                if pswd_guess == password {
+                if pswd_guess0 == password0 && pswd_guess1 == password1 {
                     if ui.button("Stake").clicked() {
                         let mut m = vec![];
                         m.extend(stkaddr.as_bytes().to_vec());
@@ -342,7 +370,7 @@ impl epi::App for TemplateApp {
             if *staking {
                 ui.horizontal(|ui| {
                     ui.text_edit_singleline(unstake);
-                    if pswd_guess == password {
+                    if pswd_guess0 == password0 && pswd_guess1 == password1 {
                         if ui.button("Unstake").clicked() {
                             // println!("unstaking {:?}!",unstake.parse::<u64>());
                             let mut m = vec![];
@@ -372,12 +400,18 @@ impl epi::App for TemplateApp {
                     *pswd_shown = !*pswd_shown;
                 }
                 if *pswd_shown {
-                    ui.text_edit_singleline(pswd_guess);
+                    ui.text_edit_singleline(pswd_guess0);
+                }
+                if *pswd_shown {
+                    ui.text_edit_singleline(pswd_guess1);
+                }
+                if *pswd_shown {
+                    ui.text_edit_singleline(secret_key_guess);
                 }
             });
             if *setup {
                 ui.add(Label::new("Welcome to Khora! Type your password into the password box then turn me off to create your wallet!\nIf you are planning on being a staker, you need to save the history... Add a friend to do so!").text_color(egui::Color32::RED));
-            } else if pswd_guess != password {
+            } else if pswd_guess0 == password0 && pswd_guess1 == password1 && secret_key == secret_key_guess {
                 ui.add(Label::new("password incorrect, features disabled").text_color(egui::Color32::RED));
             }
             if *dont_trust_amounts {
@@ -391,7 +425,7 @@ impl epi::App for TemplateApp {
             egui::warn_if_debug_build(ui);
         });
 
-        if *pswd_shown && (pswd_guess == password) { // add warning to not panic 2ce in a row
+        if *pswd_shown && (pswd_guess0 == password0) && (pswd_guess1 == password1) && (secret_key == secret_key_guess) { // add warning to not panic 2ce in a row
             egui::Window::new("Reset Options").open(show_reset).show(ctx, |ui| {
                 if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
                     ui.small("Password reset: 'panic button' changes your password and sends all of your money to a new account. If you click this button do not turn off this app until receiving confirmation or your account balance may be lost. After receiving 1 transaction (2 for stakers), the old account information will be deleted.");
@@ -399,12 +433,18 @@ impl epi::App for TemplateApp {
                 ui.horizontal(|ui| {
                     ui.add(Checkbox::new(show_next_pswrd,"Show Password On Reset"));
                     if ui.button("Suggest Password").clicked() {
-                        *next_pswrd = random_pswrd();
+                        *next_pswrd0 = random_pswrd();
+                        *next_pswrd1 = random_pswrd();
+                        *next_pswrd2 = random_pswrd()[..5].to_string();
                     }
                 });
                 ui.horizontal(|ui| {
                     ui.label("Next Password");
-                    ui.text_edit_singleline(next_pswrd);
+                    ui.vertical(|ui| {
+                        ui.text_edit_singleline(next_pswrd0);
+                        ui.text_edit_singleline(next_pswrd1);
+                        ui.text_edit_singleline(next_pswrd2);
+                    })
                 });
                 ui.horizontal(|ui| {
                     ui.label("Password Reset Fee");
@@ -427,12 +467,16 @@ impl epi::App for TemplateApp {
                     } else {
                         x.extend(s.to_le_bytes());
                     }
-                    x.extend(next_pswrd.as_bytes());
+                    x.extend(get_pswrd(&*next_pswrd0,&*next_pswrd1,&*next_pswrd2));
                     x.push(u8::MAX);
                     sender.send(x).expect("something's wrong with communication from the gui");
-                    *password = next_pswrd.clone();
+                    *password0 = next_pswrd0.clone();
+                    *password1 = next_pswrd1.clone();
+                    *secret_key = next_pswrd2.clone();
                     if *show_next_pswrd {
-                        *pswd_guess = next_pswrd.clone();
+                        *pswd_guess0 = next_pswrd0.clone();
+                        *pswd_guess1 = next_pswrd1.clone();
+                        *secret_key_guess = next_pswrd2.clone();
                     }
                     // *next_pswrd = random_pswrd();
                 }
@@ -491,7 +535,7 @@ impl epi::App for TemplateApp {
                     if ui.button("Clear Transaction").clicked() {
                         send_amount.iter_mut().for_each(|x| *x = "0".to_string());
                     }
-                    if pswd_guess == password {
+                    if pswd_guess0 == password0 && pswd_guess1 == password1 && secret_key == secret_key_guess {
                         if ui.button("Send Transaction").clicked() {
                             let mut m = vec![];
                             let mut tot = 0u64;
