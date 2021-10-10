@@ -478,7 +478,7 @@ impl StakerNode {
                     println!("I missed a block!");
                     let reward = (1.0/(self.cumtime + 1.0) - 1.0/(self.cumtime + self.blocktime + 1.0))*10E16f64;
                     self.cumtime += self.blocktime;
-                    self.blocktime = 1f64/(3.306878E-6f64*self.cumtime+2f64).ln();
+                    self.blocktime = 60f64/(3.306878E-6f64*self.cumtime+2f64).ln();
 
                     NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut self.smine, reward);
                     NextBlock::pay_all_empty(&self.headshard, &mut self.comittee, &mut self.stkinfo, reward);
@@ -631,7 +631,7 @@ impl StakerNode {
 
 
                 self.cumtime += self.blocktime;
-                self.blocktime = 1f64/(3.306878E-6f64*self.cumtime+2f64).ln();
+                self.blocktime = 60f64/(3.306878E-6f64*self.cumtime+2f64).ln();
 
                 self.is_user = self.smine.is_empty();
                 self.sigs = vec![];
@@ -702,7 +702,7 @@ impl StakerNode {
         }
     }
 
-    
+
 }
 impl Future for StakerNode {
     type Item = ();

@@ -25,8 +25,6 @@ pub const NUMBER_OF_VALIDATORS: usize = 3;
 pub const SIGNING_CUTOFF: usize = 2*NUMBER_OF_VALIDATORS/3;
 pub const QUEUE_LENGTH: usize = 10;
 pub const REPLACERATE: usize = 2;
-pub const INFLATION_CONSTANT: f64 = 10u64.pow(16) as f64;
-pub const INFLATION_EXPONENT: f64 = 100f64;
 pub const PUNISHMENT_FRACTION: u64 = 1000;
 
 pub fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {

@@ -16,6 +16,8 @@ use kora::validation::*;
 use kora::constants::PEDERSEN_H;
 /*
 cargo run --bin please_work --release
+
+BE SURE TO MAKE SURE THE NUMBER_OF_VALIDATORS AND QUEUE_LENGTH IS 128
 */
 
 /* Anonymity ring size: proof size = 2*ceil(log_2 (3+|R|+|R||S|+β|T|+3|S|))+9... */
@@ -165,7 +167,7 @@ fn main() -> Result<(),std::io::Error> {
         let shards = 2u64.pow(bnum as u32) as usize; /* max of 512 shard without lazyness because number of validators fits inside a u16 */
         let tx_per_shard = tx_processed/shards;
         bnum+=1;
-        println!("shard {} block {}",shards,bnum);
+        println!("shards: {}    block: {}",shards,bnum);
         let start = Instant::now();
         let mut hasher = Sha3_512::new();
         hasher.update(&bincode::serialize(&nextblock).unwrap());
