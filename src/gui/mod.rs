@@ -252,7 +252,7 @@ impl epi::App for TemplateApp {
                     if ui.button("Quit").clicked() {
                         frame.quit();
                     }
-                    if ui.button("Reset Password Options").clicked() {
+                    if ui.button("Show Panic Button").clicked() {
                         *show_reset = !*show_reset;
                     }
                 });

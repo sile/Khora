@@ -49,7 +49,8 @@ fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
 const WARNINGTIME: usize = REPLACERATE*5;
 const BLANKS_IN_A_ROW: u64 = 60;
 fn blocktime(cumtime: f64) -> f64 {
-    60f64/(3.306878E-6f64*cumtime+2f64).ln()
+    // 60f64/(3.306878E-6f64*cumtime+2f64).ln()
+    10.0
 }
 fn reward(cumtime: f64, blocktime: f64) -> f64 {
     (1.0/(cumtime + 1.0) - 1.0/(cumtime + blocktime + 1.0))*10E16f64
@@ -173,7 +174,7 @@ fn main() -> Result<(), MainError> {
             waitingforleaderbool: false,
             waitingforleadertime: Instant::now(),
             waitingforentrytime: Instant::now(),
-            clogging: 0,
+            doneerly: Instant::now(),
             headshard: 0,
             usurpingtime: Instant::now(),
             is_validator: false,
@@ -192,7 +193,6 @@ fn main() -> Result<(), MainError> {
             sync_returnaddr: None,
             sync_theirnum: 0u64,
             sync_lightning: 'b',
-            // needtosend: None,
             outs: None,
             groupsent: [false;2],
             oldstk: None,
@@ -304,7 +304,7 @@ struct StakerNode {
     waitingforleaderbool: bool,
     waitingforleadertime: Instant,
     waitingforentrytime: Instant,
-    clogging: u64,
+    doneerly: Instant,
     headshard: usize,
     usurpingtime: Instant,
     is_validator: bool,
@@ -321,7 +321,6 @@ struct StakerNode {
     sync_returnaddr: Option<NodeId>,
     sync_theirnum: u64,
     sync_lightning: char,
-    // needtosend: Option<(Vec<u8>,Vec<u64>)>,
     outs: Option<Vec<(Account, Scalar)>>,
     groupsent: [bool;2],
     oldstk: Option<(Account, Vec<[u64;2]>, u64)>,
@@ -391,7 +390,6 @@ impl StakerNode {
             bannedlist: HashSet::new(),
             points: HashMap::new(),
             scalars: HashMap::new(),
-            clogging: 0,
             save_history: sn.save_history,
             me: sn.me,
             mine: sn.mine.clone(),
@@ -418,6 +416,7 @@ impl StakerNode {
             sent_onces: HashSet::new(), // maybe occasionally clear this or replace with vecdeq?
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
+            doneerly: Instant::now(),
             leaderip: None,
             newest: 0u64,
             rmems: HashMap::new(),
@@ -652,6 +651,7 @@ impl StakerNode {
                 self.groupsent = [false;2];
                 self.points = HashMap::new();
                 self.scalars = HashMap::new();
+                self.doneerly = self.timekeeper;
                 self.waitingforentrybool = true;
                 self.waitingforleaderbool = false;
                 self.waitingforleadertime = Instant::now();
@@ -660,13 +660,6 @@ impl StakerNode {
                 self.usurpingtime = Instant::now();
                 println!("block reading process done!!!");
 
-                if self.keylocation.contains(&(self.newest as u64)) {
-                    let m = bincode::serialize(&self.txses).unwrap();
-                    println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
-                    let mut m = Signature::sign_message_nonced(&self.key, &m, &self.newest,&self.bnum);
-                    m.push(1u8);
-                    self.inner.broadcast(m);
-                }
                 return true
             }
         }
@@ -751,6 +744,29 @@ impl Future for StakerNode {
             if self.keylocation.iter().all(|keylocation| !self.comittee[self.headshard].contains(&(*keylocation as usize)) ) { // if you're not in the comittee
                 self.is_staker = true;
                 self.is_validator = false;
+                if (self.doneerly.elapsed().as_secs() > self.blocktime as u64) && (self.doneerly.elapsed().as_secs() > self.timekeeper.elapsed().as_secs()) {
+                    self.waitingforentrybool = true;
+                    self.waitingforleaderbool = false;
+                    self.waitingforleadertime = Instant::now();
+                    self.waitingforentrytime = Instant::now();
+                    self.timekeeper = Instant::now();
+                    self.doneerly = Instant::now();
+                    self.usurpingtime = Instant::now();
+
+                    if self.keylocation.contains(&(self.newest as u64)) {
+                        let m = bincode::serialize(&self.txses).unwrap();
+                        println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
+                        let mut m = Signature::sign_message_nonced(&self.key, &m, &self.newest,&self.bnum);
+                        m.push(1u8);
+                        self.inner.broadcast(m);
+                    }
+                }
+                if self.doneerly.elapsed() > self.timekeeper.elapsed() {
+                    self.waitingforleadertime = Instant::now();
+                    self.waitingforentrytime = Instant::now();
+                    self.timekeeper = Instant::now();
+                    self.usurpingtime = Instant::now();
+                }
             } else { // if you're in the comittee
                 self.is_staker = false;
                 self.is_validator = true;
@@ -817,7 +833,6 @@ impl Future for StakerNode {
                     if !self.bannedlist.contains(&msg.id.node()) {
                         let mut m = msg.payload.to_vec();
                         if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
-                            self.clogging += 1;
                             if mtype == 2 {print!("#{:?}", mtype);}
                             else {println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id.node());}
 
@@ -1177,7 +1192,6 @@ impl Future for StakerNode {
                     if !self.bannedlist.contains(&msg.id.node()) {
                         let mut m = msg.payload.to_vec();
                         if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
-                            self.clogging += 1;
                             println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id.node());
 
 
@@ -1346,9 +1360,10 @@ impl Future for StakerNode {
                             println!("amounts {:?}",x);
                             // println!("ha {:?}",1u64.to_le_bytes());
                             let y = x/2u64.pow(BETA as u32) + 1;
+                            println!("need to split this up into {} txses!",y);
+                            let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
                             for _ in 0..y {
                                 let amnt = Scalar::from(x/y);
-                                let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
                                 outs.push((recv,amnt));
                             }
                         }
