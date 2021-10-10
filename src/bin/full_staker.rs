@@ -7,6 +7,7 @@ use clap::Arg;
 use fibers::sync::mpsc;
 use fibers::{Executor, Spawn, ThreadPoolExecutor};
 use futures::{Async, Future, Poll, Stream};
+use kora::seal::BETA;
 use plumcast::node::{LocalNodeId, Node, NodeBuilder, NodeId, SerialLocalNodeIdGenerator};
 use plumcast::service::ServiceBuilder;
 use rand::prelude::SliceRandom;
@@ -255,7 +256,7 @@ struct SavedNode {
     rname: Vec<u8>,
     is_user: bool,
     moneyreset: Option<Vec<u8>>,
-    oldstk: Option<(Account, Vec<[u64;2]>, Scalar)>,
+    oldstk: Option<(Account, Vec<[u64;2]>, u64)>,
 }
 
 struct StakerNode {
@@ -313,7 +314,7 @@ struct StakerNode {
     // needtosend: Option<(Vec<u8>,Vec<u64>)>,
     outs: Option<Vec<(Account, Scalar)>>,
     groupsent: [bool;2],
-    oldstk: Option<(Account, Vec<[u64;2]>, Scalar)>,
+    oldstk: Option<(Account, Vec<[u64;2]>, u64)>,
 }
 impl StakerNode {
     fn save(&self) {
@@ -598,7 +599,7 @@ impl StakerNode {
                     if self.mine.len() < (self.moneyreset.is_some() as usize + self.oldstk.is_some() as usize) {
                         let mut oldstkcheck = false;
                         if let Some(oldstk) = &mut self.oldstk {
-                            if !self.mine.iter().all(|x| x.1.com.amount.unwrap() != oldstk.2) {
+                            if !self.mine.iter().all(|x| x.1.com.amount.unwrap() != Scalar::from(oldstk.2)) {
                                 oldstkcheck = true;
                             }
                             if !(lastlightning.info.stkout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.txout.is_empty()) || (self.bnum - self.lastbnum > 4) {
@@ -606,10 +607,18 @@ impl StakerNode {
                             } else {
                                 NextBlock::pay_self_empty(&self.bnum, &self.headshard, &self.comittee, &mut oldstk.1);
                             }
-                            oldstk.2 = Scalar::from(oldstk.1.iter().map(|x| x[1]).sum::<u64>()); // maybe add a fee here?
+                            oldstk.2 = oldstk.1.iter().map(|x| x[1]).sum::<u64>(); // maybe add a fee here?
                             let (loc, amnt): (Vec<u64>,Vec<u64>) = oldstk.1.iter().map(|x|(x[0],x[1])).unzip();
                             let inps = amnt.into_iter().map(|x| oldstk.0.receive_ot(&oldstk.0.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
-                            let tx = Transaction::spend_ring(&inps, &vec![(&self.me,&oldstk.2)]);
+
+
+                            let mut outs = vec![];
+                            let y = oldstk.2/2u64.pow(BETA as u32) + 1;
+                            for _ in 0..y {
+                                let stkamnt = Scalar::from(oldstk.2/y);
+                                outs.push((&self.me,stkamnt));
+                            }
+                            let tx = Transaction::spend_ring(&inps, &outs.iter().map(|x|(x.0,&x.1)).collect());
                             println!("about to verify!");
                             tx.verify().unwrap();
                             println!("finished to verify!");
@@ -1298,9 +1307,12 @@ impl Future for StakerNode {
                             let x = u64::from_le_bytes(x);
                             println!("amounts {:?}",x);
                             // println!("ha {:?}",1u64.to_le_bytes());
-                            let amnt = Scalar::from(x);
-                            let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
-                            outs.push((recv,amnt));
+                            let y = x/2u64.pow(BETA as u32) + 1;
+                            for _ in 0..y {
+                                let amnt = Scalar::from(x/y);
+                                let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
+                                outs.push((recv,amnt));
+                            }
                         }
 
                         let mut txbin: Vec<u8>;
@@ -1394,10 +1406,13 @@ impl Future for StakerNode {
                             self.outer.broadcast_now(txbin);
                         }
                     } else if istx == u8::MAX /* panic button */ {
-                        let amnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
-                        let mut stkamnt = Scalar::from(u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap()));
+                        
+                        let amnt = u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap());
+                        // let amnt = Scalar::from(amnt);
+                        let mut stkamnt = u64::from_le_bytes(m.drain(..8).collect::<Vec<_>>().try_into().unwrap());
+                        // let mut stkamnt = Scalar::from(stkamnt);
                         if stkamnt == amnt {
-                            stkamnt -= Scalar::one();
+                            stkamnt -= 1;
                         }
                         let newacc = Account::new(&format!("{}",String::from_utf8_lossy(&m)));
                         println!("understood command");
@@ -1415,7 +1430,14 @@ impl Future for StakerNode {
                             /* this is where people send you the ring members */ 
                             let me = self.me;
                             rlring.iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x) {*x = y;});
-                            let tx = Transaction::spend_ring(&rlring, &vec![(&newacc,&amnt)]);
+                            
+                            let mut outs = vec![];
+                            let y = amnt/2u64.pow(BETA as u32) + 1;
+                            for _ in 0..y {
+                                let amnt = Scalar::from(amnt/y);
+                                outs.push((&newacc,amnt));
+                            }
+                            let tx = Transaction::spend_ring(&rlring, &outs.iter().map(|x| (x.0,&x.1)).collect());
 
                             println!("{:?}",rlring.iter().map(|x| x.com.amount).collect::<Vec<_>>());
                             println!("{:?}",amnt);
@@ -1437,7 +1459,15 @@ impl Future for StakerNode {
                         if self.smine.len() > 0 {
                             let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.iter().map(|x|(x[0],x[1])).unzip();
                             let inps = amnt.into_iter().map(|x| self.me.receive_ot(&self.me.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
-                            let tx = Transaction::spend_ring(&inps, &vec![(&newacc,&stkamnt)]);
+
+
+                            let mut outs = vec![];
+                            let y = stkamnt/2u64.pow(BETA as u32) + 1;
+                            for _ in 0..y {
+                                let stkamnt = Scalar::from(stkamnt/y);
+                                outs.push((&newacc,stkamnt));
+                            }
+                            let tx = Transaction::spend_ring(&inps, &outs.iter().map(|x| (x.0,&x.1)).collect());
                             println!("about to verify!");
                             tx.verify().unwrap();
                             println!("finished to verify!");
