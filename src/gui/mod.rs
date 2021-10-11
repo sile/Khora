@@ -408,15 +408,12 @@ impl epi::App for TemplateApp {
             if *pswd_shown {
                 ui.text_edit_singleline(pswd_guess1);
             }
-            if *pswd_shown && !*setup {
+            if *pswd_shown {
                 ui.text_edit_singleline(secret_key_guess);
             }
             if *setup {
-                ui.label(&*secret_key_guess);
-            }
-            if *setup {
                 ui.add(Label::new("Welcome to Khora! Type your password into the password box then turn me off to create your wallet!\nIf you are planning on being a staker, you need to save the history... Add a friend to do so!").text_color(egui::Color32::RED));
-            } else if pswd_guess0 == password0 && pswd_guess1 == password1 && secret_key == secret_key_guess {
+            } else if pswd_guess0 != password0 || pswd_guess1 != password1 || secret_key != secret_key_guess {
                 ui.add(Label::new("password incorrect, features disabled").text_color(egui::Color32::RED));
             }
             if *dont_trust_amounts {
