@@ -190,7 +190,7 @@ impl epi::App for TemplateApp {
         if self.setup {
             println!("Setting password...");
             loop {
-                if self.sender.send(get_pswrd(&*next_pswrd0,&*next_pswrd1,&*next_pswrd2)).is_ok() {
+                if self.sender.send(get_pswrd(&self.next_pswrd0,&self.next_pswrd1,&self.next_pswrd2)).is_ok() {
                     break
                 }
             }
@@ -201,7 +201,9 @@ impl epi::App for TemplateApp {
             }
         }
         self.setup = false;
-        self.password = self.pswd_guess.clone();
+        self.password0 = self.pswd_guess0.clone();
+        self.password1 = self.pswd_guess1.clone();
+        self.secret_key = self.secret_key_guess.clone();
         epi::set_value(storage, epi::APP_KEY, self);
     }
 
@@ -397,16 +399,16 @@ impl epi::App for TemplateApp {
                 if ui.button("toggle password").clicked() {
                     *pswd_shown = !*pswd_shown;
                 }
-                if *pswd_shown {
-                    ui.text_edit_singleline(pswd_guess0);
-                }
-                if *pswd_shown {
-                    ui.text_edit_singleline(pswd_guess1);
-                }
-                if *pswd_shown && !*setup {
-                    ui.text_edit_singleline(secret_key_guess);
-                }
             });
+            if *pswd_shown {
+                ui.text_edit_singleline(pswd_guess0);
+            }
+            if *pswd_shown {
+                ui.text_edit_singleline(pswd_guess1);
+            }
+            if *pswd_shown && !*setup {
+                ui.text_edit_singleline(secret_key_guess);
+            }
             if *setup {
                 ui.add(Label::new("Welcome to Khora! Type your password into the password box then turn me off to create your wallet!\nIf you are planning on being a staker, you need to save the history... Add a friend to do so!").text_color(egui::Color32::RED));
             } else if pswd_guess0 == password0 && pswd_guess1 == password1 && secret_key == secret_key_guess {
@@ -436,14 +438,10 @@ impl epi::App for TemplateApp {
                         *next_pswrd2 = random_pswrd()[..5].to_string();
                     }
                 });
-                ui.horizontal(|ui| {
-                    ui.label("Next Password");
-                    ui.vertical(|ui| {
-                        ui.text_edit_singleline(next_pswrd0);
-                        ui.text_edit_singleline(next_pswrd1);
-                        ui.text_edit_singleline(next_pswrd2);
-                    })
-                });
+                ui.label("Next Passwords");
+                ui.text_edit_singleline(next_pswrd0);
+                ui.text_edit_singleline(next_pswrd1);
+                ui.text_edit_singleline(next_pswrd2);
                 ui.horizontal(|ui| {
                     ui.label("Password Reset Fee");
                     ui.text_edit_singleline(panic_fee);
