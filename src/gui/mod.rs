@@ -1,4 +1,4 @@
-use std::{convert::TryInto, fs};
+use std::{convert::TryInto, fs, time::Instant};
 
 use curve25519_dalek::scalar::Scalar;
 use eframe::{egui::{self, Checkbox, Label, Sense}, epi};
@@ -90,6 +90,10 @@ pub struct TemplateApp {
     stkspeand: bool,
     show_reset: bool,
     setup: bool,
+    eta: i8,
+
+    #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for sender
+    timekeeper: Instant,
 
     // this how you opt-out of serialization of a member
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -132,6 +136,8 @@ impl Default for TemplateApp {
             stkspeand: false,
             show_reset: false,
             you_cant_do_that: false,
+            eta: 60,
+            timekeeper: Instant::now(),
             setup: false,
         }
     }
@@ -221,6 +227,9 @@ impl epi::App for TemplateApp {
                 self.dont_trust_amounts = i.pop() == Some(0);
             } else if modification == 2 {
                 self.block_number = u64::from_le_bytes(i.try_into().unwrap());
+            } else if modification == 128 {
+                self.eta = i[0] as i8;
+                self.timekeeper = Instant::now();
             } else if modification == u8::MAX {
                 if i.pop() == Some(0) {
                     self.addr = String::from_utf8_lossy(&i).to_string();
@@ -253,6 +262,8 @@ impl epi::App for TemplateApp {
             pswd_guess0,
             username,
             secret_key,
+            eta,
+            timekeeper,
             pswd_shown,
             block_number,
             show_next_pswrd,
@@ -317,6 +328,10 @@ impl epi::App for TemplateApp {
                 "Source code."
             ));
             ui.label(format!("current block: {}",block_number));
+            ui.horizontal(|ui| {
+                ui.label("next block in");
+                ui.add(Label::new(format!("{}",*eta - timekeeper.elapsed().as_secs() as i8)).strong().text_color(egui::Color32::YELLOW));
+            });
             ui.horizontal(|ui| {
                 if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
                     ui.output().copied_text = addr.clone();

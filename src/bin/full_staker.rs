@@ -425,8 +425,8 @@ impl StakerNode {
         let mut inner = inner;
         inner.dm(vec![], &sn.view.iter().map(|&x| NodeId::new(x, LocalNodeId::new(0))).collect::<Vec<_>>(), true);
         StakerNode {
-            inner: inner,
-            outer: outer,
+            inner,
+            outer,
             gui_sender,
             gui_reciever,
             timekeeper: Instant::now(),
@@ -664,6 +664,7 @@ impl StakerNode {
                 let mut thisbnum = self.bnum.to_le_bytes().to_vec();
                 thisbnum.push(2);
                 self.gui_sender.send(thisbnum).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
+
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
                 if self.bnum % 128 == 0 {
@@ -701,6 +702,8 @@ impl StakerNode {
 
                 self.cumtime += self.blocktime;
                 self.blocktime = blocktime(self.cumtime);
+
+                self.gui_sender.send(vec![self.blocktime as u8,128]).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
 
                 self.is_user = self.smine.is_empty();
                 self.sigs = vec![];
