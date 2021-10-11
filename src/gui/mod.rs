@@ -141,7 +141,7 @@ impl TemplateApp {
     pub fn new_minimal(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>) -> Self {
         TemplateApp{reciever, sender, ..Default::default()}
     }
-    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String, addr: String, stkaddr: String, password0: String, password1: String, setup: bool) -> Self {
+    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String, addr: String, stkaddr: String, setup: bool) -> Self {
         TemplateApp{
             reciever,
             sender,
@@ -150,8 +150,6 @@ impl TemplateApp {
             addr,
             stkaddr,
             setup,
-            password0,
-            password1,
             ..Default::default()
         }
     }
@@ -405,7 +403,7 @@ impl epi::App for TemplateApp {
                 if *pswd_shown {
                     ui.text_edit_singleline(pswd_guess1);
                 }
-                if *pswd_shown {
+                if *pswd_shown && !*setup {
                     ui.text_edit_singleline(secret_key_guess);
                 }
             });

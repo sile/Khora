@@ -112,7 +112,6 @@ fn main() -> Result<(), MainError> {
 
 
     let node: StakerNode;
-    let pswrd_chosen: String;
     let setup = !Path::new("account").exists();
     if setup {
         fs::File::create("account").expect("should work");
@@ -134,8 +133,7 @@ fn main() -> Result<(), MainError> {
             "0".to_string(),
             "".to_string(),
             "".to_string(),
-            "".to_string(),
-            setup,
+            true,
         );
         let native_options = eframe::NativeOptions::default();
         eframe::run_native(Box::new(app), native_options);
@@ -155,7 +153,6 @@ fn main() -> Result<(), MainError> {
                 break
             }
         }
-        pswrd_chosen = pswrd.clone();
         let me = Account::new(&format!("{}",pswrd));
         let validator = me.stake_acc().receive_ot(&me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
         let key = validator.sk.unwrap();
@@ -244,7 +241,6 @@ fn main() -> Result<(), MainError> {
         node.save();
     } else {
         node = StakerNode::load(frontnode, backnode, usend, urecv);
-        pswrd_chosen = "doesnt matter this is loaded".to_string();
     }
     let staked: String;
     if let Some(founder) = node.smine.get(0) {
@@ -261,7 +257,6 @@ fn main() -> Result<(), MainError> {
         staked,
         node.me.name(),
         node.me.stake_acc().name(),
-        pswrd_chosen,
         false,
     );
     println!("starting!");
