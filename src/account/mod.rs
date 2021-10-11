@@ -105,13 +105,13 @@ impl Account {
         x.invert() * RISTRETTO_BASEPOINT_POINT
     }
 
-    pub fn new(x: &String) -> Account { //makes accounts from a string
+    pub fn new<T: std::convert::AsRef<[u8]>>(x: &T) -> Account { //makes accounts from a string
         let mut hasher = Sha3_512::new();
-        hasher.update(&x.as_bytes());
+        hasher.update(x);
         let sk = Scalar::from_hash(hasher.clone());
-        hasher.update(&x.as_bytes());
+        hasher.update(x);
         let ask = Scalar::from_hash(hasher.clone());
-        hasher.update(&x.as_bytes());
+        hasher.update(x);
         let vsk = Scalar::from_hash(hasher);
         Account{
             sk,

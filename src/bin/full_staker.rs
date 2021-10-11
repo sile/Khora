@@ -56,6 +56,17 @@ fn blocktime(cumtime: f64) -> f64 {
 fn reward(cumtime: f64, blocktime: f64) -> f64 {
     (1.0/(1.653439E-6*cumtime + 1.0) - 1.0/(1.653439E-6*(cumtime + blocktime) + 1.0))*10E16f64
 }
+
+fn get_pswrd(a: &String, b: &String, c: &String) -> Vec<u8> {
+    println!("{}",a);
+    println!("{}",b);
+    println!("{}",c);
+    let mut hasher = Sha3_512::new();
+    hasher.update(&a.as_bytes());
+    hasher.update(&b.as_bytes());
+    hasher.update(&c.as_bytes());
+    Scalar::from_hash(hasher).as_bytes().to_vec()
+}
 fn main() -> Result<(), MainError> {
     let matches = app_from_crate!()
         .arg(Arg::with_name("PORT").index(1).required(false))
@@ -115,11 +126,12 @@ fn main() -> Result<(), MainError> {
     let setup = !Path::new("account").exists();
     if setup {
         fs::File::create("account").expect("should work");
-        let leader = Account::new(&format!("{}","pig")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        // let initial_history = vec![(leader,1u64)];
-        let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64)];
+        let person0 = get_pswrd(&"plyusha4096!!".to_string(),&"password".to_string(),&"worm".to_string());
+        let leader = Account::new(&person0).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        let initial_history = vec![(leader,1u64)];
+        // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        // let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        // let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64)];
         // let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         // let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
 
@@ -138,12 +150,11 @@ fn main() -> Result<(), MainError> {
         let native_options = eframe::NativeOptions::default();
         eframe::run_native(Box::new(app), native_options);
         println!("You closed the app...");
-        let pswrd: String;
+        let pswrd: Vec<u8>;
         let will_stk: bool;
         loop {
             if let Async::Ready(Some(m)) = urecv.poll().expect("Shouldn't fail") {
-                pswrd = String::from_utf8_lossy(&m).to_string();
-                println!("Got password: {}",pswrd);
+                pswrd = m;
                 break
             }
         }
@@ -153,7 +164,9 @@ fn main() -> Result<(), MainError> {
                 break
             }
         }
-        let me = Account::new(&format!("{}",pswrd));
+        println!("{:?}",pswrd);
+        println!("{:?}",person0);
+        let me = Account::new(&pswrd);
         let validator = me.stake_acc().receive_ot(&me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
         let key = validator.sk.unwrap();
         let mut keylocation = HashSet::new();

@@ -38,6 +38,9 @@ fn random_pswrd() -> String {
     chars.into_iter().map(char::from).collect()
 }
 fn get_pswrd(a: &String, b: &String, c: &String) -> Vec<u8> {
+    println!("{}",a);
+    println!("{}",b);
+    println!("{}",c);
     let mut hasher = Sha3_512::new();
     hasher.update(&a.as_bytes());
     hasher.update(&b.as_bytes());
@@ -187,8 +190,9 @@ impl epi::App for TemplateApp {
         println!("App closing procedures beginning...");
         if self.setup {
             println!("Setting password...");
+            self.password0 = self.pswd_guess0.clone();
             loop {
-                if self.sender.send(get_pswrd(&self.next_pswrd0,&self.next_pswrd1,&self.next_pswrd2)).is_ok() {
+                if self.sender.send(get_pswrd(&self.password0,&self.username,&self.secret_key)).is_ok() {
                     break
                 }
             }
@@ -199,7 +203,6 @@ impl epi::App for TemplateApp {
             }
         }
         self.setup = false;
-        self.password0 = self.pswd_guess0.clone();
         epi::set_value(storage, epi::APP_KEY, self);
     }
 
@@ -430,7 +433,7 @@ impl epi::App for TemplateApp {
             egui::warn_if_debug_build(ui);
         });
 
-        if *pswd_shown && pswd_guess0 == password0 { // add warning to not panic 2ce in a row
+        if  pswd_guess0 == password0 || *setup { // add warning to not panic 2ce in a row
             egui::Window::new("Reset Options").open(show_reset).show(ctx, |ui| {
                 if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
                     ui.small("Password reset: 'panic button' changes your password and sends all of your money to a new account. If you click this button do not turn off this app until receiving confirmation or your account balance may be lost. After receiving 1 transaction (2 for stakers), the old account information will be deleted.");
