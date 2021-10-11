@@ -551,6 +551,7 @@ impl epi::App for TemplateApp {
                     friend_names.remove(friend_deleted);
                     friends.remove(friend_deleted);
                     send_amount.remove(friend_deleted);
+                    edit_names.remove(friend_deleted);
                 }
                 ui.horizontal(|ui| {
                     if ui.button("Clear Transaction").clicked() {
