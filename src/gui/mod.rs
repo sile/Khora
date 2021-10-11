@@ -302,7 +302,7 @@ impl epi::App for TemplateApp {
 
             egui::menu::bar(ui, |ui| {
                 egui::menu::menu(ui, "File", |ui| {
-                    if ui.button("Enter Network").clicked() {
+                    if ui.button("Enter Network").clicked() && !*setup {
                         let mut m = entrypoint.as_bytes().to_vec();
                         m.push(42);
                         sender.send(m).expect("something's wrong with communication from the gui");
@@ -314,7 +314,7 @@ impl epi::App for TemplateApp {
                         *show_reset = !*show_reset;
                     }
                     if ui.button("Go To Setup").clicked() {
-                        fs::remove_file("account");
+                        fs::remove_file("myNode");
                         frame.quit();
                     }
                 });
@@ -365,7 +365,7 @@ impl epi::App for TemplateApp {
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(stake);
                 if pswd_guess0 == password0 {
-                    if ui.button("Stake").clicked() {
+                    if ui.button("Stake").clicked() && !*setup {
                         let mut m = vec![];
                         m.extend(stkaddr.as_bytes().to_vec());
                         m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
@@ -385,7 +385,7 @@ impl epi::App for TemplateApp {
                 ui.horizontal(|ui| {
                     ui.text_edit_singleline(unstake);
                     if pswd_guess0 == password0 {
-                        if ui.button("Unstake").clicked() {
+                        if ui.button("Unstake").clicked() && !*setup{
                             // println!("unstaking {:?}!",unstake.parse::<u64>());
                             let mut m = vec![];
                             m.extend(addr.as_bytes().to_vec());
@@ -407,7 +407,7 @@ impl epi::App for TemplateApp {
             ui.label("Transaction Fee:");
             ui.text_edit_singleline(fee);
             ui.horizontal(|ui| {
-                if ui.button("sync").clicked() {
+                if ui.button("sync").clicked() && !*setup {
                     sender.send(vec![121]).expect("something's wrong with communication from the gui");
                 }
                 if ui.button("toggle password").clicked() {
@@ -472,7 +472,7 @@ impl epi::App for TemplateApp {
                     ui.text_edit_singleline(panic_fee);
                 });
                 
-                if ui.button("Reset").clicked() {
+                if ui.button("Reset").clicked() && !*setup {
                     let mut x = vec![];
                     let pf = panic_fee.parse::<u64>().unwrap();
 
@@ -555,7 +555,7 @@ impl epi::App for TemplateApp {
                         send_amount.iter_mut().for_each(|x| *x = "0".to_string());
                     }
                     if pswd_guess0 == password0 {
-                        if ui.button("Send Transaction").clicked() {
+                        if ui.button("Send Transaction").clicked() && !*setup {
                             let mut m = vec![];
                             let mut tot = 0u64;
                             for (who,amnt) in friends.iter_mut().zip(send_amount.iter_mut()) {
