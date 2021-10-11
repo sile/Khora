@@ -518,18 +518,13 @@ impl epi::App for TemplateApp {
             });
             if ui.button("Add Friend").clicked() {
 
-                let mut push = true;
-                for (i,f) in friend_names.iter().enumerate() {
-                    if *name_adding < *f {
-                        friends.insert(i, friend_adding.clone());
-                        friend_names.insert(i, name_adding.clone());
-                        edit_names.insert(i, false);
-                        send_amount.insert(i, "0".to_string());
-                        push = false;
-                        break
-                    }
-                }
-                if push {
+                let i = friend_names.partition_point(|x| x < name_adding);
+                if i < friend_names.len() {
+                    friends.insert(i, friend_adding.clone());
+                    friend_names.insert(i, name_adding.clone());
+                    edit_names.insert(i, false);
+                    send_amount.insert(i, "0".to_string());
+                } else {
                     friends.push(friend_adding.clone());
                     friend_names.push(name_adding.clone());
                     edit_names.push(false);
