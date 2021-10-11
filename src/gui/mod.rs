@@ -312,10 +312,10 @@ impl epi::App for TemplateApp {
             ui.heading("KHORA");
             ui.horizontal(|ui| {
                 ui.hyperlink("https://khora.info");
-                    ui.add(egui::github_link_file!(
-                        "https://github.com/constantine1024/Khora",
-                        "Source code."
-                    ));
+                ui.add(egui::github_link_file!(
+                    "https://github.com/constantine1024/Khora",
+                    "Source code."
+                ));
             });
             ui.label(format!("current block: {}",block_number));
             ui.horizontal(|ui| {
@@ -400,8 +400,9 @@ impl epi::App for TemplateApp {
                 });
             }
             ui.horizontal(|ui| {
-                ui.label("Transaction Fee: ");
-                ui.add(Label::new("Manually change network transaction fee. Paying a higher fee may confirm your transaction faster if the network is busy.").text_color(egui::Color32::GREEN));
+                if ui.add(Label::new("Transaction Fee:").sense(Sense::hover())).hovered() {
+                    ui.add(Label::new("Manually change network transaction fee. Paying a higher fee may confirm your transaction faster if the network is busy.").text_color(egui::Color32::GREEN));
+                }
             });
 
             ui.text_edit_singleline(fee);          
@@ -421,24 +422,28 @@ impl epi::App for TemplateApp {
                     *pswd_shown = !*pswd_shown;
                 }
             });
-            if *setup {
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(pswd_guess0);
-                    ui.label("-");
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(pswd_guess0);
+                ui.label("-");
+                if *setup {
                     ui.text_edit_singleline(secret_key);
+                } else {
+                    ui.label(&*secret_key);
+                }
+            });
+            if *password0 == *pswd_guess0 && *pswd_shown {
+                ui.horizontal(|ui| {
+                    if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
+                        ui.output().copied_text = format!("{} - {}",password0,secret_key);
+                    }
+                    ui.label(format!("{} - {}",password0,secret_key));
                 });
             }
-            ui.horizontal(|ui| {
-                if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
-                    ui.output().copied_text = format!("{} - {}",password0,secret_key);
-                }
-                ui.label(format!("{} - {}",username,secret_key));
-            });
             if *setup {
                 ui.add(Label::new("Welcome to Khora! \nEnter your username, password, and secret key to sync this wallet with your account.").strong());
                 ui.add(Label::new("If the account does not exist, a new account will automatically be created for you using the entered account info. \nWe recommend that you let the system generate a random secret key for you. \n\nPlease enter your information very carefully and save it in a safe place. If you lose it you will never be able to access your account.").text_color(egui::Color32::RED));
 
-                if ui.button("Synchronize Account!").clicked() {
+                if ui.button("Login").clicked() {
                     println!("Setting password...");
                     *password0 = pswd_guess0.clone();
                     loop {
@@ -470,13 +475,13 @@ impl epi::App for TemplateApp {
 
         if  pswd_guess0 == password0 || *setup { // add warning to not panic 2ce in a row
             egui::Window::new("Panic Button").open(show_reset).show(ctx, |ui| {
-                ui.label("The Panic button will transfer all of your Khora to a new non-staker account and delete your old account. Do not turn off your client until you receive your Khora on your new account. \nAccount information will be reset to the information entered below \nSave the below information in a safe place.");
+                ui.label("The Panic button will transfer all of your Khora to a new non-staker account and delete your old account. \nDo not turn off your client until you receive your Khora on your new account. \nAccount information will be reset to the information entered below \nSave the below information in a safe place.");
                 
                 ui.horizontal(|ui| {
                     ui.add(Checkbox::new(show_next_pswrd,"Show Password On Reset"));
                     if ui.button("Suggest New Account Info").clicked() {
                         *next_pswrd0 = random_pswrd();
-                        *next_pswrd1 = random_pswrd();
+                        *next_pswrd1 = username.clone();
                         *next_pswrd2 = random_pswrd()[..5].to_string();
                     }
                 });
@@ -484,6 +489,9 @@ impl epi::App for TemplateApp {
                 ui.text_edit_singleline(next_pswrd1);
                 ui.label("New Password - Secret Key");
                 ui.horizontal(|ui| {
+                    if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
+                        ui.output().copied_text = format!("{} - {}",next_pswrd0,next_pswrd2);
+                    }
                     ui.text_edit_singleline(next_pswrd0);   
                     ui.label("-");            
                     ui.label(&*next_pswrd2);
