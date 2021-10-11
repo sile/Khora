@@ -322,7 +322,7 @@ impl epi::App for TemplateApp {
                 ui.text_edit_singleline(entrypoint);
             });
             ui.heading("Kora");
-            ui.hyperlink("https://github.com/constantine1024/Kora");
+            ui.hyperlink("https://khora.info");
             ui.add(egui::github_link_file!(
                 "https://github.com/constantine1024/Kora",
                 "Source code."
@@ -385,7 +385,7 @@ impl epi::App for TemplateApp {
                 ui.horizontal(|ui| {
                     ui.text_edit_singleline(unstake);
                     if pswd_guess0 == password0 {
-                        if ui.button("Unstake").clicked() && !*setup{
+                        if ui.button("Unstake").clicked() && !*setup {
                             // println!("unstaking {:?}!",unstake.parse::<u64>());
                             let mut m = vec![];
                             m.extend(addr.as_bytes().to_vec());
@@ -502,6 +502,7 @@ impl epi::App for TemplateApp {
                 }
             });
         }
+        
         egui::SidePanel::right("Right Panel").show(ctx, |ui| {
             egui::ScrollArea::auto_sized().show(ui,|ui| {
                 ui.heading("Friends");
@@ -590,14 +591,9 @@ impl epi::App for TemplateApp {
                             }
                         }
                     }
-                });
-                if *staking {
-                    ui.add(Checkbox::new(stkspeand,"Spend with staked money"));
-                }
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-                    ui.add(
-                        egui::Hyperlink::new("https://github.com/emilk/egui/").text("powered by egui"),
-                    );
+                    if *staking {
+                        ui.add(Checkbox::new(stkspeand,"Spend with staked money"));
+                    }
                 });
             });
         });
