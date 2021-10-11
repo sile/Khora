@@ -180,7 +180,7 @@ impl epi::App for TemplateApp {
                 let s = self.sender.clone();
                 let a = self.addr.clone();
                 let sa = self.stkaddr.clone();
-                *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
+                *self = epi::get_value(storage, "Khora").unwrap_or_default();
                 self.sender = s;
                 self.reciever = r;
                 self.addr = a;
@@ -211,7 +211,7 @@ impl epi::App for TemplateApp {
             }
         }
         self.setup = false;
-        epi::set_value(storage, epi::APP_KEY, self);
+        epi::set_value(storage, "Khora", self);
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
@@ -522,39 +522,6 @@ impl epi::App for TemplateApp {
                 *friend_adding = "".to_string();
                 *name_adding = "".to_string();
             }
-            let mut friend_deleted = usize::MAX;
-            ui.label("Friends: ");
-            egui::ScrollArea::from_max_height(100f32).always_show_scroll(true).show(ui,|ui| {
-                for ((i,((addr,name),amnt)),e) in friends.iter_mut().zip(friend_names.iter_mut()).zip(send_amount.iter_mut()).enumerate().zip(edit_names.iter_mut()) {
-                    // println!("this is a friend!!!");
-                    if *e {
-                        ui.text_edit_singleline(name);
-                        ui.text_edit_singleline(addr);
-                    } else {
-                        ui.label(&*name);
-                        ui.small(&*addr);
-                    }
-                    ui.horizontal(|ui| {
-                        if ui.button("edit").clicked() {
-                            *e = !*e;
-                        }
-                        if *e {
-                            if ui.button("Delete Friend").clicked() {
-                                friend_deleted = i;
-                            }
-                        } else {
-                            ui.label("Send:");
-                            ui.text_edit_singleline(amnt);
-                        }
-                    });
-                }
-            });
-            if friend_deleted != usize::MAX {
-                friend_names.remove(friend_deleted);
-                friends.remove(friend_deleted);
-                send_amount.remove(friend_deleted);
-                edit_names.remove(friend_deleted);
-            }
             ui.horizontal(|ui| {
                 if ui.button("Clear Transaction").clicked() {
                     send_amount.iter_mut().for_each(|x| *x = "0".to_string());
@@ -598,6 +565,39 @@ impl epi::App for TemplateApp {
                     ui.add(Checkbox::new(stkspeand,"Spend with staked money"));
                 }
             });
+            let mut friend_deleted = usize::MAX;
+            ui.label("Friends: ");
+            egui::ScrollArea::auto_sized().always_show_scroll(true).show(ui,|ui| {
+                for ((i,((addr,name),amnt)),e) in friends.iter_mut().zip(friend_names.iter_mut()).zip(send_amount.iter_mut()).enumerate().zip(edit_names.iter_mut()) {
+                    // println!("this is a friend!!!");
+                    if *e {
+                        ui.text_edit_singleline(name);
+                        ui.text_edit_singleline(addr);
+                    } else {
+                        ui.label(&*name);
+                        ui.small(&*addr);
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("edit").clicked() {
+                            *e = !*e;
+                        }
+                        if *e {
+                            if ui.button("Delete Friend").clicked() {
+                                friend_deleted = i;
+                            }
+                        } else {
+                            ui.label("Send:");
+                            ui.text_edit_singleline(amnt);
+                        }
+                    });
+                }
+            });
+            if friend_deleted != usize::MAX {
+                friend_names.remove(friend_deleted);
+                friends.remove(friend_deleted);
+                send_amount.remove(friend_deleted);
+                edit_names.remove(friend_deleted);
+            }
         });
     
     }
