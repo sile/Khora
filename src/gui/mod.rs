@@ -159,7 +159,7 @@ impl TemplateApp {
 }
 impl epi::App for TemplateApp {
     fn name(&self) -> &str {
-        "Kora" // saved as ~/.local/share/kora
+        "Khora" // saved as ~/.local/share/kora
     }
 
     /// Called once before the first frame.
