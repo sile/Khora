@@ -286,25 +286,10 @@ impl epi::App for TemplateApp {
         // });
 
         egui::CentralPanel::default().show(ctx, |ui| { 
-            if ui.button("Ready To Start!").clicked() {
-                println!("Setting password...");
-                *password0 = pswd_guess0.clone();
-                loop {
-                    if sender.send(get_pswrd(&*password0,&*username,&*secret_key)).is_ok() {
-                        break
-                    }
-                }
-                loop {
-                    if sender.send(vec![friend_names.is_empty() as u8]).is_ok() {
-                        break
-                    }
-                }
-                *setup = false;
-                frame.quit();
-            }
+
             egui::menu::bar(ui, |ui| {
                 egui::menu::menu(ui, "File", |ui| {
-                    if ui.button("Enter Network").clicked() && !*setup {
+                    if ui.button("Connect to Network").clicked() && !*setup {
                         let mut m = entrypoint.as_bytes().to_vec();
                         m.push(42);
                         sender.send(m).expect("something's wrong with communication from the gui");
@@ -312,7 +297,7 @@ impl epi::App for TemplateApp {
                     if ui.button("Panic Options").clicked() {
                         *show_reset = !*show_reset;
                     }
-                    if ui.button("Wipe Computer").clicked() {
+                    if ui.button("Log Out - will require resync with blockchain").clicked() {
                         fs::remove_file("myNode");
                         frame.quit();
                     }
@@ -324,12 +309,14 @@ impl epi::App for TemplateApp {
                 ui.label("entry address");
                 ui.text_edit_singleline(entrypoint);
             });
-            ui.heading("Kora");
-            ui.hyperlink("https://khora.info");
-            ui.add(egui::github_link_file!(
-                "https://github.com/constantine1024/Khora",
-                "Source code."
-            ));
+            ui.heading("KHORA");
+            ui.horizontal(|ui| {
+                ui.hyperlink("https://khora.info");
+                    ui.add(egui::github_link_file!(
+                        "https://github.com/constantine1024/Khora",
+                        "Source code."
+                    ));
+            });
             ui.label(format!("current block: {}",block_number));
             ui.horizontal(|ui| {
                 ui.label("next block in");
@@ -341,7 +328,7 @@ impl epi::App for TemplateApp {
                 }
             });
             ui.horizontal(|ui| {
-                if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
+                if ui.button("📋").on_hover_text("Click to copy your wallet address to clipboard").clicked() {
                     ui.output().copied_text = addr.clone();
                 }
                 if ui.add(Label::new("address").sense(Sense::hover())).hovered() {
@@ -350,7 +337,7 @@ impl epi::App for TemplateApp {
             });
             if *staking {
                 ui.horizontal(|ui| {
-                    if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
+                    if ui.button("📋").on_hover_text("Click to copy your staking wallet address to clipboard").clicked() {
                         ui.output().copied_text = stkaddr.clone();
                     }
                     if ui.add(Label::new("staking address").sense(Sense::hover())).hovered() {
@@ -360,12 +347,12 @@ impl epi::App for TemplateApp {
             }
 
             ui.horizontal(|ui| {
-                ui.label("Unstaked Money");
+                ui.label("Unstaked Khora");
                 ui.label(&*unstaked);
             });
             if *staking {
                 ui.horizontal(|ui| {
-                    ui.label("Staked Money ");
+                    ui.label("Staked Khora ");
                     ui.label(&*staked);
                 });
             }
@@ -412,42 +399,69 @@ impl epi::App for TemplateApp {
                     }
                 });
             }
-            ui.label("Transaction Fee:");
-            ui.text_edit_singleline(fee);
             ui.horizontal(|ui| {
-                if ui.button("sync").clicked() && !*setup {
-                    sender.send(vec![121]).expect("something's wrong with communication from the gui");
-                }
-                if ui.button("toggle password").clicked() {
+                ui.label("Transaction Fee: ");
+                ui.add(Label::new("Manually change network transaction fee. Paying a higher fee may confirm your transaction faster if the network is busy.").text_color(egui::Color32::GREEN));
+            });
+
+            ui.text_edit_singleline(fee);          
+            if ui.button("sync wallet").clicked() && !*setup {
+                sender.send(vec![121]).expect("something's wrong with communication from the gui");
+            }
+
+            if *setup {
+                ui.text_edit_singleline(username);
+            } else { 
+                ui.label(&*username); 
+            }
+
+            ui.horizontal(|ui| {
+                ui.label("Password");
+                if ui.button("show/hide password").clicked() {
                     *pswd_shown = !*pswd_shown;
                 }
             });
-            if *pswd_shown {
-                ui.text_edit_singleline(pswd_guess0);
-            }
             if *setup {
                 ui.horizontal(|ui| {
-                    ui.text_edit_singleline(username);
+                    ui.text_edit_singleline(pswd_guess0);
                     ui.label("-");
                     ui.text_edit_singleline(secret_key);
                 });
             }
             ui.horizontal(|ui| {
-                if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
-                    ui.output().copied_text = format!("{} - {}",username,secret_key);
+                if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
+                    ui.output().copied_text = format!("{} - {}",password0,secret_key);
                 }
                 ui.label(format!("{} - {}",username,secret_key));
             });
             if *setup {
-                ui.add(Label::new("Welcome to Khora! Type your password into the password box then turn me off to create your wallet!\nIf you are planning on being a staker, you need to save the history... Add a friend to do so!").text_color(egui::Color32::RED));
+                ui.add(Label::new("Welcome to Khora! \nEnter your username, password, and secret key to sync this wallet with your account.").strong());
+                ui.add(Label::new("If the account does not exist, a new account will automatically be created for you using the entered account info. \nWe recommend that you let the system generate a random secret key for you. \n\nPlease enter your information very carefully and save it in a safe place. If you lose it you will never be able to access your account.").text_color(egui::Color32::RED));
+
+                if ui.button("Synchronize Account!").clicked() {
+                    println!("Setting password...");
+                    *password0 = pswd_guess0.clone();
+                    loop {
+                        if sender.send(get_pswrd(&*password0,&*username,&*secret_key)).is_ok() {
+                            break
+                        }
+                    }
+                    loop {
+                        if sender.send(vec![friend_names.is_empty() as u8]).is_ok() {
+                            break
+                        }
+                    }
+                    *setup = false;
+                    frame.quit();
+                }
             } else if pswd_guess0 != password0 {
-                ui.add(Label::new("password incorrect, features disabled").text_color(egui::Color32::RED));
+                ui.add(Label::new("password incorrect, account features disabled, enter correct password to unlock").text_color(egui::Color32::RED));
             }
             if *dont_trust_amounts {
                 ui.add(Label::new("money owned is not yet verified").text_color(egui::Color32::RED));
             }
             if *you_cant_do_that {
-                if ui.add(Label::new("you don't have the funds to make that transaction").text_color(egui::Color32::RED).sense(Sense::hover())).hovered() {
+                if ui.add(Label::new("you don't have enough funds to make this transaction").text_color(egui::Color32::RED).sense(Sense::hover())).hovered() {
                     *you_cant_do_that = false;
                 }
             }
@@ -455,28 +469,31 @@ impl epi::App for TemplateApp {
         });
 
         if  pswd_guess0 == password0 || *setup { // add warning to not panic 2ce in a row
-            egui::Window::new("Reset Options").open(show_reset).show(ctx, |ui| {
-                if ui.add(Label::new("Panic Button").heading().sense(Sense::hover())).hovered() {
-                    ui.small("Password reset: 'panic button' changes your password and sends all of your money to a new account. If you click this button do not turn off this app until receiving confirmation or your account balance may be lost. After receiving 1 transaction (2 for stakers), the old account information will be deleted.");
-                }
+            egui::Window::new("Panic Button").open(show_reset).show(ctx, |ui| {
+                ui.label("The Panic button will transfer all of your Khora to a new non-staker account and delete your old account. Do not turn off your client until you receive your Khora on your new account. \nAccount information will be reset to the information entered below \nSave the below information in a safe place.");
+                
                 ui.horizontal(|ui| {
                     ui.add(Checkbox::new(show_next_pswrd,"Show Password On Reset"));
-                    if ui.button("Suggest Password").clicked() {
+                    if ui.button("Suggest New Account Info").clicked() {
                         *next_pswrd0 = random_pswrd();
                         *next_pswrd1 = random_pswrd();
                         *next_pswrd2 = random_pswrd()[..5].to_string();
                     }
                 });
-                ui.label("Next Passwords");
-                ui.text_edit_singleline(next_pswrd0);
+                ui.label("New Username");
                 ui.text_edit_singleline(next_pswrd1);
-                ui.label(&*next_pswrd2);
+                ui.label("New Password - Secret Key");
                 ui.horizontal(|ui| {
-                    ui.label("Password Reset Fee");
+                    ui.text_edit_singleline(next_pswrd0);   
+                    ui.label("-");            
+                    ui.label(&*next_pswrd2);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Account Reset Network Fee");
                     ui.text_edit_singleline(panic_fee);
                 });
                 
-                if ui.button("Reset").clicked() {
+                if ui.button("PANIC").clicked() {
                     let mut x = vec![];
                     let pf = panic_fee.parse::<u64>().unwrap();
 
