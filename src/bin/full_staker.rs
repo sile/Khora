@@ -100,33 +100,10 @@ fn main() -> Result<(), MainError> {
     // fs::create_dir_all("blocks").unwrap();
 
 
-    let executor = track_any_err!(ThreadPoolExecutor::new())?;
-    let service = ServiceBuilder::new(addr)
-        .logger(logger.clone())
-        .finish(executor.handle(), SerialLocalNodeIdGenerator::new()); // everyone is node 0 rn... that going to be a problem? I mean everyone has different ips...
-        
-    let mut backnode = NodeBuilder::new().logger(logger.clone()).finish(service.handle());
-    println!("{:?}",backnode.id());
-    if let Some(contact) = matches.value_of("CONTACT_SERVER") {
-        let contact: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), contact).parse())?;
-        println!("contact: {:?}",contact);
-        backnode.join(NodeId::new(contact, LocalNodeId::new(0)));
-    }
-    let frontnode = NodeBuilder::new().logger(logger).finish(service.handle()); // todo: make this local_id random so people can't guess you
-    println!("{:?}",frontnode.id()); // this should be the validator survice
 
-
-
-    let (ui_sender, urecv) = mpsc::channel();
-    let (usend, ui_reciever) = channel::unbounded();
-
-
-
-    let node: StakerNode;
-    let setup = !Path::new("account").exists();
+    let setup = !Path::new("myNode").exists();
     if setup {
-        fs::File::create("account").expect("should work");
-        let person0 = get_pswrd(&"plyusha4096!!".to_string(),&"password".to_string(),&"worm".to_string());
+        let person0 = get_pswrd(&"".to_string(),&"".to_string(),&"worm".to_string());
         let leader = Account::new(&person0).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         let initial_history = vec![(leader,1u64)];
         // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
@@ -136,13 +113,12 @@ fn main() -> Result<(), MainError> {
         // let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
 
 
-        let (ui_sender, mut urecv) = mpsc::channel();
-        let (_, ui_reciever) = channel::unbounded();
+        let (ui_sender_setup, mut urecv_setup) = mpsc::channel();
+        let (usend_setup, ui_reciever_setup) = channel::unbounded();
 
         let app = gui::TemplateApp::new(
-            ui_reciever,
-            ui_sender,
-            "0".to_string(),
+            ui_reciever_setup,
+            ui_sender_setup,
             "".to_string(),
             "".to_string(),
             true,
@@ -153,13 +129,13 @@ fn main() -> Result<(), MainError> {
         let pswrd: Vec<u8>;
         let will_stk: bool;
         loop {
-            if let Async::Ready(Some(m)) = urecv.poll().expect("Shouldn't fail") {
+            if let Async::Ready(Some(m)) = urecv_setup.poll().expect("Shouldn't fail") {
                 pswrd = m;
                 break
             }
         }
         loop {
-            if let Async::Ready(Some(m)) = urecv.poll().expect("Shouldn't fail") {
+            if let Async::Ready(Some(m)) = urecv_setup.poll().expect("Shouldn't fail") {
                 will_stk = m[0] == 0;
                 break
             }
@@ -188,16 +164,16 @@ fn main() -> Result<(), MainError> {
         }
 
 
-        node = StakerNode {
-            inner: frontnode,
-            outer: backnode,
+        let node = StakerNode {
+            inner: NodeBuilder::new().finish( ServiceBuilder::new(addr).finish(ThreadPoolExecutor::new().unwrap().handle(), SerialLocalNodeIdGenerator::new()).handle()),
+            outer: NodeBuilder::new().finish( ServiceBuilder::new(addr).finish(ThreadPoolExecutor::new().unwrap().handle(), SerialLocalNodeIdGenerator::new()).handle()),
             save_history: (matches.value_of("SAVE_HISTORY").unwrap() != "0"),
-            me: me,
+            me,
             mine: HashMap::new(),
             smine: smine.clone(), // [location, amount]
-            key: key,
-            keylocation: keylocation,
-            leader: leader,
+            key,
+            keylocation,
+            leader,
             overthrown: HashSet::new(),
             votes: vec![0;NUMBER_OF_VALIDATORS],
             stkinfo: initial_history.clone(),
@@ -234,8 +210,8 @@ fn main() -> Result<(), MainError> {
             rmems: HashMap::new(),
             rname: vec![],
             is_user: smine.is_empty(),
-            gui_sender: usend,
-            gui_reciever: urecv,
+            gui_sender: usend_setup,
+            gui_reciever: urecv_setup,
             moneyreset: None,
             sync_returnaddr: None,
             sync_theirnum: 0u64,
@@ -246,28 +222,48 @@ fn main() -> Result<(), MainError> {
             cumtime: 0f64,
             blocktime: blocktime(0.0),
         };
-        let mut mymoney = node.mine.iter().map(|x| node.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
-        mymoney.extend(node.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
-        mymoney.push(0);
-        println!("my money:\n---------------------------------\n{:?}",mymoney);
-        node.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
         node.save();
-    } else {
-        node = StakerNode::load(frontnode, backnode, usend, urecv);
     }
-    let staked: String;
-    if let Some(founder) = node.smine.get(0) {
-        staked = format!("{}",founder[1]);
-    } else {
-        staked = "0".to_string();
+
+
+    let executor = track_any_err!(ThreadPoolExecutor::new())?;
+    let service = ServiceBuilder::new(addr)
+        .logger(logger.clone())
+        .finish(executor.handle(), SerialLocalNodeIdGenerator::new()); // everyone is node 0 rn... that going to be a problem? I mean everyone has different ips...
+        
+    let mut backnode = NodeBuilder::new().logger(logger.clone()).finish(service.handle());
+    println!("{:?}",backnode.id());
+    if let Some(contact) = matches.value_of("CONTACT_SERVER") {
+        let contact: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), contact).parse())?;
+        println!("contact: {:?}",contact);
+        backnode.join(NodeId::new(contact, LocalNodeId::new(0)));
     }
+    let frontnode = NodeBuilder::new().logger(logger).finish(service.handle()); // todo: make this local_id random so people can't guess you
+    println!("{:?}",frontnode.id()); // this should be the validator survice
+
+
+
+    let (ui_sender, urecv) = mpsc::channel();
+    let (usend, ui_reciever) = channel::unbounded();
+
+
+
+
+    let node = StakerNode::load(frontnode, backnode, usend, urecv);
+    let mut mymoney = node.mine.iter().map(|x| node.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
+    mymoney.extend(node.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
+    mymoney.push(0);
+    println!("my money:\n---------------------------------\n{:?}",mymoney);
+    node.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
+    node.save();
+    
+    
 
 
     println!("starting!");
     let app = gui::TemplateApp::new(
         ui_reciever,
         ui_sender,
-        staked,
         node.me.name(),
         node.me.stake_acc().name(),
         false,

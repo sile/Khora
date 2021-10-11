@@ -140,12 +140,10 @@ impl TemplateApp {
     pub fn new_minimal(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>) -> Self {
         TemplateApp{reciever, sender, ..Default::default()}
     }
-    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, staked: String, addr: String, stkaddr: String, setup: bool) -> Self {
+    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, addr: String, stkaddr: String, setup: bool) -> Self {
         TemplateApp{
             reciever,
             sender,
-            staking: staked != "0".to_string(),
-            staked,
             addr,
             stkaddr,
             setup,
@@ -174,9 +172,13 @@ impl epi::App for TemplateApp {
             if let Some(storage) = _storage {
                 let r = self.reciever.clone();
                 let s = self.sender.clone();
+                let a = self.addr.clone();
+                let sa = self.stkaddr.clone();
                 *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
                 self.sender = s;
                 self.reciever = r;
+                self.addr = a;
+                self.stkaddr = sa;
             }
         } else {
             self.secret_key = random_pswrd()[..5].to_string();
