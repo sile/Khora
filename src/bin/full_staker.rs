@@ -148,6 +148,7 @@ fn main() -> Result<(), MainError> {
         let mut keylocation = HashSet::new();
 
         if will_stk {
+            std::fs::create_dir("blocks");
             History::initialize();
             BloomFile::initialize_bloom_file();    
         }
