@@ -418,22 +418,18 @@ impl epi::App for TemplateApp {
                 ui.text_edit_singleline(pswd_guess0);
             }
             if *setup {
-                ui.text_edit_singleline(username);
-                ui.text_edit_singleline(secret_key);
-            } else {
                 ui.horizontal(|ui| {
-                    if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
-                        ui.output().copied_text = username.clone();
-                    }
-                    ui.label(&*username);
-                });
-                ui.horizontal(|ui| {
-                    if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
-                        ui.output().copied_text = secret_key.clone();
-                    }
-                    ui.label(&*secret_key);
+                    ui.text_edit_singleline(username);
+                    ui.label("-");
+                    ui.text_edit_singleline(secret_key);
                 });
             }
+            ui.horizontal(|ui| {
+                if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
+                    ui.output().copied_text = format!("{}-{}",username,secret_key);
+                }
+                ui.label(format!("{}-{}",username,secret_key));
+            });
             if *setup {
                 ui.add(Label::new("Welcome to Khora! Type your password into the password box then turn me off to create your wallet!\nIf you are planning on being a staker, you need to save the history... Add a friend to do so!").text_color(egui::Color32::RED));
             } else if pswd_guess0 != password0 {
