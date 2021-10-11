@@ -59,12 +59,12 @@ fn reward(cumtime: f64, blocktime: f64) -> f64 {
 }
 
 fn get_pswrd(a: &String, b: &String, c: &String) -> Vec<u8> {
-    println!("{}",a);
     println!("{}",b);
+    println!("{}",a);
     println!("{}",c);
     let mut hasher = Sha3_512::new();
-    hasher.update(&a.as_bytes());
     hasher.update(&b.as_bytes());
+    hasher.update(&a.as_bytes());
     hasher.update(&c.as_bytes());
     Scalar::from_hash(hasher).as_bytes().to_vec()
 }
@@ -104,7 +104,7 @@ fn main() -> Result<(), MainError> {
 
     let setup = !Path::new("myNode").exists();
     if setup {
-        let person0 = get_pswrd(&"".to_string(),&"".to_string(),&"worm".to_string());
+        let person0 = get_pswrd(&"".to_string(),&"".to_string(),&"OOOOO".to_string());
         let leader = Account::new(&person0).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         let initial_history = vec![(leader,1u64)];
         // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
@@ -1027,8 +1027,8 @@ impl Future for StakerNode {
                                 if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     let pk = pk as usize;
                                     if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
-                                        println!("got sent a scalar from {}",pk);
                                         if let Ok(m) = m.try_into() {
+                                            println!("got sent a scalar from {}",pk);
                                             self.scalars.insert(pk,Scalar::from_bits(m));
                                             self.inner.handle_gossip_now(fullmsg, true);
                                         } else {
@@ -1206,7 +1206,7 @@ impl Future for StakerNode {
                     }
                 }
                 // }
-                if self.waitingforentrybool && (self.waitingforentrytime.elapsed().as_secs() > (0.25*self.blocktime) as u64) {
+                if self.waitingforentrybool && (self.waitingforentrytime.elapsed().as_secs() > (0.66*self.blocktime) as u64) {
                     self.waitingforentrybool = false;
                     for keylocation in &self.keylocation {
                         if !self.groupsent[0] {

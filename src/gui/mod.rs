@@ -129,7 +129,7 @@ impl Default for TemplateApp {
             block_number: 0,
             show_next_pswrd: true,
             next_pswrd0: random_pswrd(),
-            next_pswrd1: random_pswrd(),
+            next_pswrd1: "".to_string(),
             next_pswrd2: random_pswrd()[..5].to_string(),
             panic_fee: "1".to_string(),
             entrypoint: "".to_string(),
@@ -302,7 +302,7 @@ impl epi::App for TemplateApp {
                         frame.quit();
                     }
                     if ui.button("Quit").clicked() {
-                        *setup = false;
+                        *setup = true;
                         frame.quit();
                     }
                 });
@@ -317,121 +317,130 @@ impl epi::App for TemplateApp {
                     "Source code."
                 ));
             });
-            ui.label(format!("current block: {}",block_number));
-            ui.horizontal(|ui| {
-                ui.label("next block in");
-                let x = *eta as i32 - timekeeper.elapsed().as_secs() as i32;
-                if x > 0 {
-                    ui.add(Label::new(format!("{}",x)).strong().text_color(egui::Color32::YELLOW));
-                } else {
-                    ui.add(Label::new(format!("Shard late; initiating takeover in {}",x + 3600)).strong().text_color(egui::Color32::RED));
-                }
-            });
-            ui.horizontal(|ui| {
-                if ui.button("📋").on_hover_text("Click to copy your wallet address to clipboard").clicked() {
-                    ui.output().copied_text = addr.clone();
-                }
-                if ui.add(Label::new("address").sense(Sense::hover())).hovered() {
-                    ui.small(&*addr);
-                }
-            });
-            if *staking {
+            if !*setup {
+                ui.label(format!("current block: {}",block_number));
                 ui.horizontal(|ui| {
-                    if ui.button("📋").on_hover_text("Click to copy your staking wallet address to clipboard").clicked() {
-                        ui.output().copied_text = stkaddr.clone();
-                    }
-                    if ui.add(Label::new("staking address").sense(Sense::hover())).hovered() {
-                        ui.small(&*stkaddr);
+                    ui.label("next block in");
+                    let x = *eta as i32 - timekeeper.elapsed().as_secs() as i32;
+                    if x > 0 {
+                        ui.add(Label::new(format!("{}",x)).strong().text_color(egui::Color32::YELLOW));
+                    } else {
+                        ui.add(Label::new(format!("Shard late; initiating takeover in {}",x + 3600)).strong().text_color(egui::Color32::RED));
                     }
                 });
-            }
-
-            ui.horizontal(|ui| {
-                ui.label("Unstaked Khora");
-                ui.label(&*unstaked);
-            });
-            if *staking {
                 ui.horizontal(|ui| {
-                    ui.label("Staked Khora ");
-                    ui.label(&*staked);
+                    if ui.button("📋").on_hover_text("Click to copy your wallet address to clipboard").clicked() {
+                        ui.output().copied_text = addr.clone();
+                    }
+                    if ui.add(Label::new("address").sense(Sense::hover())).hovered() {
+                        ui.small(&*addr);
+                    }
                 });
-            }
-
-            ui.horizontal(|ui| {
-                ui.text_edit_singleline(stake);
-                if pswd_guess0 == password0 {
-                    if ui.button("Stake").clicked() && !*setup {
-                        let mut m = vec![];
-                        m.extend(stkaddr.as_bytes().to_vec());
-                        m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
-                        println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",unstaked,fee,stake);
-                        let x = unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap();
-                        if x > 0 {
-                            m.extend(addr.as_bytes().to_vec());
-                            m.extend(x.to_le_bytes().to_vec());
+                if *staking {
+                    ui.horizontal(|ui| {
+                        if ui.button("📋").on_hover_text("Click to copy your staking wallet address to clipboard").clicked() {
+                            ui.output().copied_text = stkaddr.clone();
                         }
-                        m.push(33);
-                        m.push(33);
-                        sender.send(m).expect("something's wrong with communication from the gui");
-                    }
+                        if ui.add(Label::new("staking address").sense(Sense::hover())).hovered() {
+                            ui.small(&*stkaddr);
+                        }
+                    });
                 }
-            });
-            if *staking {
+    
                 ui.horizontal(|ui| {
-                    ui.text_edit_singleline(unstake);
+                    ui.label("Unstaked Khora");
+                    ui.label(&*unstaked);
+                });
+                if *staking {
+                    ui.horizontal(|ui| {
+                        ui.label("Staked Khora ");
+                        ui.label(&*staked);
+                    });
+                }
+    
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(stake);
                     if pswd_guess0 == password0 {
-                        if ui.button("Unstake").clicked() && !*setup {
-                            // println!("unstaking {:?}!",unstake.parse::<u64>());
+                        if ui.button("Stake").clicked() && !*setup {
                             let mut m = vec![];
-                            m.extend(addr.as_bytes().to_vec());
-                            m.extend(unstake.parse::<u64>().unwrap().to_le_bytes());
-                            // println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",staked,fee,unstake);
-                            let x = staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap();
+                            m.extend(stkaddr.as_bytes().to_vec());
+                            m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
+                            println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",unstaked,fee,stake);
+                            let x = unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap();
                             if x > 0 {
-                                m.extend(stkaddr.as_bytes());
-                                m.extend(x.to_le_bytes());
+                                m.extend(addr.as_bytes().to_vec());
+                                m.extend(x.to_le_bytes().to_vec());
                             }
-                            m.push(63);
                             m.push(33);
-                            println!("{}",String::from_utf8_lossy(&m));
+                            m.push(33);
                             sender.send(m).expect("something's wrong with communication from the gui");
                         }
                     }
                 });
-            }
-            ui.horizontal(|ui| {
-                if ui.add(Label::new("Transaction Fee:").sense(Sense::hover())).hovered() {
-                    ui.add(Label::new("Manually change network transaction fee. Paying a higher fee may confirm your transaction faster if the network is busy.").text_color(egui::Color32::GREEN));
+                if *staking {
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(unstake);
+                        if pswd_guess0 == password0 {
+                            if ui.button("Unstake").clicked() && !*setup {
+                                // println!("unstaking {:?}!",unstake.parse::<u64>());
+                                let mut m = vec![];
+                                m.extend(addr.as_bytes().to_vec());
+                                m.extend(unstake.parse::<u64>().unwrap().to_le_bytes());
+                                // println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",staked,fee,unstake);
+                                let x = staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap();
+                                if x > 0 {
+                                    m.extend(stkaddr.as_bytes());
+                                    m.extend(x.to_le_bytes());
+                                }
+                                m.push(63);
+                                m.push(33);
+                                println!("{}",String::from_utf8_lossy(&m));
+                                sender.send(m).expect("something's wrong with communication from the gui");
+                            }
+                        }
+                    });
                 }
-            });
-
-            ui.text_edit_singleline(fee);          
-            if ui.button("sync wallet").clicked() && !*setup {
-                sender.send(vec![121]).expect("something's wrong with communication from the gui");
+                ui.horizontal(|ui| {
+                    if ui.add(Label::new("Transaction Fee:").sense(Sense::hover())).hovered() {
+                        ui.add(Label::new("Manually change network transaction fee. Paying a higher fee may confirm your transaction faster if the network is busy.").text_color(egui::Color32::GREEN));
+                    }
+                });
+    
+                ui.text_edit_singleline(fee);          
+                if ui.button("sync wallet").clicked() && !*setup {
+                    sender.send(vec![121]).expect("something's wrong with communication from the gui");
+                }
             }
 
             if *setup {
-                ui.text_edit_singleline(username);
+                ui.horizontal(|ui| {
+                    ui.label("Username");
+                    ui.text_edit_singleline(username);
+                });
             } else { 
                 ui.label(&*username); 
             }
 
             ui.horizontal(|ui| {
                 ui.label("Password");
-                if ui.button("show/hide password").clicked() {
-                    *pswd_shown = !*pswd_shown;
+                if !*setup {
+                    if ui.button("show/hide password").clicked() {
+                        *pswd_shown = !*pswd_shown;
+                    }
                 }
             });
-            ui.horizontal(|ui| {
-                ui.text_edit_singleline(pswd_guess0);
-                ui.label("-");
-                if *setup {
-                    ui.text_edit_singleline(secret_key);
-                } else {
-                    ui.label(&*secret_key);
-                }
-            });
-            if *password0 == *pswd_guess0 && *pswd_shown {
+            if *pswd_shown || *setup {
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(pswd_guess0);
+                    ui.label("-");
+                    if *setup {
+                        ui.text_edit_singleline(secret_key);
+                    } else {
+                        ui.label(&*secret_key);
+                    }
+                });
+            }
+            if (*password0 == *pswd_guess0 && *pswd_shown) || *setup {
                 ui.horizontal(|ui| {
                     if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
                         ui.output().copied_text = format!("{} - {}",password0,secret_key);
@@ -443,7 +452,9 @@ impl epi::App for TemplateApp {
                 ui.add(Label::new("Welcome to Khora! \nEnter your username, password, and secret key to sync this wallet with your account.").strong());
                 ui.add(Label::new("If the account does not exist, a new account will automatically be created for you using the entered account info. \nWe recommend that you let the system generate a random secret key for you. \n\nPlease enter your information very carefully and save it in a safe place. If you lose it you will never be able to access your account.").text_color(egui::Color32::RED));
 
-                if ui.button("Login").clicked() {
+                if secret_key.len() != 5 {
+                    ui.add(Label::new("secret key must be exactly 5 characters").heading().text_color(egui::Color32::RED));
+                } else if ui.button("Login").clicked() {
                     println!("Setting password...");
                     *password0 = pswd_guess0.clone();
                     loop {
@@ -452,13 +463,14 @@ impl epi::App for TemplateApp {
                         }
                     }
                     loop {
-                        if sender.send(vec![friend_names.is_empty() as u8]).is_ok() {
+                        if sender.send(vec![!*you_cant_do_that as u8]).is_ok() {
                             break
                         }
                     }
                     *setup = false;
                     frame.quit();
                 }
+                ui.add(Checkbox::new(you_cant_do_that,"I intend to stake!"));
             } else if pswd_guess0 != password0 {
                 ui.add(Label::new("password incorrect, account features disabled, enter correct password to unlock").text_color(egui::Color32::RED));
             }
@@ -564,7 +576,7 @@ impl epi::App for TemplateApp {
                 if ui.button("Clear Transaction").clicked() {
                     send_amount.iter_mut().for_each(|x| *x = "0".to_string());
                 }
-                if pswd_guess0 == password0 {
+                if pswd_guess0 == password0 && !*setup {
                     if ui.button("Send Transaction").clicked() && !*setup {
                         let mut m = vec![];
                         let mut tot = 0u64;
