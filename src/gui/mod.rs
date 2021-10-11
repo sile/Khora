@@ -314,7 +314,7 @@ impl epi::App for TemplateApp {
                     if ui.button("Panic Options").clicked() {
                         *show_reset = !*show_reset;
                     }
-                    if ui.button("Go To Setup").clicked() {
+                    if ui.button("Wipe Computer").clicked() {
                         fs::remove_file("myNode");
                         frame.quit();
                     }
@@ -325,13 +325,18 @@ impl epi::App for TemplateApp {
             ui.heading("Kora");
             ui.hyperlink("https://khora.info");
             ui.add(egui::github_link_file!(
-                "https://github.com/constantine1024/Kora",
+                "https://github.com/constantine1024/Khora",
                 "Source code."
             ));
             ui.label(format!("current block: {}",block_number));
             ui.horizontal(|ui| {
                 ui.label("next block in");
-                ui.add(Label::new(format!("{}",*eta - timekeeper.elapsed().as_secs() as i8)).strong().text_color(egui::Color32::YELLOW));
+                let x = *eta as i32 - timekeeper.elapsed().as_secs() as i32;
+                if x > 0 {
+                    ui.add(Label::new(format!("{}",x)).strong().text_color(egui::Color32::YELLOW));
+                } else {
+                    ui.add(Label::new(format!("Shard late; initiating takeover in {}",x + 3600)).strong().text_color(egui::Color32::RED));
+                }
             });
             ui.horizontal(|ui| {
                 if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
@@ -513,17 +518,23 @@ impl epi::App for TemplateApp {
             });
             if ui.button("Add Friend").clicked() {
 
-                let mut loc = friend_names.len() - 1;
+                let mut push = true;
                 for (i,f) in friend_names.iter().enumerate() {
-                    if *name_adding > *f {
-                        loc = i;
+                    if *name_adding < *f {
+                        friends.insert(i, friend_adding.clone());
+                        friend_names.insert(i, name_adding.clone());
+                        edit_names.insert(i, false);
+                        send_amount.insert(i, "0".to_string());
+                        push = false;
                         break
                     }
                 }
-                friends.insert(loc, friend_adding.clone());
-                friend_names.insert(loc, name_adding.clone());
-                edit_names.push(false);
-                send_amount.push("0".to_string());
+                if push {
+                    friends.push(friend_adding.clone());
+                    friend_names.push(name_adding.clone());
+                    edit_names.push(false);
+                    send_amount.push("0".to_string());
+                }
                 *friend_adding = "".to_string();
                 *name_adding = "".to_string();
             }

@@ -49,6 +49,7 @@ fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
 
 const WARNINGTIME: usize = REPLACERATE*5;
 const BLANKS_IN_A_ROW: u64 = 60;
+const USURP_TIME: u64 = 3600;
 fn blocktime(cumtime: f64) -> f64 {
     // 60f64/(6.337618E-8f64*cumtime+2f64).ln()
     10.0
@@ -1660,7 +1661,7 @@ impl Future for StakerNode {
 
 
 
-            if self.usurpingtime.elapsed().as_secs() > 300 { // this will be much larger
+            if self.usurpingtime.elapsed().as_secs() > USURP_TIME { // this will be much larger
                 self.timekeeper = self.usurpingtime;
                 self.usurpingtime = Instant::now();
                 self.headshard += 1;
