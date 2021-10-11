@@ -179,6 +179,8 @@ impl epi::App for TemplateApp {
                 self.sender = s;
                 self.reciever = r;
             }
+        } else {
+            self.secret_key_guess = random_pswrd()[..5].to_string();
         }
     }
 
@@ -408,6 +410,9 @@ impl epi::App for TemplateApp {
             }
             if *pswd_shown && !*setup {
                 ui.text_edit_singleline(secret_key_guess);
+            }
+            if *setup {
+                ui.label(&*secret_key_guess);
             }
             if *setup {
                 ui.add(Label::new("Welcome to Khora! Type your password into the password box then turn me off to create your wallet!\nIf you are planning on being a staker, you need to save the history... Add a friend to do so!").text_color(egui::Color32::RED));
