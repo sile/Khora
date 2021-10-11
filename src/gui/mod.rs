@@ -472,7 +472,7 @@ impl epi::App for TemplateApp {
                     ui.text_edit_singleline(panic_fee);
                 });
                 
-                if ui.button("Reset").clicked() && !*setup {
+                if ui.button("Reset").clicked() {
                     let mut x = vec![];
                     let pf = panic_fee.parse::<u64>().unwrap();
 
@@ -490,7 +490,9 @@ impl epi::App for TemplateApp {
                     }
                     x.extend(get_pswrd(&*next_pswrd0,&*next_pswrd1,&*next_pswrd2));
                     x.push(u8::MAX);
-                    sender.send(x).expect("something's wrong with communication from the gui");
+                    if !*setup {
+                        sender.send(x).expect("something's wrong with communication from the gui");
+                    }
                     *password0 = next_pswrd0.clone();
                     *username = next_pswrd1.clone();
                     *secret_key = next_pswrd2.clone();
