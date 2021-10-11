@@ -513,7 +513,7 @@ impl epi::App for TemplateApp {
             });
             if ui.button("Add Friend").clicked() {
 
-                let mut loc = 0;
+                let mut loc = friend_names.len() - 1;
                 for (i,f) in friend_names.iter().enumerate() {
                     if *name_adding > *f {
                         loc = i;
