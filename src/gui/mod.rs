@@ -195,7 +195,7 @@ impl epi::App for TemplateApp {
     /// Note that you must enable the `persistence` feature for this to work.
     #[cfg(feature = "persistence")]
     fn save(&mut self, storage: &mut dyn epi::Storage) {
-        println!("App closing procedures beginning...");
+        println!("App saving procedures beginning...");
         if !self.setup {
             epi::set_value(storage, "Khora", self);
         }

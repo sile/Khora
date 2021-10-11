@@ -129,13 +129,20 @@ fn main() -> Result<(), MainError> {
         println!("You closed the app...");
         let pswrd: Vec<u8>;
         let will_stk: bool;
+        let wait_to_work = Instant::now();
         loop {
+            if wait_to_work.elapsed().as_secs() > 5 {
+                panic!("you didn't hit the button you should have");
+            }
             if let Async::Ready(Some(m)) = urecv_setup.poll().expect("Shouldn't fail") {
                 pswrd = m;
                 break
             }
         }
         loop {
+            if wait_to_work.elapsed().as_secs() > 5 {
+                panic!("you didn't hit the button you should have");
+            }
             if let Async::Ready(Some(m)) = urecv_setup.poll().expect("Shouldn't fail") {
                 will_stk = m[0] == 0;
                 break
