@@ -51,8 +51,7 @@ const WARNINGTIME: usize = REPLACERATE*5;
 const BLANKS_IN_A_ROW: u64 = 60;
 const USURP_TIME: u64 = 3600;
 fn blocktime(cumtime: f64) -> f64 {
-    // 60f64/(6.337618E-8f64*cumtime+2f64).ln()
-    10.0
+    60f64/(6.337618E-8f64*cumtime+2f64).ln()
 }
 fn reward(cumtime: f64, blocktime: f64) -> f64 {
     (1.0/(1.653439E-6*cumtime + 1.0) - 1.0/(1.653439E-6*(cumtime + blocktime) + 1.0))*10E16f64
@@ -70,10 +69,6 @@ fn get_pswrd(a: &String, b: &String, c: &String) -> Vec<u8> {
 }
 fn main() -> Result<(), MainError> {
     let matches = app_from_crate!()
-        .arg(Arg::with_name("PORT").index(1).required(false))
-        .arg(Arg::with_name("PASSWORD").index(2).required(false))
-        .arg(Arg::with_name("SAVE_HISTORY").index(3).default_value("1").required(false))
-        .arg(Arg::with_name("CONTACT_SERVER").index(4).required(false))
         .arg(
             Arg::with_name("LOG_LEVEL")
                 .long("log-level")
@@ -87,12 +82,12 @@ fn main() -> Result<(), MainError> {
         .destination(Destination::Stderr)
         .level(log_level)
         .build())?;
-    let port = matches.value_of("PORT").unwrap_or("9876");
-    let pswrd = matches.value_of("PASSWORD").unwrap_or("load");
+
+        
+
     
-    let addr: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), port).parse())?;
+    let addr: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), 9876).parse())?;
     println!("addr: {:?}",addr);
-    println!("pswrd: {:?}",pswrd);
 
 
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
@@ -190,7 +185,7 @@ fn main() -> Result<(), MainError> {
             exitqueue: (0..max_shards).map(|_|(0..QUEUE_LENGTH).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)).collect::<VecDeque<usize>>()).collect::<Vec<_>>(),
             comittee: (0..max_shards).map(|_|(0..NUMBER_OF_VALIDATORS).into_par_iter().map(|x| (x%NUMBER_OF_VALIDATORS)%initial_history.len()).collect::<Vec<usize>>()).collect::<Vec<_>>(),
             lastname: Scalar::one().as_bytes().to_vec(),
-            bloom: bloom,
+            bloom,
             bnum: 0u64,
             lastbnum: 0u64,
             height: 0u64,
