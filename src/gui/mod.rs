@@ -498,7 +498,6 @@ impl epi::App for TemplateApp {
                     *secret_key = next_pswrd2.clone();
                     if *show_next_pswrd {
                         *pswd_guess0 = next_pswrd0.clone();
-                        *secret_key = next_pswrd2.clone();
                     }
                 }
             });
