@@ -1206,7 +1206,7 @@ impl Future for StakerNode {
                     }
                 }
                 // }
-                if self.waitingforentrybool && (self.waitingforentrytime.elapsed().as_secs() > (0.5*self.blocktime) as u64) {
+                if self.waitingforentrybool && (self.waitingforentrytime.elapsed().as_secs() > (0.25*self.blocktime) as u64) {
                     self.waitingforentrybool = false;
                     for keylocation in &self.keylocation {
                         if !self.groupsent[0] {
