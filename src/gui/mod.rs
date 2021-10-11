@@ -440,12 +440,19 @@ impl epi::App for TemplateApp {
                     }
                 });
             }
-            if (*password0 == *pswd_guess0 && *pswd_shown) || *setup {
+            if *password0 == *pswd_guess0 && *pswd_shown {
                 ui.horizontal(|ui| {
                     if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
                         ui.output().copied_text = format!("{} - {}",password0,secret_key);
                     }
                     ui.label(format!("{} - {}",password0,secret_key));
+                });
+            } else if *setup {
+                ui.horizontal(|ui| {
+                    if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
+                        ui.output().copied_text = format!("{} - {}",pswd_guess0,secret_key);
+                    }
+                    ui.label(format!("{} - {}",pswd_guess0,secret_key));
                 });
             }
             if *setup {
