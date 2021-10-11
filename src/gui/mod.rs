@@ -196,22 +196,9 @@ impl epi::App for TemplateApp {
     #[cfg(feature = "persistence")]
     fn save(&mut self, storage: &mut dyn epi::Storage) {
         println!("App closing procedures beginning...");
-        if self.setup {
-            println!("Setting password...");
-            self.password0 = self.pswd_guess0.clone();
-            loop {
-                if self.sender.send(get_pswrd(&self.password0,&self.username,&self.secret_key)).is_ok() {
-                    break
-                }
-            }
-            loop {
-                if self.sender.send(vec![(self.friend_names.len() == 0) as u8]).is_ok() {
-                    break
-                }
-            }
+        if !self.setup {
+            epi::set_value(storage, "Khora", self);
         }
-        self.setup = false;
-        epi::set_value(storage, "Khora", self);
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
@@ -298,9 +285,23 @@ impl epi::App for TemplateApp {
         //     // egui::util::undoer::default(); // there's some undo button
         // });
 
-        egui::CentralPanel::default().show(ctx, |ui| { // the only option for staker stuff should be to send x of money to self (starting with smallest accs)
-            // The central panel the region left after adding TopPanel's and SidePanel's
-
+        egui::CentralPanel::default().show(ctx, |ui| { 
+            if ui.button("Ready To Start!").clicked() {
+                println!("Setting password...");
+                *password0 = pswd_guess0.clone();
+                loop {
+                    if sender.send(get_pswrd(&*password0,&*username,&*secret_key)).is_ok() {
+                        break
+                    }
+                }
+                loop {
+                    if sender.send(vec![friend_names.is_empty() as u8]).is_ok() {
+                        break
+                    }
+                }
+                *setup = false;
+                frame.quit();
+            }
             egui::menu::bar(ui, |ui| {
                 egui::menu::menu(ui, "File", |ui| {
                     if ui.button("Enter Network").clicked() && !*setup {
@@ -308,14 +309,15 @@ impl epi::App for TemplateApp {
                         m.push(42);
                         sender.send(m).expect("something's wrong with communication from the gui");
                     }
-                    if ui.button("Quit").clicked() {
-                        frame.quit();
-                    }
                     if ui.button("Panic Options").clicked() {
                         *show_reset = !*show_reset;
                     }
                     if ui.button("Wipe Computer").clicked() {
                         fs::remove_file("myNode");
+                        frame.quit();
+                    }
+                    if ui.button("Quit").clicked() {
+                        *setup = false;
                         frame.quit();
                     }
                 });
