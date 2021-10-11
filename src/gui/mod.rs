@@ -218,6 +218,7 @@ impl epi::App for TemplateApp {
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
         if let Ok(mut i) = self.reciever.try_recv() {
+
             let modification = i.pop().unwrap();
             if modification == 0 {
                 let u = i.drain(..8).collect::<Vec<_>>();
@@ -426,9 +427,9 @@ impl epi::App for TemplateApp {
             }
             ui.horizontal(|ui| {
                 if ui.button("📋").on_hover_text("Click to copy the address to clipboard").clicked() {
-                    ui.output().copied_text = format!("{}-{}",username,secret_key);
+                    ui.output().copied_text = format!("{} - {}",username,secret_key);
                 }
-                ui.label(format!("{}-{}",username,secret_key));
+                ui.label(format!("{} - {}",username,secret_key));
             });
             if *setup {
                 ui.add(Label::new("Welcome to Khora! Type your password into the password box then turn me off to create your wallet!\nIf you are planning on being a staker, you need to save the history... Add a friend to do so!").text_color(egui::Color32::RED));
@@ -511,8 +512,16 @@ impl epi::App for TemplateApp {
                 ui.text_edit_singleline(friend_adding);
             });
             if ui.button("Add Friend").clicked() {
-                friends.push(friend_adding.clone());
-                friend_names.push(name_adding.clone());
+
+                let mut loc = 0;
+                for (i,f) in friend_names.iter().enumerate() {
+                    if *name_adding > *f {
+                        loc = i;
+                        break
+                    }
+                }
+                friends.insert(loc, friend_adding.clone());
+                friend_names.insert(loc, name_adding.clone());
                 edit_names.push(false);
                 send_amount.push("0".to_string());
                 *friend_adding = "".to_string();
