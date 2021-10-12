@@ -132,7 +132,7 @@ fn main() -> Result<(), MainError> {
         let will_stk: bool;
         let wait_to_work = Instant::now();
         loop {
-            if wait_to_work.elapsed().as_secs() > 5 {
+            if wait_to_work.elapsed().as_secs() > 2 {
                 panic!("you didn't hit the button you should have");
             }
             if let Async::Ready(Some(m)) = urecv_setup.poll().expect("Shouldn't fail") {
@@ -141,7 +141,7 @@ fn main() -> Result<(), MainError> {
             }
         }
         loop {
-            if wait_to_work.elapsed().as_secs() > 5 {
+            if wait_to_work.elapsed().as_secs() > 2 {
                 panic!("you didn't hit the button you should have");
             }
             if let Async::Ready(Some(m)) = urecv_setup.poll().expect("Shouldn't fail") {
