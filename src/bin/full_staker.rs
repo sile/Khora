@@ -103,8 +103,10 @@ fn main() -> Result<(), MainError> {
 
     let setup = !Path::new("myNode").exists();
     if setup {
-        let person0 = get_pswrd(&"a".to_string(),&"b".to_string(),&"abcde".to_string());
-        let leader = Account::new(&person0).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        // let person0 = get_pswrd(&"a".to_string(),&"b".to_string(),&"abcde".to_string());
+        // println!("{:?}",person0);
+        // let leader = Account::new(&person0).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
+        let leader = CompressedRistretto([40, 212, 153, 3, 254, 141, 29, 36, 52, 49, 218, 248, 155, 116, 235, 118, 134, 161, 96, 215, 183, 91, 233, 98, 187, 62, 85, 223, 151, 31, 236, 55]);
         let initial_history = vec![(leader,1u64)];
         // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         // let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
@@ -148,7 +150,6 @@ fn main() -> Result<(), MainError> {
             }
         }
         println!("{:?}",pswrd);
-        println!("{:?}",person0);
         let me = Account::new(&pswrd);
         let validator = me.stake_acc().receive_ot(&me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
         let key = validator.sk.unwrap();
