@@ -289,7 +289,7 @@ impl epi::App for TemplateApp {
 
             egui::menu::bar(ui, |ui| {
                 egui::menu::menu(ui, "File", |ui| {
-                    if ui.button("Connect to Network").clicked() && !*setup {
+                    if ui.button("             Mesh Network Gate IP").clicked() && !*setup {
                         let mut m = entrypoint.as_bytes().to_vec();
                         m.push(42);
                         sender.send(m).expect("something's wrong with communication from the gui");
@@ -306,12 +306,12 @@ impl epi::App for TemplateApp {
                         frame.quit();
                     }
                 });
-                ui.label("entry address");
+                ui.label("Connection Gate");
                 ui.text_edit_singleline(entrypoint);
             });
             ui.heading("KHORA");
             ui.horizontal(|ui| {
-                ui.hyperlink("https://khora.info");
+                ui.hyperlink("https://khora.info   ");
                 ui.add(egui::github_link_file!(
                     "https://github.com/constantine1024/Khora",
                     "Source code."
@@ -457,29 +457,37 @@ impl epi::App for TemplateApp {
             }
             if *setup {
                 ui.add(Label::new("Welcome to Khora! \nEnter your username, password, and secret key to sync this wallet with your account. (CASE SENSITIVE)").strong());
-                ui.add(Label::new("If the account does not exist, a new account will automatically be created for you using the entered account info. \n\n").text_color(egui::Color32::RED));
-                ui.add(Label::new("We recommend that you let the system generate a random secret key for you. \n Please enter your information very carefully and save it in a safe place. If you lose it you will never be able to access your account. \n\n"));
+                ui.add(Label::new("If the account does not exist, a new account will automatically be created for you using the entered account info. \n").text_color(egui::Color32::RED));
+                ui.add(Label::new("We recommend that you let the system generate a random secret key for you. \nPlease enter your information very carefully and save it in a safe place. If you lose it you will never be able to access your account. \n"));
 
             let mut bad_log_info = true;
                 if username.len() < 4 {
-                    ui.add(Label::new("Username has to be at least 4 characters long \n").heading().text_color(egui::Color32::RED));
+                    ui.add(Label::new("Username has to be at least 4 characters long").text_color(egui::Color32::RED));
                     bad_log_info = false;
+                } else {
+                    ui.add(Label::new(" "));
                 }
                 if pswd_guess0.len() < 7 {
-                    ui.add(Label::new("Password has to be at least 6 7 characters long \n").heading().text_color(egui::Color32::RED)); 
+                    ui.add(Label::new("Password has to be at least 7 characters long").text_color(egui::Color32::RED)); 
                     bad_log_info = false;
-                }               
+                } else {
+                    ui.add(Label::new(" "));
+                } 
+
                 if secret_key.len() != 5 {
-                    ui.add(Label::new("Secret key must be exactly 5 characters \n").heading().text_color(egui::Color32::RED));
+                    ui.add(Label::new("Secret key must be exactly 5 characters").text_color(egui::Color32::RED));
                     bad_log_info = false;
+                } else {
+                    ui.add(Label::new(" "));
                 }
 
-                if !bad_log_info {
-                    ui.add(Button::new("Login").fill(egui::Color32::RED));
+                // if !bad_log_info {
+                //     ui.add(Button::new("Login").fill(egui::Color32::RED));
                 
-                }  else {
+                // }  else {
+
                     ui.horizontal(|ui| {
-                        if ui.add(Button::new("Login").fill(egui::Color32::GREEN)).clicked() {
+                        if ui.add(Button::new("Login").enabled(bad_log_info)).clicked() {
                             println!("Setting password...");
                             *password0 = pswd_guess0.clone();
                             loop {
@@ -495,9 +503,9 @@ impl epi::App for TemplateApp {
                             *setup = false;
                             frame.quit();
                         }
+                        ui.add(Checkbox::new(you_cant_do_that,"I want to be a staker!"));
                     });
-                }
-                ui.add(Checkbox::new(you_cant_do_that,"I want to be a staker!"));
+    //            }
             } else if pswd_guess0 != password0 {
                 ui.add(Label::new("password incorrect, account features disabled, enter correct password to unlock").text_color(egui::Color32::RED));
             }
