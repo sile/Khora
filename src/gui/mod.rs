@@ -456,28 +456,48 @@ impl epi::App for TemplateApp {
                 });
             }
             if *setup {
-                ui.add(Label::new("Welcome to Khora! \nEnter your username, password, and secret key to sync this wallet with your account.").strong());
-                ui.add(Label::new("If the account does not exist, a new account will automatically be created for you using the entered account info. \nWe recommend that you let the system generate a random secret key for you. \n\nPlease enter your information very carefully and save it in a safe place. If you lose it you will never be able to access your account.").text_color(egui::Color32::RED));
+                ui.add(Label::new("Welcome to Khora! \nEnter your username, password, and secret key to sync this wallet with your account. (CASE SENSITIVE)").strong());
+                ui.add(Label::new("If the account does not exist, a new account will automatically be created for you using the entered account info. \n\n").text_color(egui::Color32::RED));
+                ui.add(Label::new("We recommend that you let the system generate a random secret key for you. \n Please enter your information very carefully and save it in a safe place. If you lose it you will never be able to access your account. \n\n"));
 
-                if secret_key.len() != 5 {
-                    ui.add(Label::new("secret key must be exactly 5 characters").heading().text_color(egui::Color32::RED));
-                } else if ui.button("Login").clicked() {
-                    println!("Setting password...");
-                    *password0 = pswd_guess0.clone();
-                    loop {
-                        if sender.send(get_pswrd(&*password0,&*username,&*secret_key)).is_ok() {
-                            break
-                        }
-                    }
-                    loop {
-                        if sender.send(vec![!*you_cant_do_that as u8]).is_ok() {
-                            break
-                        }
-                    }
-                    *setup = false;
-                    frame.quit();
+            let mut bad_log_info = true;
+                if username.len() < 4 {
+                    ui.add(Label::new("Username has to be at least 4 characters long \n").heading().text_color(egui::Color32::RED));
+                    bad_log_info = false;
                 }
-                ui.add(Checkbox::new(you_cant_do_that,"I intend to stake!"));
+                if pswd_guess0.len() < 7 {
+                    ui.add(Label::new("Password has to be at least 6 7 characters long \n").heading().text_color(egui::Color32::RED)); 
+                    bad_log_info = false;
+                }               
+                if secret_key.len() != 5 {
+                    ui.add(Label::new("Secret key must be exactly 5 characters \n").heading().text_color(egui::Color32::RED));
+                    bad_log_info = false;
+                }
+
+                if !bad_log_info {
+                    ui.button("Login").text_color(egui::Color32::RED);
+                
+                }  else {
+                    ui.horizontal(|ui| {
+                        if ui.button("Login").text_color(egui::Color32::GREEN).clicked() {
+                            println!("Setting password...");
+                            *password0 = pswd_guess0.clone();
+                            loop {
+                                if sender.send(get_pswrd(&*password0,&*username,&*secret_key)).is_ok() {
+                                    break
+                                }
+                            }
+                            loop {
+                                if sender.send(vec![!*you_cant_do_that as u8]).is_ok() {
+                                    break
+                                }
+                            }
+                            *setup = false;
+                            frame.quit();
+                        }
+                    });
+                }
+                ui.add(Checkbox::new(you_cant_do_that,"I want to be a staker!"));
             } else if pswd_guess0 != password0 {
                 ui.add(Label::new("password incorrect, account features disabled, enter correct password to unlock").text_color(egui::Color32::RED));
             }
@@ -606,7 +626,7 @@ impl epi::App for TemplateApp {
                         } else {
                             let x = unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
                             if x > 0 {
-                                m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
+                                m.extend(str::to_ascii_lowercase(&addr).as_bytes());
                                 m.extend(x.to_le_bytes());
                             }
                             m.push(33);
