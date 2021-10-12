@@ -378,7 +378,6 @@ impl epi::App for TemplateApp {
                     ui.small(&*addr);
                 }
             });
-            ui.label("\n");
             if *staking {
                 ui.horizontal(|ui| {
                     if ui.button("📋").on_hover_text("Click to copy your staking wallet address to clipboard").clicked() {
@@ -389,6 +388,7 @@ impl epi::App for TemplateApp {
                     }
                 });
             }
+            ui.label("\n");
 
             if !*setup {
                 ui.label(format!("current block: {}",block_number));
@@ -403,12 +403,16 @@ impl epi::App for TemplateApp {
                 });
             }
             ui.horizontal(|ui| {
-                ui.label("Khora Balance");
+                if *staking {
+                    ui.label("Unstaked Khora");
+                } else {
+                    ui.label("Khora Balance");
+                }
                 ui.label(&*unstaked);
             });
             if *staking {
                 ui.horizontal(|ui| {
-                    ui.label("Staked Khora ");
+                    ui.label("Staked Khora");
                     ui.label(&*staked);
                 });
             }
