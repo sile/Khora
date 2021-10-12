@@ -359,9 +359,6 @@ impl epi::App for TemplateApp {
                     }
                     ui.label(format!("{} - {}",password0,secret_key));
                 });
-                if !*setup {
-                    ui.add(Label::new("password incorrect, account features disabled, enter correct password to unlock").text_color(egui::Color32::RED));
-                }
             } else if *setup {
                 ui.horizontal(|ui| {
                     if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
@@ -369,6 +366,9 @@ impl epi::App for TemplateApp {
                     }
                     ui.label(format!("{} - {}",pswd_guess0,secret_key));
                 });
+            }
+            if *password0 != *pswd_guess0 && !*setup {
+                ui.add(Label::new("password incorrect, account features disabled, enter correct password to unlock").text_color(egui::Color32::RED));
             }
             ui.horizontal(|ui| {
                 if ui.button("📋").on_hover_text("Click to copy your wallet address to clipboard").clicked() {
@@ -455,15 +455,14 @@ impl epi::App for TemplateApp {
                         }
                     });
                 }
-                ui.text_edit_singleline(fee);
                 if ui.button("Sync Wallet").clicked() && !*setup {
                     sender.send(vec![121]).expect("something's wrong with communication from the gui");
                 }
-                ui.horizontal(|ui| {
-                    if ui.add(Label::new("Transaction Fee:").sense(Sense::hover())).hovered() {
-                        ui.add(Label::new("Manually change network transaction fee. Paying a higher fee may confirm your transaction faster if the network is busy.").text_color(egui::Color32::GREEN));
-                    }
-                });
+                if ui.add(Label::new("Transaction Fee:").sense(Sense::hover())).hovered() {
+                    ui.add(Label::new("Manually change network transaction fee. Paying a higher fee may confirm your transaction faster if the network is busy.").text_color(egui::Color32::GREEN));
+                }
+                ui.text_edit_singleline(fee);
+
     
                 ui.label("\n");
             }
@@ -518,7 +517,7 @@ impl epi::App for TemplateApp {
             }
             if !*setup {
                 ui.horizontal(|ui| {
-                    ui.heading("                Name                        Address                                             Amount");
+                    ui.heading("                            Name                                Address                                             Amount");
                 });
                 let mut delete_row_x = usize::MAX;
                 egui::ScrollArea::auto_sized().show(ui,|ui| {
