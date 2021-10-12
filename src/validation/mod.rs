@@ -919,17 +919,12 @@ impl LightningSyncBlock {
 }
 
 
-
+/// selects the stakers who get to validate the queue and exit_queue
 pub fn select_stakers(block: &Vec<u8>, bnum: &u64, shard: &u128, queue: &mut VecDeque<usize>, exitqueue: &mut VecDeque<usize>, comittee: &mut Vec<usize>, stkstate: &Vec<(CompressedRistretto,u64)>) {
     let (_pool,y): (Vec<CompressedRistretto>,Vec<u128>) = stkstate.into_iter().map(|(x,y)| (x.to_owned(),*y as u128)).unzip();
     let tot_stk: u128 = y.iter().sum(); /* initial queue will be 0 for all non0 shards... */
 
     let bnum = bnum.to_le_bytes();
-    // println!("average stake:     {}",tot_stk/(y.len() as u128));
-    // println!("number of stakers: {}",y.len());
-    // println!("new money:         {}",y[8..].iter().sum::<u128>());
-    // println!("total stake:       {}",tot_stk);
-    // println!("random drawn from: {}",u64::MAX);
     let mut s = AHasher::new_with_keys(0, *shard);
     s.write(&block);
     s.write(&bnum);
@@ -948,10 +943,8 @@ pub fn select_stakers(block: &Vec<u8>, bnum: &u64, shard: &u128, queue: &mut Vec
         };
         w
     }).collect::<VecDeque<usize>>();
-    // println!("winners:           {:?}",winner);
     queue.append(&mut winner); // need to hardcode initial state
     let winner = queue.par_drain(..REPLACERATE).collect::<Vec<usize>>();
-    // println!("winner people: {:?}",winner); // these 2 should run concurrently
 
     let mut s = AHasher::new_with_keys(1, *shard);
     s.write(&block);
@@ -962,7 +955,6 @@ pub fn select_stakers(block: &Vec<u8>, bnum: &u64, shard: &u128, queue: &mut Vec
         let c = s.finish() as usize;
         c%NUMBER_OF_VALIDATORS
     }).collect::<VecDeque<usize>>();
-    // println!("loser locations: {:?}",loser);
     exitqueue.append(&mut loser);
     let loser = exitqueue.par_drain(..REPLACERATE).collect::<Vec<usize>>();
 

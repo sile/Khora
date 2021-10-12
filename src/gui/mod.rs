@@ -322,6 +322,79 @@ impl epi::App for TemplateApp {
                     "Source code."
                 ));
             });
+            if *setup {
+                ui.horizontal(|ui| {
+                    ui.label("Username");
+                    ui.text_edit_singleline(username);
+                });
+            } else { 
+                ui.heading(&*username); 
+            }
+
+            ui.horizontal(|ui| {
+                ui.label("Password");
+                if !*setup {
+                    if ui.button("show/hide password").clicked() {
+                        *pswd_shown = !*pswd_shown;
+                    }
+                }
+            });
+            if *pswd_shown || *setup {
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(pswd_guess0);
+                    ui.label("-");
+                    if *setup {
+                        ui.text_edit_singleline(secret_key);
+                    } else {
+                        ui.label(&*secret_key);
+                    }
+                });
+            }
+            if *password0 == *pswd_guess0 && *pswd_shown {
+                ui.horizontal(|ui| {
+                    if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
+                        ui.output().copied_text = format!("{} - {}",password0,secret_key);
+                    }
+                    ui.label(format!("{} - {}",password0,secret_key));
+                });
+            } else if *setup {
+                ui.horizontal(|ui| {
+                    if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
+                        ui.output().copied_text = format!("{} - {}",pswd_guess0,secret_key);
+                    }
+                    ui.label(format!("{} - {}",pswd_guess0,secret_key));
+                });
+            }
+            ui.label("\n");
+            ui.horizontal(|ui| {
+                if ui.button("📋").on_hover_text("Click to copy your wallet address to clipboard").clicked() {
+                    ui.output().copied_text = addr.clone();
+                }
+                if ui.add(Label::new("address").sense(Sense::hover())).hovered() {
+                    ui.small(&*addr);
+                }
+            });
+            if *staking {
+                ui.horizontal(|ui| {
+                    if ui.button("📋").on_hover_text("Click to copy your staking wallet address to clipboard").clicked() {
+                        ui.output().copied_text = stkaddr.clone();
+                    }
+                    if ui.add(Label::new("staking address").sense(Sense::hover())).hovered() {
+                        ui.small(&*stkaddr);
+                    }
+                });
+            }
+
+            ui.horizontal(|ui| {
+                ui.label("Unstaked Khora");
+                ui.label(&*unstaked);
+            });
+            if *staking {
+                ui.horizontal(|ui| {
+                    ui.label("Staked Khora ");
+                    ui.label(&*staked);
+                });
+            }
             if !*setup {
                 ui.label(format!("current block: {}",block_number));
                 ui.horizontal(|ui| {
@@ -333,35 +406,6 @@ impl epi::App for TemplateApp {
                         ui.add(Label::new(format!("Shard late; initiating takeover in {}",x + 3600)).strong().text_color(egui::Color32::RED));
                     }
                 });
-                ui.horizontal(|ui| {
-                    if ui.button("📋").on_hover_text("Click to copy your wallet address to clipboard").clicked() {
-                        ui.output().copied_text = addr.clone();
-                    }
-                    if ui.add(Label::new("address").sense(Sense::hover())).hovered() {
-                        ui.small(&*addr);
-                    }
-                });
-                if *staking {
-                    ui.horizontal(|ui| {
-                        if ui.button("📋").on_hover_text("Click to copy your staking wallet address to clipboard").clicked() {
-                            ui.output().copied_text = stkaddr.clone();
-                        }
-                        if ui.add(Label::new("staking address").sense(Sense::hover())).hovered() {
-                            ui.small(&*stkaddr);
-                        }
-                    });
-                }
-    
-                ui.horizontal(|ui| {
-                    ui.label("Unstaked Khora");
-                    ui.label(&*unstaked);
-                });
-                if *staking {
-                    ui.horizontal(|ui| {
-                        ui.label("Staked Khora ");
-                        ui.label(&*staked);
-                    });
-                }
     
                 if *staking {
                     ui.horizontal(|ui| {
@@ -418,49 +462,6 @@ impl epi::App for TemplateApp {
             }
 
             if *setup {
-                ui.horizontal(|ui| {
-                    ui.label("Username");
-                    ui.text_edit_singleline(username);
-                });
-            } else { 
-                ui.heading(&*username); 
-            }
-
-            ui.horizontal(|ui| {
-                ui.label("Password");
-                if !*setup {
-                    if ui.button("show/hide password").clicked() {
-                        *pswd_shown = !*pswd_shown;
-                    }
-                }
-            });
-            if *pswd_shown || *setup {
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(pswd_guess0);
-                    ui.label("-");
-                    if *setup {
-                        ui.text_edit_singleline(secret_key);
-                    } else {
-                        ui.label(&*secret_key);
-                    }
-                });
-            }
-            if *password0 == *pswd_guess0 && *pswd_shown {
-                ui.horizontal(|ui| {
-                    if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
-                        ui.output().copied_text = format!("{} - {}",password0,secret_key);
-                    }
-                    ui.label(format!("{} - {}",password0,secret_key));
-                });
-            } else if *setup {
-                ui.horizontal(|ui| {
-                    if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
-                        ui.output().copied_text = format!("{} - {}",pswd_guess0,secret_key);
-                    }
-                    ui.label(format!("{} - {}",pswd_guess0,secret_key));
-                });
-            }
-            if *setup {
                 ui.add(Label::new("Welcome to Khora! \nEnter your username, password, and secret key to sync this wallet with your account. (CASE SENSITIVE)").strong());
                 ui.add(Label::new("If the account does not exist, a new account will automatically be created for you using the entered account info. \n").text_color(egui::Color32::RED));
                 ui.add(Label::new("We recommend that you let the system generate a random secret key for you. \nPlease enter your information very carefully and save it in a safe place. If you lose it you will never be able to access your account. \n"));
@@ -488,7 +489,6 @@ impl epi::App for TemplateApp {
 
                 ui.horizontal(|ui| {
                     if ui.add(Button::new("Login").enabled(bad_log_info)).clicked() {
-                        println!("Setting password...");
                         *password0 = pswd_guess0.clone();
                         loop {
                             if sender.send(get_pswrd(&*password0,&*username,&*secret_key)).is_ok() {
