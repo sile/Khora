@@ -517,7 +517,7 @@ impl epi::App for TemplateApp {
             }
             if !*setup {
                 ui.horizontal(|ui| {
-                    ui.heading("                            Name                                Address                                  Amount");
+                    ui.heading("                            Name                                      Address                                     Amount");
                 });
                 let mut delete_row_x = usize::MAX;
                 egui::ScrollArea::auto_sized().show(ui,|ui| {
@@ -554,7 +554,7 @@ impl epi::App for TemplateApp {
                     }
                     if pswd_guess0 == password0 {
                         ui.horizontal(|ui| {
-                            ui.heading("                                         ");
+                            ui.heading("                                                                                  ");
                             if ui.button("Delete All Rows").clicked() {
                                 *send_name = vec!["".to_string()];
                                 *send_addr = vec!["".to_string()];
