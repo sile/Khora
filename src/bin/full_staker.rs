@@ -580,14 +580,8 @@ impl StakerNode {
                     if self.save_history {
                         println!("saving block...");
                         lastlightning.update_bloom(&mut self.bloom,&self.is_validator);
-                        if let Some(lastblock) = largeblock {
-                            NextBlock::save(&lastblock);
-                            // will delete this next line
-                            let mut f = File::create(format!("blocks/b{}",lastlightning.bnum)).unwrap();
-                            f.write_all(&lastblock).unwrap();
-                        }
-                        let mut f = File::create(format!("blocks/l{}",lastlightning.bnum)).unwrap();
-                        f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
+                        NextBlock::save(&largeblock.unwrap()); // important! if you select to recieve full blocks you CAN NOT recieve with lightning blocks (because if you do youd miss full blocks)
+                        LightningSyncBlock::save(&m);
                     }
                     // as a user you dont save the file
                     self.keylocation = self.smine.iter().map(|x| x[0]).collect();
@@ -1237,20 +1231,12 @@ impl Future for StakerNode {
             if self.is_staker { // users have is_staker true
                 if let Some(addr) = self.sync_returnaddr {
                     for b in self.sync_theirnum..std::cmp::min(self.sync_theirnum+10, self.bnum) {
-                        // let file = format!("blocks/{}{}",self.sync_lightning,b);
-                        // println!("checking for file {:?}...",file);
-                        // if let Ok(mut file) = File::open(file) {
-                        //     let mut x = vec![];
-                        //     file.read_to_end(&mut x).unwrap();
-                        //     println!("sending block {} of {}",b,self.bnum);
-                        //     if self.sync_lightning == 'l' {
-                        //         x.push(108); //l
-                        //     } else {
-                        //         x.push(3);
-                        //     }
-                        // }
+                        println!("checking for file location for {}...",b);
                         if self.sync_lightning {
-
+                            if let Ok(mut x) = LightningSyncBlock::read(&b) {
+                                x.push(3);
+                                self.outer.dm(x,&vec![addr],false);
+                            }
                         } else {
                             if let Ok(mut x) = NextBlock::read(&b) {
                                 x.push(3);
