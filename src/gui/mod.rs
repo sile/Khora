@@ -294,7 +294,7 @@ impl epi::App for TemplateApp {
 
             egui::menu::bar(ui, |ui| {
                 egui::menu::menu(ui, "File", |ui| {
-                    if ui.button("             Mesh Network Gate IP").clicked() && !*setup {
+                    if ui.button("Mesh Network Gate IP").clicked() && !*setup {
                         let mut m = entrypoint.as_bytes().to_vec();
                         m.push(42);
                         sender.send(m).expect("something's wrong with communication from the gui");
@@ -478,7 +478,6 @@ impl epi::App for TemplateApp {
                 } else {
                     ui.add(Label::new(" "));
                 } 
-
                 if secret_key.len() != 5 {
                     ui.add(Label::new("Secret key must be exactly 5 characters").text_color(egui::Color32::RED));
                     bad_log_info = false;
@@ -512,78 +511,81 @@ impl epi::App for TemplateApp {
             if *dont_trust_amounts {
                 ui.add(Label::new("money owned is not yet verified").text_color(egui::Color32::RED));
             }
-            ui.horizontal(|ui| {
-                ui.label("Name      Address     Amount");
-                if ui.button("Add Row").clicked() {
-                    send_name.push("".to_string());
-                    send_addr.push("".to_string());
-                    send_amnt.push("".to_string());
-                }
-                if ui.button("Clear Rows").clicked() {
-                    *send_name = vec![];
-                    *send_addr = vec![];
-                    *send_amnt = vec![];
-                }
-                if pswd_guess0 == password0 {
-                    if ui.button("Send Transaction").clicked() && !*setup {
-                        let mut m = vec![];
-                        let mut tot = 0u64;
-                        for (who,amnt) in send_addr.iter_mut().zip(send_amnt.iter_mut()) {
-                            let x = amnt.parse::<u64>().unwrap();
-                            if x > 0 {
-                                m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
-                                m.extend(x.to_le_bytes().to_vec());
-                                tot += x;
+            if !*setup {
+                ui.horizontal(|ui| {
+                    if ui.button("Clear Rows").clicked() {
+                        *send_name = vec![];
+                        *send_addr = vec![];
+                        *send_amnt = vec![];
+                    }
+                    ui.heading("Name                Address                                             Amount");
+                    if ui.button("Add Row").clicked() {
+                        send_name.push("".to_string());
+                        send_addr.push("".to_string());
+                        send_amnt.push("".to_string());
+                    }
+                    if pswd_guess0 == password0 {
+                        if ui.button("Send Transaction").clicked() && !*setup {
+                            let mut m = vec![];
+                            let mut tot = 0u64;
+                            for (who,amnt) in send_addr.iter_mut().zip(send_amnt.iter_mut()) {
+                                if let Ok(x) = amnt.parse::<u64>() {
+                                    if x > 0 {
+                                        m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
+                                        m.extend(x.to_le_bytes().to_vec());
+                                        tot += x;
+                                    }
+                                }
                             }
-                        }
-                        if *stkspeand {
-                            let x = staked.parse::<u64>().unwrap() as i64 - tot as i64 - fee.parse::<u64>().unwrap() as i64;
-                            if x > 0 {
-                                m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
-                                m.extend((x as u64).to_le_bytes());
+                            if *stkspeand {
+                                let x = staked.parse::<u64>().unwrap() as i64 - tot as i64 - fee.parse::<u64>().unwrap() as i64;
+                                if x > 0 {
+                                    m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
+                                    m.extend((x as u64).to_le_bytes());
+                                }
+                                m.push(63);
+                                *you_cant_do_that = staked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
+                            } else {
+                                let x = unstaked.parse::<u64>().unwrap() as i64 - tot as i64 - fee.parse::<u64>().unwrap() as i64;
+                                if x > 0 {
+                                    m.extend(str::to_ascii_lowercase(&addr).as_bytes());
+                                    m.extend((x as u64).to_le_bytes());
+                                }
+                                m.push(33);
+                                *you_cant_do_that = unstaked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
                             }
-                            m.push(63);
-                            *you_cant_do_that = staked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
-                        } else {
-                            let x = unstaked.parse::<u64>().unwrap() as i64 - tot as i64 - fee.parse::<u64>().unwrap() as i64;
-                            if x > 0 {
-                                m.extend(str::to_ascii_lowercase(&addr).as_bytes());
-                                m.extend((x as u64).to_le_bytes());
+                            if !*you_cant_do_that {
+                                m.push(33);
+                                sender.send(m).expect("something's wrong with communication from the gui");
                             }
-                            m.push(33);
-                            *you_cant_do_that = unstaked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
-                        }
-                        if !*you_cant_do_that {
-                            m.push(33);
-                            sender.send(m).expect("something's wrong with communication from the gui");
                         }
                     }
-                }
-                if *staking {
-                    ui.add(Checkbox::new(stkspeand,"Spend with staked money"));
-                }
-            });
-            let mut delete_row_x = usize::MAX;
-            egui::ScrollArea::auto_sized().show(ui,|ui| {
-                for (loc,((i,j),k)) in send_name.iter_mut().zip(send_addr.iter_mut()).zip(send_amnt.iter_mut()).enumerate() {
-                    ui.horizontal(|ui| {
-                        ui.label(&*i);
-                        ui.text_edit_singleline(j);
-                        ui.text_edit_singleline(k);
-                    });
-                    if ui.button("Delete Row").clicked() {
-                        delete_row_x = loc;
+                    if *staking {
+                        ui.add(Checkbox::new(stkspeand,"Spend with staked money"));
                     }
-                }
-                if delete_row_x != usize::MAX {
-                    send_name.remove(delete_row_x);
-                    send_addr.remove(delete_row_x);
-                    send_amnt.remove(delete_row_x);
-                }
-            });
-            if *you_cant_do_that && !*setup {
-                if ui.add(Label::new("you don't have enough funds to make this transaction").text_color(egui::Color32::RED).sense(Sense::hover())).hovered() {
-                    *you_cant_do_that = false;
+                });
+                let mut delete_row_x = usize::MAX;
+                egui::ScrollArea::auto_sized().show(ui,|ui| {
+                    for (loc,((i,j),k)) in send_name.iter_mut().zip(send_addr.iter_mut()).zip(send_amnt.iter_mut()).enumerate() {
+                        ui.horizontal(|ui| {
+                            if ui.button("Delete Row").clicked() {
+                                delete_row_x = loc;
+                            }
+                            ui.label(&*i);
+                            ui.text_edit_singleline(j);
+                            ui.text_edit_singleline(k);
+                        });
+                    }
+                    if delete_row_x != usize::MAX {
+                        send_name.remove(delete_row_x);
+                        send_addr.remove(delete_row_x);
+                        send_amnt.remove(delete_row_x);
+                    }
+                });
+                if *you_cant_do_that && !*setup {
+                    if ui.add(Label::new("you don't have enough funds to make this transaction").text_color(egui::Color32::RED).sense(Sense::hover())).hovered() {
+                        *you_cant_do_that = false;
+                    }
                 }
             }
             egui::warn_if_debug_build(ui);
