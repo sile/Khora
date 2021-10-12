@@ -106,7 +106,7 @@ fn main() -> Result<(), MainError> {
         // let person0 = get_pswrd(&"a".to_string(),&"b".to_string(),&"abcde".to_string());
         // println!("{:?}",person0);
         // let leader = Account::new(&person0).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let leader = CompressedRistretto([40, 212, 153, 3, 254, 141, 29, 36, 52, 49, 218, 248, 155, 116, 235, 118, 134, 161, 96, 215, 183, 91, 233, 98, 187, 62, 85, 223, 151, 31, 236, 55]);
+        let leader = CompressedRistretto([46, 235, 227, 188, 55, 53, 9, 126, 167, 207, 202, 101, 150, 150, 172, 207, 209, 208, 211, 52, 47, 206, 19, 115, 199, 189, 202, 10, 56, 220, 138, 55]);
         let initial_history = vec![(leader,1u64)];
         // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         // let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
@@ -582,6 +582,9 @@ impl StakerNode {
                         lastlightning.update_bloom(&mut self.bloom,&self.is_validator);
                         if let Some(lastblock) = largeblock {
                             NextBlock::save(&lastblock);
+                            // will delete this next line
+                            let mut f = File::create(format!("blocks/b{}",lastlightning.bnum)).unwrap();
+                            f.write_all(&lastblock).unwrap();
                         }
                         let mut f = File::create(format!("blocks/l{}",lastlightning.bnum)).unwrap();
                         f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
@@ -1250,10 +1253,8 @@ impl Future for StakerNode {
 
                         } else {
                             if let Ok(mut x) = NextBlock::read(&b) {
-                                if !x.is_empty() {
-                                    x.push(3);
-                                    self.outer.dm(x,&vec![addr],false);
-                                }
+                                x.push(3);
+                                self.outer.dm(x,&vec![addr],false);
                             }
                         }
                         self.sync_theirnum += 1;
