@@ -920,7 +920,6 @@ impl LightningSyncBlock {
 
 
 
-
 pub fn select_stakers(block: &Vec<u8>, bnum: &u64, shard: &u128, queue: &mut VecDeque<usize>, exitqueue: &mut VecDeque<usize>, comittee: &mut Vec<usize>, stkstate: &Vec<(CompressedRistretto,u64)>) {
     let (_pool,y): (Vec<CompressedRistretto>,Vec<u128>) = stkstate.into_iter().map(|(x,y)| (x.to_owned(),*y as u128)).unzip();
     let tot_stk: u128 = y.iter().sum(); /* initial queue will be 0 for all non0 shards... */
@@ -983,10 +982,14 @@ pub struct History {}
 
 static FILE_NAME: &str = "history";
 
+/// this represents a file that saves the public keys and commitments of all the OTAccounts that have appeared on the block chain (it is used to verify transactions and generate rings)
 impl History {
+    /// Create the file
     pub fn initialize() {
         File::create(FILE_NAME).unwrap();
     }
+
+    /// Get the information on the OTAccount at height location as compressed Ristrettos
     pub fn get(location: &u64) -> [CompressedRistretto;2] {
         let mut byte = [0u8;64];
         let mut r = BufReader::new(File::open(FILE_NAME).unwrap());
@@ -994,6 +997,8 @@ impl History {
         r.read(&mut byte).unwrap();
         [CompressedRistretto::from_slice(&byte[..32]),CompressedRistretto::from_slice(&byte[32..])] // OTAccount::summon_ota() from there
     }
+
+    /// Get the information on the OTAccount at height location as raw bytes
     pub fn get_raw(location: &u64) -> [u8; 64] {
         let mut bytes = [0u8;64];
         let mut r = BufReader::new(File::open(FILE_NAME).unwrap());
@@ -1001,9 +1006,13 @@ impl History {
         r.read(&mut bytes).unwrap();
         bytes
     }
+
+    /// Generate a OTAccount from the raw bytes
     pub fn read_raw(bytes: &Vec<u8>) -> OTAccount { // assumes the bytes start at the beginning
         OTAccount::summon_ota(&[CompressedRistretto::from_slice(&bytes[..32]),CompressedRistretto::from_slice(&bytes[32..64])]) // OTAccount::summon_ota() from there
     }
+
+    /// Appends new OTAccounts to the file
     pub fn append(accs: &Vec<OTAccount>) {
         let buf = accs.into_iter().map(|x| [x.pk.compress().as_bytes().to_owned(),x.com.com.compress().as_bytes().to_owned()].to_owned()).flatten().flatten().collect::<Vec<u8>>();
         let mut f = OpenOptions::new().append(true).open(FILE_NAME).unwrap();
@@ -1013,34 +1022,6 @@ impl History {
 }
 
 
-
-pub struct StakerState {}
-
-static STAKE_FILE_NAME: &str = "stkstate";
-
-impl StakerState {
-    pub fn initialize() {
-        File::create(STAKE_FILE_NAME).unwrap();
-    }
-    pub fn read() -> Vec<(CompressedRistretto,u64)> {
-        let mut bytevec = Vec::<u8>::new();
-        let mut r = File::open(STAKE_FILE_NAME).unwrap();
-        r.read_to_end(&mut bytevec).unwrap();
-        // bytevec.par_chunks(40).map(|x| (CompressedRistretto::from_slice(&x[..32]),u64::from_le_bytes(x[32..].try_into().unwrap()))).collect::<Vec<(CompressedRistretto,u64)>>()
-        bincode::deserialize(&bytevec[..]).unwrap()
-    }
-    pub fn replace(valinfo: &Vec<(CompressedRistretto,u64)>) {
-        // let bytevec = valinfo.into_par_iter().flat_map(|(x,y)|{
-        //     let a = x.to_bytes().to_vec(); let b = y.to_le_bytes().to_vec();
-        //     a.into_par_iter().chain(b.into_par_iter()).collect::<Vec<u8>>()
-        // }).collect::<Vec<u8>>();
-        let bytevec = bincode::serialize(valinfo).unwrap();
-        
-        let mut f = File::create("throwaway").unwrap();
-        f.write_all(&bytevec).unwrap();
-        rename("throwaway",STAKE_FILE_NAME).unwrap();
-    }
-}
 
 
 

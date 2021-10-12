@@ -37,12 +37,6 @@ use std::fs::File;
 use std::io::{Seek, SeekFrom, Read, Write, BufReader};
 
 #[derive(Clone)]
-// pub struct BloomFilter {
-//     pub bits: BitVec,
-//     pub num_hashes: u32,
-//     h1: AHasher,
-//     h2: AHasher,
-// }
 
 struct HashIter {
     h: AHasher,
@@ -63,123 +57,11 @@ impl Iterator for HashIter {
     }
 }
 
-// impl BloomFilter {
-
-//     pub fn initialize_bloom(key1: u128, key2: u128) -> BloomFilter {
-//         // cap 1000 tags/block (THIS EFFECTS THE GENERATE POLYNOMIALS THING FOR MICROTRANSACTIONS)
-//         // this should be fine for over 1,500,000,000 tags
-
-//         BloomFilter { // there's memory issues with writing 32GB on my laptop
-//             // bits: BitVec::from_elem(32_000_000_000,false),// 4 (maybe 8 later) GB
-//             bits: BitVec::from_elem(32_000_000,false),// 4 (maybe 8 later) GB
-//             num_hashes: 13,
-//             h1: AHasher::new_with_keys(key1,0),
-//             h2: AHasher::new_with_keys(key2,0),
-//         }
-
-//     }
-
-//     pub fn from_file(fname: String, key1: u128, key2: u128) -> BloomFilter {
-//         BloomFilter {
-//             bits: BitVec::from_bytes(&fs::read(fname).unwrap()),
-//             num_hashes: 13,
-//             h1: AHasher::new_with_keys(key1, 0),
-//             h2: AHasher::new_with_keys(key2, 0),
-//         }
-//     }
-
-//     /// Create a new BloomFilter with the specified number of bits,
-//     /// and hashes
-//     pub fn with_size(num_bits: usize, num_hashes: u32) -> BloomFilter {
-//         let mut rng = rand::thread_rng();
-//         BloomFilter {
-//             bits: BitVec::from_elem(num_bits,false),
-//             num_hashes: num_hashes,
-//             h1: AHasher::new_with_keys(rng.gen::<u128>(),rng.gen::<u128>()),
-//             h2: AHasher::new_with_keys(rng.gen::<u128>(),rng.gen::<u128>()),
-//         }
-//     }
-
-//     /// create a BloomFilter that expectes to hold
-//     /// `expected_num_items`.  The filter will be sized to have a
-//     /// false positive rate of the value specified in `rate`.
-//     pub fn with_rate(rate: f32, expected_num_items: u32) -> BloomFilter {
-//         let bits = needed_bits(rate,expected_num_items);
-//         BloomFilter::with_size(bits,optimal_num_hashes(bits,expected_num_items))
-//     }
-
-//     /// Get the number of bits this BloomFilter is using
-//     pub fn num_bits(&self) -> usize {
-//         self.bits.len()
-//     }
-
-//     /// Get the number of hash functions this BloomFilter is using
-//     pub fn num_hashes(&self) -> u32 {
-//         self.num_hashes
-//     }
-
-//     /// Insert item into this bloomfilter
-//     pub fn insert(& mut self,item: &[u8;32]) {
-//         for h in self.get_hashes(item) {
-//             let idx = (h % self.bits.len() as u64) as usize;
-//             self.bits.set(idx,true)
-//         }
-//     }
-
-//     /// Check if the item has been inserted into this bloom filter.
-//     /// This function can return false positives, but not false
-//     /// negatives.
-//     pub fn contains(&self, item: &[u8;32]) -> bool {
-
-//         // let mut thgs = vec![]; // that's a lot slower and most will be false
-//         // for h in self.get_hashes(item) {
-//         //     thgs.push(h);
-//         // }
-//         // thgs.par_iter().all(
-//         //     |h| self.bits.get((h % self.bits.len() as u64) as usize).unwrap()
-//         // )
-//         for h in self.get_hashes(item) {
-//             let idx = (h % self.bits.len() as u64) as usize;
-//             match self.bits.get(idx) {
-//                 Some(b) => {
-//                     if !b {
-//                         return false;
-//                     }
-//                 }
-//                 None => { panic!("Hash mod failed"); }
-//             }
-//         }
-//         true
-//     }
-
-//     /// Remove all values from this BloomFilter
-//     pub fn clear(&mut self) {
-//         self.bits.clear();
-//     }
-
-
-//     fn get_hashes(&self, item: &[u8;32]) -> HashIter {
-//         let mut h1 = self.h1.clone();
-//         let mut h2 = self.h2.clone();
-//         h1.write(item);
-//         h2.write(item);
-//         let h1 = h1.finish();
-//         let h2 = h2.finish();
-//         HashIter {
-//             h1: h1,
-//             h2: h2,
-//             i: 0,
-//             count: self.num_hashes,
-//         }
-//     }
-
-// }
 
 
 #[derive(Clone)]
 pub struct BloomFile {
-    h1: AHasher,
-    h2: AHasher,
+    h: AHasher,
     key1: u128,
     key2: u128,
 }
@@ -206,10 +88,9 @@ impl BloomFile {
 
     pub fn from_keys(key1: u128, key2: u128) -> BloomFile {
         BloomFile {
-            h1: AHasher::new_with_keys(key1,0),
-            h2: AHasher::new_with_keys(key2,0),
-            key1: key1,
-            key2: key2,
+            h: AHasher::new_with_keys(key1,key2),
+            key1,
+            key2,
         }
 
     }
@@ -241,21 +122,12 @@ impl BloomFile {
             f.write(&byte).expect("Unable to write data");
 
             
-            // let mut byte = [0u8];
-            // let r = File::open(FILE_NAME).unwrap();
-            // r.read_at(&mut byte, h/8).expect("Unable to read data");
-            // let mut delta = 0b00000001u8;
-            // delta <<= h%8;
-            // if (byte[0] & delta) == 0b00000000u8 {
-            //     panic!("failed to write correctly")
-            // }
         }
     }
     pub fn contains(&self, item: &[u8;32]) -> bool {
         for h in self.get_hashes(item) {
             let h = h % FILE_SIZE;
             let mut byte = [0u8];
-            // let r = File::open(FILE_NAME).unwrap();
             let mut r = OpenOptions::new()
                 .read(true)
                 .write(false)
@@ -275,14 +147,10 @@ impl BloomFile {
     }
 
     fn get_hashes(&self, item: &[u8;32]) -> HashIter {
-        let mut h1 = self.h1.clone();
-        // let mut h2 = self.h2.clone();
-        h1.write(item);
-        // h2.write(item);
-        // let h1 = h1.finish();
-        // let h2 = h2.finish();
+        let mut h = self.h.clone();
+        h.write(item);
         HashIter {
-            h: h1,
+            h,
             i: 0,
             count: HASHES, // 4 is best for ~1_283_000_000 outputs (1 in 20 wrong)
         }
