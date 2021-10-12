@@ -11,7 +11,6 @@ use sha3::{Digest, Sha3_512};
 use ahash::AHasher;
 use std::fs::File;
 use std::fs::OpenOptions;
-use std::fs::rename;
 use std::io::Read;
 use std::io::Write;
 use std::hash::Hasher;
@@ -20,25 +19,32 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::constants::PEDERSEN_H;
 use std::io::{Seek, SeekFrom, BufReader};//, BufWriter};
 
-
+/// the number of validators in the comittee, 128
 pub const NUMBER_OF_VALIDATORS: usize = 3;
+/// the number of validators who need to sign for a block to be approved, 2/3
 pub const SIGNING_CUTOFF: usize = 2*NUMBER_OF_VALIDATORS/3;
+/// the amount of time in advance people know they will be a validator, 128
 pub const QUEUE_LENGTH: usize = 10;
+/// the number of people who leave the comittee per block, 2
 pub const REPLACERATE: usize = 2;
+/// the fraction of money you use for failing to do your duties as a comittee member
 pub const PUNISHMENT_FRACTION: u64 = 1000;
 
+/// this is a generic function only used in testing purposes to check if 2 variables are identicle or to see if the variable changes
 fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
     let message = bincode::serialize(message).unwrap();
     let mut hasher = Sha3_512::new();
     hasher.update(&message);
     Scalar::from_hash(hasher)
-} /* this is for testing purposes. it is used to check if 2 long messages are identicle */
+}
 
 #[derive(Default, Clone, Serialize, Deserialize, Eq, Hash, Debug)]
+/// the information on the transactions made that is saved in lightning blocks
+/// in a minimalist setting where validators dont ever need to sync anyone, they only need to save their history object and the stake state at the current time
 pub struct Syncedtx{
     pub stkout: Vec<u64>,
     pub stkin: Vec<(CompressedRistretto,u64)>,
-    pub txout: Vec<OTAccount>, // they delete this part individually after they realize it's not for them
+    pub txout: Vec<OTAccount>,
     pub tags: Vec<CompressedRistretto>,
     pub fees: u64,
 }
@@ -50,6 +56,7 @@ impl PartialEq for Syncedtx {
 }
 
 impl Syncedtx {
+    /// distills the important information from a group of transactions
     pub fn from(txs: &Vec<PolynomialTransaction>)->Syncedtx {
         let stkout = txs.iter().filter_map(|x|
             if x.inputs.last() == Some(&1) {Some(x.inputs.par_chunks_exact(8).map(|x| u64::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>())} else {None}
@@ -68,6 +75,8 @@ impl Syncedtx {
         let fees = txs.iter().map(|x|x.fee).sum::<u64>();
         Syncedtx{stkout,stkin,txout,tags,fees}
     }
+
+    /// the message block creaters sign so even lightning blocks can be verified
     pub fn to_sign(txs: &Vec<PolynomialTransaction>)->Vec<u8> {
         bincode::serialize(&Syncedtx::from(txs)).unwrap()
     }
@@ -75,6 +84,7 @@ impl Syncedtx {
 
 
 #[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
+/// an object representing a collection of people in the comittee signing a block together. the pk vector specifies the members who didn't sign
 pub struct MultiSignature{
     pub x: CompressedRistretto,
     pub y: Scalar,
@@ -88,6 +98,7 @@ impl PartialEq for MultiSignature {
 }
 
 impl MultiSignature {
+    /// gemerates your personal group element for a group signature
     pub fn gen_group_x(key: &Scalar, nonce: &u64) -> CompressedRistretto {
         let mut s = Sha3_512::new();
         s.update(&key.as_bytes());
@@ -95,9 +106,13 @@ impl MultiSignature {
         let m = ((Scalar::from_hash(s))*PEDERSEN_H()).compress();
         m
     }
+
+    /// sums the group elements of each member in the group
     pub fn sum_group_x<'a, I: IntoParallelRefIterator<'a, Item = &'a RistrettoPoint>>(x: &'a I) -> CompressedRistretto {
         x.par_iter().sum::<RistrettoPoint>().compress()
     }
+
+    /// generates your personal scalar as a signer
     pub fn try_get_y(key: &Scalar, message: &Vec<u8>, xt: &CompressedRistretto, nonce: &u64) -> Scalar {
         let mut s = Sha3_512::new();
         s.update(&key.as_bytes());
@@ -111,9 +126,13 @@ impl MultiSignature {
         let y = e*key+r;
         y
     }
+
+    /// creates the scalar used in the group signature
     pub fn sum_group_y<'a, I: IntoParallelRefIterator<'a, Item = &'a Scalar>>(y: &'a I) -> Scalar {
         y.par_iter().sum()
     }
+
+    /// verifies a group signature
     pub fn verify_group(yt: &Scalar, xt: &CompressedRistretto, message: &Vec<u8>, who: &Vec<CompressedRistretto>) -> bool {
         let mut s = Sha3_512::new();
         s.update(&message);
@@ -125,6 +144,7 @@ impl MultiSignature {
 
 
 #[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
+/// this is not in use. signs a message as a comittee member
 pub struct ValidatorSignature{
     pub c: Scalar,
     pub r: Scalar,
@@ -137,16 +157,17 @@ impl PartialEq for ValidatorSignature {
     }
 }
 
-impl ValidatorSignature { // THIS IS NOT IN USE YET
+impl ValidatorSignature {
+    /// signs a message as a validator. the message is input as a hash state
     pub fn sign(key: &Scalar, message: &mut Sha3_512, location: &u8) -> ValidatorSignature {
-        // let mut s = Sha3_512::new();
-        // s.update(&message);
         let mut csprng = thread_rng();
         let a = Scalar::random(&mut csprng);
         message.update((a*PEDERSEN_H()).compress().to_bytes());
         let c = Scalar::from_hash(message.to_owned());
         ValidatorSignature{c, r: (a - c*key), pk: *location}
     }
+
+    /// converts a signature made as a comittee member to one made as a generic staker
     pub fn to_signature(&self, validator_pool: &Vec<u64>) -> Signature {
         Signature {
             c: self.c,
@@ -156,10 +177,11 @@ impl ValidatorSignature { // THIS IS NOT IN USE YET
     }
 }
 #[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
+/// a signature. This does not include any information on the message being signed
 pub struct Signature{
     pub c: Scalar,
     pub r: Scalar,
-    pub pk: u64, // should i switch this to u8 and only validation squad is involved?
+    pub pk: u64,
 }
 
 impl PartialEq for Signature {
@@ -169,7 +191,9 @@ impl PartialEq for Signature {
 }
 
 impl Signature {
-    pub fn to_validator_signature(&self, validator_pool: &Vec<u64>) -> ValidatorSignature { // this hasn't actually been implimented in the blocks yet
+    /// replaces the public key location with the location in the comittee to save 7 bytes (not used because it's messier with little reward)
+    /// this hasn't actually been implimented in the blocks
+    pub fn to_validator_signature(&self, validator_pool: &Vec<u64>) -> ValidatorSignature {
         ValidatorSignature{
             c: self.c,
             r: self.r,
@@ -182,6 +206,8 @@ impl Signature {
             }).collect::<Vec<_>>()[0] as u8
         }
     }
+
+    /// signs a message given as a Sha3_512 state with your key
     pub fn sign(key: &Scalar, message: &mut Sha3_512, location: &u64) -> Signature { // the inputs are the hashed messages you are checking for signatures on because it's faster for many messages.
         let mut csprng = thread_rng();
         let a = Scalar::random(&mut csprng);
@@ -189,12 +215,15 @@ impl Signature {
         let c = Scalar::from_hash(message.to_owned());
         Signature{c, r: (a - c*key), pk: *location}
     }
+
+    /// verifies a schoore signature on a message given as a Sha3_512 state
     pub fn verify(&self, message: &mut Sha3_512, stkstate: &Vec<(CompressedRistretto,u64)>) -> bool { // the inputs are the hashed messages you are checking for signatures on because it's faster for many messages.
         if self.pk as usize >= stkstate.len() {return false}
         message.update((self.r*PEDERSEN_H() + self.c*stkstate[self.pk as usize].0.decompress().unwrap()).compress().to_bytes());
         self.c == Scalar::from_hash(message.to_owned())
     }
 
+    /// signs any message with your staker public key
     pub fn sign_message(key: &Scalar, message: &Vec<u8>, location: &u64) -> Vec<u8> {
         let mut s = Sha3_512::new();
         s.update(&message); // impliment non block check stuff for signatures
@@ -208,6 +237,8 @@ impl Signature {
         out.par_extend(message);
         out
     }
+
+    /// recieves a signed message
     pub fn recieve_signed_message(signed_message: &mut Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Option<u64> {
         let sig = signed_message.par_drain(..72).collect::<Vec<_>>();
         let s = Signature{
@@ -225,7 +256,7 @@ impl Signature {
         }
     }
 
-
+    /// signs a message with the block number as a timestamp with your staker public key
     pub fn sign_message_nonced(key: &Scalar, message: &Vec<u8>, location: &u64, bnum: &u64) -> Vec<u8> {
         let mut s = Sha3_512::new();
         s.update(&message); // impliment non block check stuff for signatures
@@ -240,6 +271,8 @@ impl Signature {
         out.par_extend(message);
         out
     }
+
+    /// recieved a signed message only if it was signed as the current block
     pub fn recieve_signed_message_nonced(signed_message: &mut Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, bnum: &u64) -> Option<u64> {
         if signed_message.len() < 72 {return None}
         let sig = signed_message.par_drain(..72).collect::<Vec<_>>();
@@ -266,6 +299,7 @@ impl Signature {
 
 
 #[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
+/// a full block that no one truly has to interact with except the comittee
 pub struct NextBlock {
     pub emptyness: Option<MultiSignature>,
     pub validators: Option<Vec<Signature>>,
@@ -281,6 +315,7 @@ impl PartialEq for NextBlock {
     }
 }
 impl NextBlock {
+    /// selects the transactions that are valid (as a member of the comittee in block generation)
     pub fn valicreate(key: &Scalar, location: &u64, leader: &CompressedRistretto, txs: &Vec<PolynomialTransaction>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, bloom: &BloomFile,/* _history: &Vec<OTAccount>,*/ stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock {
         let stks = txs.par_iter().filter_map(|x| 
             if x.inputs.last() == Some(&1) {if x.verifystk(&stkstate).is_ok() {Some(x.to_owned())} else {None}} else {None}
@@ -326,6 +361,8 @@ impl NextBlock {
             bnum: *bnum,
         }
     }
+
+    /// creates a full block from a collection of signatures in the comittee
     pub fn finish(key: &Scalar, location: &u64, sigs: &Vec<NextBlock>, validator_pool: &Vec<u64>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock { // <----do i need to reference previous block explicitly?
         let leader = (key*PEDERSEN_H()).compress().as_bytes().to_vec();
         let mut sigs = sigs.into_par_iter().filter(|x| !validator_pool.into_par_iter().all(|y| x.leader.pk != *y)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
@@ -368,8 +405,10 @@ impl NextBlock {
         println!("failed to make block :(");
         return NextBlock::default()
     }
+
+    /// creates the final block from the collection of subblocks and signatures from the main shard
+    /// WARNING:: MUST MAKE SURE blks[0] IS THE ONE YOU MADE YOURSELF
     pub fn valimerge(key: &Scalar, location: &u64, leader: &CompressedRistretto, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, _mypoolnum: &u16) -> Signature {
-        // WARNING:: MUST MAKE SURE blks[0] IS THE ONE YOU MADE YOURSELF
         
         
         let mut blks: Vec<NextBlock> = blks.par_iter().zip(val_pools).filter_map(|(x,y)| if x.verify(&y,&stkstate).is_ok() {Some(x.to_owned())} else {None}).collect();
@@ -396,6 +435,8 @@ impl NextBlock {
         s.update(&m);
         Signature::sign(&key,&mut s, &location)
     }
+
+    /// verifies a full block (that the comittee acted as they should)
     pub fn finishmerge(key: &Scalar, location: &u64, sigs: &Vec<Signature>, blks: &Vec<NextBlock>, val_pools: &Vec<Vec<u64>>, headpool: &Vec<u64>, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>, _mypoolnum: &u16) -> NextBlock {
         let headpool = headpool.into_par_iter().map(|x|stkstate[*x as usize].0).collect::<Vec<CompressedRistretto>>();
         let mut blks: Vec<NextBlock> = blks.par_iter().zip(val_pools).filter_map(|(x,y)| if x.verify(&y, &stkstate).is_ok() {Some(x.to_owned())} else {None}).collect();
@@ -435,6 +476,8 @@ impl NextBlock {
         let leader = Signature::sign(&key, &mut s, &location);
         NextBlock{emptyness: None, validators: Some(sigs), leader, txs: blk.txs, last_name: last_name.clone(), shards: blk.shards, bnum: bnum.to_owned()}
     }
+
+    /// verifies a full block (that the comittee acted as they should)
     pub fn verify(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
         if let Some(validators) = self.validators.clone() {
             if self.emptyness.is_some() {
@@ -503,6 +546,8 @@ impl NextBlock {
         }
         return Ok(true)
     }
+
+    /// the function you use to pay the comittee if you are not saving the block
     pub fn pay_all_empty(shard: &usize, comittee: &Vec<Vec<usize>>, valinfo: &mut Vec<(CompressedRistretto,u64)>, reward: f64) {
         let winners = comittee[*shard].iter();
         let inflation = (reward/winners.len() as f64) as u64;
@@ -510,17 +555,20 @@ impl NextBlock {
             valinfo[i].1 += inflation;
         }
     }
+
+    /// the function you use to pay yourself if you are not saving the block
     pub fn pay_self_empty(shard: &usize, comittee: &Vec<Vec<usize>>, mine: &mut Vec<[u64;2]>, reward: f64) -> bool {
 
         let winners = comittee[*shard].iter();
         let inflation = (reward/winners.len() as f64) as u64;
-        let changed = std::sync::Arc::new(std::sync::Mutex::new(false));
+        let mut changed = false;
         for &i in winners {
-            mine.par_iter_mut().for_each(|x| if x[0] == i as u64 {*changed.lock().unwrap() = true; x[1] += inflation;});
+            mine.iter_mut().for_each(|x| if x[0] == i as u64 {changed = true; x[1] += inflation;});
         }
-        let changed = *changed.lock().unwrap();
         changed
     }
+
+    /// converts a full block into lightning block
     pub fn tolightning(&self) -> LightningSyncBlock {
         LightningSyncBlock {
             emptyness: self.emptyness.to_owned(),
@@ -535,6 +583,7 @@ impl NextBlock {
 }
 
 #[derive(Default, Clone, Serialize, Deserialize, Hash, Debug)]
+/// a shrunk block in the blockchain with less structure and not containing any proofs that would be in the full block
 pub struct LightningSyncBlock {
     pub emptyness: Option<MultiSignature>,
     pub validators: Option<Vec<Signature>>,
@@ -545,6 +594,7 @@ pub struct LightningSyncBlock {
     pub last_name: Vec<u8>,
 }
 impl LightningSyncBlock {
+    /// verifies that the block is real and the 128 comittee members came to consensus. all computations are carried out in parallell
     pub fn verify_multithread(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
         if let Some(validators) = self.validators.clone() {
             if self.emptyness.is_some() {
@@ -609,6 +659,8 @@ impl LightningSyncBlock {
         }
         return Ok(true)
     }
+
+    /// verifies that the block is real and the 128 comittee members came to consensus
     pub fn verify(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
         if let Some(validators) = self.validators.clone() {
             if self.emptyness.is_some() {
@@ -673,6 +725,8 @@ impl LightningSyncBlock {
         }
         return Ok(true)
     }
+
+    /// updates the staker state by dulling out punishments and gifting rewards. also updates the queue, exitqueue, and comittee if stakers left
     pub fn scan_as_noone(&self, valinfo: &mut Vec<(CompressedRistretto,u64)>, queue: &mut Vec<VecDeque<usize>>, exitqueue: &mut Vec<VecDeque<usize>>, comittee: &mut Vec<Vec<usize>>, reward: f64, save_history: bool) {
         if save_history {History::append(&self.info.txout)};
 
@@ -807,6 +861,8 @@ impl LightningSyncBlock {
 
 
     }
+
+    /// scans the block for money sent to you. additionally updates your understanding of the height
     pub fn scan(&self, me: &Account, mine: &mut HashMap<u64,OTAccount>, height: &mut u64, alltagsever: &mut Vec<CompressedRistretto>) -> bool {
         let mut imtrue = true;
         let newmine = self.info.txout.iter().enumerate().filter_map(|(i,x)| if let Ok(y) = me.receive_ot(x) {imtrue = false; Some((i as u64+*height,y))} else {None}).collect::<Vec<(u64,OTAccount)>>();
@@ -822,6 +878,8 @@ impl LightningSyncBlock {
 
         imtrue
     }
+
+    /// scans the block for any transactions sent to you or any rewards and punishments you recieved. it additionally updates the height of stakers
     pub fn scanstk(&self, me: &Account, mine: &mut Vec<[u64;2]>, height: &mut u64, comittee: &Vec<Vec<usize>>, reward: f64, valinfo: &Vec<(CompressedRistretto,u64)>) -> bool {
 
         let winners: Vec<usize>;
@@ -892,7 +950,6 @@ impl LightningSyncBlock {
             }
         }
         *height -= self.info.stkout.len() as u64;
-        // println!("-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:-:\n{:?}",mine);
         
         let stkcr = me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         mine.extend(self.info.stkin.iter().enumerate().filter_map(|(i,x)| if stkcr == x.0 {Some([i as u64+*height,x.1])} else {None}).collect::<Vec<[u64;2]>>());
@@ -902,15 +959,14 @@ impl LightningSyncBlock {
         changed
 
     }
+
+    /// adds all tags to the bloom filter so validators can check for double spends
     pub fn update_bloom(&self,bloom:&BloomFile,parallel:&bool) {
         if *parallel {
             self.info.tags.par_iter().for_each(|x| bloom.insert(&x.as_bytes()));
         } else {
             self.info.tags.iter().for_each(|x| bloom.insert(&x.as_bytes()));
         }
-    }
-    pub fn save_history_to_ram(&self, history: &mut Vec<OTAccount>) {
-        history.extend(self.info.txout.clone());
     }
 
 
