@@ -57,6 +57,7 @@ fn reward(cumtime: f64, blocktime: f64) -> f64 {
     (1.0/(1.653439E-6*cumtime + 1.0) - 1.0/(1.653439E-6*(cumtime + blocktime) + 1.0))*10E16f64
 }
 
+/// this is different from the one in the gui (b then a then c)
 fn get_pswrd(a: &String, b: &String, c: &String) -> Vec<u8> {
     println!("{}",b);
     println!("{}",a);
@@ -78,15 +79,17 @@ fn main() -> Result<(), MainError> {
         )
         .get_matches();
     let log_level = track_any_err!(matches.value_of("LOG_LEVEL").unwrap().parse())?;
-    let logger = track!(TerminalLoggerBuilder::new()
-        .destination(Destination::Stderr)
-        .level(log_level)
-        .build())?;
+    let logger = track!(TerminalLoggerBuilder::new().destination(Destination::Stderr).level(log_level).build())?;
 
         
 
-    
-    let addr: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), 9876).parse())?;
+    /* server should use local ip or 0.0.0.0 client should connect through global ip address */
+    // let addr: SocketAddr = format!("{}:{}", local_ipaddress::get().unwrap(), 9876).parse().unwrap();
+    let addr: SocketAddr = "0.0.0.0:9876".parse().unwrap();
+
+
+
+
     println!("addr: {:?}",addr);
 
 
@@ -99,7 +102,7 @@ fn main() -> Result<(), MainError> {
 
     let setup = !Path::new("myNode").exists();
     if setup {
-        let person0 = get_pswrd(&"".to_string(),&"".to_string(),&"OOOOO".to_string());
+        let person0 = get_pswrd(&"b".to_string(),&"a".to_string(),&"abcde".to_string());
         let leader = Account::new(&person0).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         let initial_history = vec![(leader,1u64)];
         // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
