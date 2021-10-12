@@ -532,6 +532,7 @@ impl epi::App for TemplateApp {
                             if ui.button("Add Friend").clicked() {
                                 friend_names.push(i.clone());
                                 friends.push(j.clone());
+                                edit_names.push(false);
                             }
                         });
                     }
