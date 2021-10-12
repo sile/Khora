@@ -804,7 +804,7 @@ impl Future for StakerNode {
                 // println!("I'm in the comittee!");
                 self.is_staker = false;
                 self.is_validator = true;
-                if (self.doneerly.elapsed().as_secs() > self.blocktime as u64) && (self.doneerly.elapsed().as_secs() > self.timekeeper.elapsed().as_secs()) {
+                if (self.doneerly.elapsed().as_secs() > self.blocktime as u64) && (self.doneerly.elapsed() > self.timekeeper.elapsed()) {
                     self.waitingforentrybool = true;
                     self.waitingforleaderbool = false;
                     self.waitingforleadertime = Instant::now();
@@ -851,7 +851,7 @@ impl Future for StakerNode {
                         evidence.push(118); // v
                         self.inner.dm_now(evidence,&self.knownvalidators.iter().filter_map(|(&location,node)| {
                             let node = node.with_id(1);
-                            if self.comittee[self.headshard].contains(&(location as usize)) && !(self.inner.plumtree_node().all_push_peers().contains(&node) | (node == self.inner.plumtree_node().id)) {
+                            if self.comittee[self.headshard].contains(&(location as usize)) && !(self.inner.plumtree_node().all_push_peers().contains(&node) || (node == self.inner.plumtree_node().id)) {
                                 println!("(((((((((((((((((((((((((((((((((((((((((((((((dm'ing validators)))))))))))))))))))))))))))))))))))))))))))))))))))))");
                                 Some(node)
                             } else {
