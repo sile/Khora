@@ -1,7 +1,7 @@
 use std::{convert::TryInto, fs, time::Instant};
 
 use curve25519_dalek::scalar::Scalar;
-use eframe::{egui::{self, Checkbox, Label, Sense}, epi};
+use eframe::{egui::{self, Checkbox, Label, Sense, Button}, epi};
 use crossbeam::channel;
 use fibers::sync::mpsc;
 
@@ -475,11 +475,11 @@ impl epi::App for TemplateApp {
                 }
 
                 if !bad_log_info {
-                    ui.button("Login").text_color(egui::Color32::RED);
+                    ui.add(Button::new("Login").fill(egui::Color32::RED));
                 
                 }  else {
                     ui.horizontal(|ui| {
-                        if ui.button("Login").text_color(egui::Color32::GREEN).clicked() {
+                        if ui.add(Button::new("Login").fill(egui::Color32::GREEN)).clicked() {
                             println!("Setting password...");
                             *password0 = pswd_guess0.clone();
                             loop {
