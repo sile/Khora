@@ -526,9 +526,9 @@ impl epi::App for TemplateApp {
                             if ui.button("Delete Row").clicked() {
                                 delete_row_x = loc;
                             }
-                            ui.add(TextEdit::multiline(i).desired_width(0.0));
-                            ui.add(TextEdit::multiline(j).desired_width(0.0));
-                            ui.add(TextEdit::multiline(k).desired_width(0.0));
+                            ui.add(TextEdit::multiline(i).desired_width(12.0));
+                            ui.add(TextEdit::multiline(j).desired_width(30.0));
+                            ui.add(TextEdit::multiline(k).desired_width(12.0));
                             if ui.button("Add Friend").clicked() {
                                 friend_names.push(i.clone());
                                 friends.push(j.clone());
