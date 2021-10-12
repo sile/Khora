@@ -312,7 +312,7 @@ impl epi::App for TemplateApp {
                     }
                 });
                 ui.label("Connection Gate");
-                ui.text_edit_singleline(entrypoint);
+                ui.add(TextEdit::singleline(entrypoint).hint_text("put entry here"));
             });
             ui.heading("KHORA");
             ui.horizontal(|ui| {
