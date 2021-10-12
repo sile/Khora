@@ -658,7 +658,8 @@ impl StakerNode {
                 let mut mymoney = self.mine.iter().map(|x| self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
                 mymoney.extend(self.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
                 mymoney.push(0);
-                println!("my money:\n---------------------------------\n{:?}",mymoney);
+                println!("my money:\n---------------------------------\n{:?}",self.mine.iter().map(|x| self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>());
+                println!("my stake:\n---------------------------------\n{:?}",self.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
                 self.gui_sender.send(mymoney).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
                 let mut thisbnum = self.bnum.to_le_bytes().to_vec();
                 thisbnum.push(2);
@@ -673,6 +674,7 @@ impl StakerNode {
                     let s = self.stkinfo.borrow();
                     let bloom = self.bloom.borrow();
                     println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nhad {} tx",self.txses.len());
+                    self.txses = self.txses.iter().collect::<HashSet<_>>().into_iter().cloned().collect::<Vec<_>>();
                     self.txses.retain(|x| {
                         if let Ok(x) = bincode::deserialize::<PolynomialTransaction>(x) {
                             if x.inputs.last() == Some(&1) {
@@ -1254,18 +1256,18 @@ impl Future for StakerNode {
 
 
                             if mtype == 0 {
-                                let m = m[..std::cmp::min(m.len(),10_000)].to_vec();
+                                let m = m[..std::cmp::min(m.len(),100_000)].to_vec();
                                 if let Ok(t) = bincode::deserialize::<PolynomialTransaction>(&m) {
                                     if self.save_history {
                                         let ok = {
                                             if t.inputs.last() == Some(&1) {
                                                 t.verifystk(&self.stkinfo).is_ok()
                                             } else {
-                                                t.verify().is_ok()
+                                                let bloom = self.bloom.borrow();
+                                                t.tags.iter().all(|y| !bloom.contains(y.as_bytes())) && t.verify().is_ok()
                                             }
                                         };
-                                        let bloom = self.bloom.borrow();
-                                        if t.tags.par_iter().all(|y| !bloom.contains(y.as_bytes())) && ok {
+                                        if ok {
                                             self.txses.push(m);
                                             print!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\ngot a tx, now at {}!",self.txses.len());
                                             self.outer.handle_gossip_now(fullmsg, true);
@@ -1482,7 +1484,6 @@ impl Future for StakerNode {
                                 if tx.verify().is_ok() {
                                     txbin = bincode::serialize(&tx).unwrap();
                                     println!("transaction made!");
-                                    // self.needtosend = Some((txbin.iter().chain(vec![&0u8]).map(|x| *x).collect(),self.mine.iter().map(|x| *x.0).collect::<Vec<_>>()));
                                 } else {
                                     txbin = vec![];
                                     println!("you can't make that transaction!");
