@@ -60,7 +60,6 @@ pub struct TemplateApp {
     sender: mpsc::Sender<Vec<u8>>,
 
     // Example stuff:
-    send_amount: Vec<String>,
     fee: String,
     unstaked: String,
     staked: String,
@@ -91,6 +90,9 @@ pub struct TemplateApp {
     show_reset: bool,
     setup: bool,
     eta: i8,
+    send_name: Vec<String>,
+    send_addr: Vec<String>,
+    send_amnt: Vec<String>,
 
     #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for sender
     timekeeper: Instant,
@@ -104,7 +106,6 @@ impl Default for TemplateApp {
         let (_,r) = channel::bounded::<Vec<u8>>(0);
         let (s,_) = mpsc::channel::<Vec<u8>>();
         TemplateApp{
-            send_amount: vec![],
             stake: "0".to_string(),
             unstake: "0".to_string(),
             fee: "0".to_string(),
@@ -139,6 +140,9 @@ impl Default for TemplateApp {
             eta: 60,
             timekeeper: Instant::now(),
             setup: false,
+            send_name: vec![],
+            send_addr: vec![],
+            send_amnt: vec![],
         }
     }
 }
@@ -225,11 +229,9 @@ impl epi::App for TemplateApp {
                     self.stkaddr = String::from_utf8_lossy(&i).to_string();
                 }
             }
-            self.staking = self.staked != "0".to_string();
         }
 
         let Self {
-            send_amount,
             fee,
             reciever: _,
             sender,
@@ -264,6 +266,9 @@ impl epi::App for TemplateApp {
             show_reset,
             you_cant_do_that,
             setup,
+            send_name,
+            send_addr,
+            send_amnt,
         } = self;
 
  
@@ -460,7 +465,7 @@ impl epi::App for TemplateApp {
                 ui.add(Label::new("If the account does not exist, a new account will automatically be created for you using the entered account info. \n").text_color(egui::Color32::RED));
                 ui.add(Label::new("We recommend that you let the system generate a random secret key for you. \nPlease enter your information very carefully and save it in a safe place. If you lose it you will never be able to access your account. \n"));
 
-            let mut bad_log_info = true;
+                let mut bad_log_info = true;
                 if username.len() < 4 {
                     ui.add(Label::new("Username has to be at least 4 characters long").text_color(egui::Color32::RED));
                     bad_log_info = false;
@@ -481,37 +486,101 @@ impl epi::App for TemplateApp {
                     ui.add(Label::new(" "));
                 }
 
-                // if !bad_log_info {
-                //     ui.add(Button::new("Login").fill(egui::Color32::RED));
-                
-                // }  else {
 
-                    ui.horizontal(|ui| {
-                        if ui.add(Button::new("Login").enabled(bad_log_info)).clicked() {
-                            println!("Setting password...");
-                            *password0 = pswd_guess0.clone();
-                            loop {
-                                if sender.send(get_pswrd(&*password0,&*username,&*secret_key)).is_ok() {
-                                    break
-                                }
+                ui.horizontal(|ui| {
+                    if ui.add(Button::new("Login").enabled(bad_log_info)).clicked() {
+                        println!("Setting password...");
+                        *password0 = pswd_guess0.clone();
+                        loop {
+                            if sender.send(get_pswrd(&*password0,&*username,&*secret_key)).is_ok() {
+                                break
                             }
-                            loop {
-                                if sender.send(vec![!*you_cant_do_that as u8]).is_ok() {
-                                    break
-                                }
-                            }
-                            *setup = false;
-                            frame.quit();
                         }
-                        ui.add(Checkbox::new(you_cant_do_that,"I want to be a staker!"));
-                    });
-    //            }
+                        loop {
+                            if sender.send(vec![!*staking as u8]).is_ok() {
+                                break
+                            }
+                        }
+                        *setup = false;
+                        frame.quit();
+                    }
+                });
+                ui.add(Checkbox::new(staking,"I want to be a staker!"));
             } else if pswd_guess0 != password0 {
                 ui.add(Label::new("password incorrect, account features disabled, enter correct password to unlock").text_color(egui::Color32::RED));
             }
             if *dont_trust_amounts {
                 ui.add(Label::new("money owned is not yet verified").text_color(egui::Color32::RED));
             }
+            ui.horizontal(|ui| {
+                ui.label("Name      Address     Amount");
+                if ui.button("Add Row").clicked() {
+                    send_name.push("".to_string());
+                    send_addr.push("".to_string());
+                    send_amnt.push("".to_string());
+                }
+                if ui.button("Clear Rows").clicked() {
+                    *send_name = vec![];
+                    *send_addr = vec![];
+                    *send_amnt = vec![];
+                }
+                if pswd_guess0 == password0 {
+                    if ui.button("Send Transaction").clicked() && !*setup {
+                        let mut m = vec![];
+                        let mut tot = 0u64;
+                        for (who,amnt) in send_addr.iter_mut().zip(send_amnt.iter_mut()) {
+                            let x = amnt.parse::<u64>().unwrap();
+                            if x > 0 {
+                                m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
+                                m.extend(x.to_le_bytes().to_vec());
+                                tot += x;
+                            }
+                        }
+                        if *stkspeand {
+                            let x = staked.parse::<u64>().unwrap() as i64 - tot as i64 - fee.parse::<u64>().unwrap() as i64;
+                            if x > 0 {
+                                m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
+                                m.extend((x as u64).to_le_bytes());
+                            }
+                            m.push(63);
+                            *you_cant_do_that = staked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
+                        } else {
+                            let x = unstaked.parse::<u64>().unwrap() as i64 - tot as i64 - fee.parse::<u64>().unwrap() as i64;
+                            if x > 0 {
+                                m.extend(str::to_ascii_lowercase(&addr).as_bytes());
+                                m.extend((x as u64).to_le_bytes());
+                            }
+                            m.push(33);
+                            *you_cant_do_that = unstaked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
+                        }
+                        if !*you_cant_do_that {
+                            m.push(33);
+                            sender.send(m).expect("something's wrong with communication from the gui");
+                        }
+                    }
+                }
+                if *staking {
+                    ui.add(Checkbox::new(stkspeand,"Spend with staked money"));
+                }
+            });
+            let mut delete_row_x = usize::MAX;
+            egui::ScrollArea::auto_sized().show(ui,|ui| {
+                for (loc,((i,j),k)) in send_name.iter_mut().zip(send_addr.iter_mut()).zip(send_amnt.iter_mut()).enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(&*i);
+                        ui.text_edit_singleline(j);
+                        ui.text_edit_singleline(k);
+                    });
+                    if ui.button("Delete Row").clicked() {
+                        delete_row_x = loc;
+                    }
+                }
+                if delete_row_x != usize::MAX {
+                    send_name.remove(delete_row_x);
+                    send_addr.remove(delete_row_x);
+                    send_amnt.remove(delete_row_x);
+                }
+            });
             if *you_cant_do_that && !*setup {
                 if ui.add(Label::new("you don't have enough funds to make this transaction").text_color(egui::Color32::RED).sense(Sense::hover())).hovered() {
                     *you_cant_do_that = false;
@@ -579,6 +648,7 @@ impl epi::App for TemplateApp {
             });
         }
         
+
         egui::SidePanel::right("Right Panel").show(ctx, |ui| {
             ui.heading("Friends");
             ui.label("Add Friend:");
@@ -597,64 +667,18 @@ impl epi::App for TemplateApp {
                     friends.insert(i, friend_adding.clone());
                     friend_names.insert(i, name_adding.clone());
                     edit_names.insert(i, false);
-                    send_amount.insert(i, "0".to_string());
                 } else {
                     friends.push(friend_adding.clone());
                     friend_names.push(name_adding.clone());
                     edit_names.push(false);
-                    send_amount.push("0".to_string());
                 }
                 *friend_adding = "".to_string();
                 *name_adding = "".to_string();
             }
-            ui.horizontal(|ui| {
-                if ui.button("Clear Transaction").clicked() {
-                    send_amount.iter_mut().for_each(|x| *x = "0".to_string());
-                }
-                if pswd_guess0 == password0 && !*setup {
-                    if ui.button("Send Transaction").clicked() && !*setup {
-                        let mut m = vec![];
-                        let mut tot = 0u64;
-                        for (who,amnt) in friends.iter_mut().zip(send_amount.iter_mut()) {
-                            let x = amnt.parse::<u64>().unwrap();
-                            if x > 0 {
-                                m.extend(str::to_ascii_lowercase(&who).as_bytes().to_vec());
-                                m.extend(x.to_le_bytes().to_vec());
-                                tot += x;
-                            }
-                        }
-                        if *stkspeand {
-                            let x = staked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
-                            if x > 0 {
-                                m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
-                                m.extend(x.to_le_bytes());
-                            }
-                            m.push(63);
-                            *you_cant_do_that = staked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
-                        } else {
-                            let x = unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
-                            if x > 0 {
-                                m.extend(str::to_ascii_lowercase(&addr).as_bytes());
-                                m.extend(x.to_le_bytes());
-                            }
-                            m.push(33);
-                            *you_cant_do_that = unstaked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
-                        }
-                        if !*you_cant_do_that {
-                            m.push(33);
-                            sender.send(m).expect("something's wrong with communication from the gui");
-                        }
-                    }
-                }
-                if *staking {
-                    ui.add(Checkbox::new(stkspeand,"Spend with staked money"));
-                }
-            });
             let mut friend_deleted = usize::MAX;
             ui.label("Friends: ");
             egui::ScrollArea::auto_sized().always_show_scroll(true).show(ui,|ui| {
-                for ((i,((addr,name),amnt)),e) in friends.iter_mut().zip(friend_names.iter_mut()).zip(send_amount.iter_mut()).enumerate().zip(edit_names.iter_mut()) {
-                    // println!("this is a friend!!!");
+                for ((i,(addr,name)),e) in friends.iter_mut().zip(friend_names.iter_mut()).enumerate().zip(edit_names.iter_mut()) {
                     if *e {
                         ui.text_edit_singleline(name);
                         ui.text_edit_singleline(addr);
@@ -671,8 +695,11 @@ impl epi::App for TemplateApp {
                                 friend_deleted = i;
                             }
                         } else {
-                            ui.label("Send:");
-                            ui.text_edit_singleline(amnt);
+                            if ui.button("Transact With").clicked() {
+                                send_name.push(name.to_string());
+                                send_addr.push(addr.to_string());
+                                send_amnt.push("0".to_string());
+                            }
                         }
                     });
                 }
@@ -680,7 +707,6 @@ impl epi::App for TemplateApp {
             if friend_deleted != usize::MAX {
                 friend_names.remove(friend_deleted);
                 friends.remove(friend_deleted);
-                send_amount.remove(friend_deleted);
                 edit_names.remove(friend_deleted);
             }
         });
