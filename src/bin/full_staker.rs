@@ -174,7 +174,7 @@ fn main() -> Result<(), MainError> {
         let node = StakerNode {
             inner: NodeBuilder::new().finish( ServiceBuilder::new(addr).finish(ThreadPoolExecutor::new().unwrap().handle(), SerialLocalNodeIdGenerator::new()).handle()),
             outer: NodeBuilder::new().finish( ServiceBuilder::new(addr).finish(ThreadPoolExecutor::new().unwrap().handle(), SerialLocalNodeIdGenerator::new()).handle()),
-            save_history: (matches.value_of("SAVE_HISTORY").unwrap() != "0"),
+            save_history: will_stk,
             me,
             mine: HashMap::new(),
             smine: smine.clone(), // [location, amount]
