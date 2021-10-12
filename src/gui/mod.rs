@@ -517,7 +517,7 @@ impl epi::App for TemplateApp {
             }
             if !*setup {
                 ui.horizontal(|ui| {
-                    ui.heading("                            Name                                Address                                             Amount");
+                    ui.heading("                            Name                                Address                                  Amount");
                 });
                 let mut delete_row_x = usize::MAX;
                 egui::ScrollArea::auto_sized().show(ui,|ui| {
@@ -526,9 +526,9 @@ impl epi::App for TemplateApp {
                             if ui.button("Delete Row").clicked() {
                                 delete_row_x = loc;
                             }
-                            ui.add(TextEdit::multiline(i).desired_width(90.0));
-                            ui.add(TextEdit::multiline(j).desired_width(200.0));
-                            ui.add(TextEdit::multiline(k).desired_width(90.0));
+                            ui.add(TextEdit::multiline(i).desired_width(90.0).desired_rows(1));
+                            ui.add(TextEdit::multiline(j).desired_width(300.0).desired_rows(2));
+                            ui.add(TextEdit::multiline(k).desired_width(90.0).desired_rows(1));
                             if ui.button("Add Friend").clicked() {
                                 friend_names.push(i.clone());
                                 friends.push(j.clone());
