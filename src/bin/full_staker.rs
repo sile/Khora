@@ -102,7 +102,7 @@ fn main() -> Result<(), MainError> {
 
     let setup = !Path::new("myNode").exists();
     if setup {
-        let person0 = get_pswrd(&"b".to_string(),&"a".to_string(),&"abcde".to_string());
+        let person0 = get_pswrd(&"a".to_string(),&"b".to_string(),&"abcde".to_string());
         let leader = Account::new(&person0).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
         let initial_history = vec![(leader,1u64)];
         // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
@@ -216,7 +216,6 @@ fn main() -> Result<(), MainError> {
             newest: 0u64,
             rmems: HashMap::new(),
             rname: vec![],
-            is_user: smine.is_empty(),
             gui_sender: usend_setup,
             gui_reciever: urecv_setup,
             moneyreset: None,
@@ -318,7 +317,6 @@ struct SavedNode {
     view: Vec<SocketAddr>,
     rmems: HashMap<u64,OTAccount>,
     rname: Vec<u8>,
-    is_user: bool,
     moneyreset: Option<Vec<u8>>,
     oldstk: Option<(Account, Vec<[u64;2]>, u64)>,
     cumtime: f64,
@@ -372,7 +370,6 @@ struct StakerNode {
     newest: u64,
     rmems: HashMap<u64,OTAccount>,
     rname: Vec<u8>,
-    is_user: bool,
     moneyreset: Option<Vec<u8>>,
     sync_returnaddr: Option<NodeId>,
     sync_theirnum: u64,
@@ -411,7 +408,6 @@ impl StakerNode {
                 view: self.inner.hyparview_node().active_view().iter().map(|x| x.address()).collect::<Vec<_>>(),
                 rmems: self.rmems.clone(),
                 rname: self.rname.clone(),
-                is_user: self.is_user,
                 moneyreset: self.moneyreset.clone(),
                 oldstk: self.oldstk.clone(),
                 cumtime: self.cumtime,
@@ -477,7 +473,6 @@ impl StakerNode {
             newest: 0u64,
             rmems: HashMap::new(),
             rname: vec![],
-            is_user: sn.is_user,
             moneyreset: sn.moneyreset,
             sync_returnaddr: None,
             sync_theirnum: 0u64,
@@ -576,19 +571,15 @@ impl StakerNode {
                     guitruster = !lastlightning.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever) && guitruster;
                     self.gui_sender.send(vec![guitruster as u8,1]).expect("there's a problem communicating to the gui!");
 
-                    if !self.is_user {
+                    if self.save_history {
                         lastlightning.update_bloom(&mut self.bloom,&self.is_validator);
-                    }
-                    if let Some(lastblock) = largeblock {
-                        if !self.is_user {
+                        if let Some(lastblock) = largeblock {
                             println!("saving block...");
                             let mut f = File::create(format!("blocks/b{}",lastlightning.bnum)).unwrap();
                             f.write_all(&lastblock).unwrap(); // writing doesnt show up in blocks in vs code immediatly
                             let mut f = File::create(format!("blocks/l{}",lastlightning.bnum)).unwrap();
                             f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
-
                         }
-
                     }
                     // as a user you dont save the file
                     self.keylocation = self.smine.iter().map(|x| x[0]).collect();
@@ -676,7 +667,7 @@ impl StakerNode {
                 if self.bnum % 128 == 0 {
                     self.overthrown = HashSet::new();
                 }
-                if !self.is_user {
+                if self.save_history {
                     let s = self.stkinfo.borrow();
                     let bloom = self.bloom.borrow();
                     println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nhad {} tx",self.txses.len());
@@ -711,7 +702,6 @@ impl StakerNode {
 
                 self.gui_sender.send(vec![self.blocktime as u8,128]).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
 
-                self.is_user = self.smine.is_empty();
                 self.sigs = vec![];
                 self.groupsent = [false;2];
                 self.points = HashMap::new();
@@ -1263,7 +1253,7 @@ impl Future for StakerNode {
                             if mtype == 0 {
                                 let m = m[..std::cmp::min(m.len(),10_000)].to_vec();
                                 if let Ok(t) = bincode::deserialize::<PolynomialTransaction>(&m) {
-                                    if !self.is_user {
+                                    if self.save_history {
                                         let ok = {
                                             if t.inputs.last() == Some(&1) {
                                                 t.verifystk(&self.stkinfo).is_ok()
@@ -1292,7 +1282,7 @@ impl Future for StakerNode {
                                 }
                             } else if mtype == 60 /* < */ { // redo sync request
                                 let mut mynum = self.bnum.to_le_bytes().to_vec();
-                                if self.is_user {
+                                if self.save_history {
                                     mynum.push(108); //l
                                 } else {
                                     mynum.push(102); //f
@@ -1331,7 +1321,7 @@ impl Future for StakerNode {
                                     self.inner.handle_gossip_now(fullmsg, false);
                                 }
                             } else if mtype == 121 /* y */ {
-                                if !self.is_user {
+                                if self.save_history {
                                     if self.sync_returnaddr.is_none() {
                                         if let Some(theyfast) = m.pop() {
                                             if let Ok(m) = m.try_into() {
@@ -1381,7 +1371,7 @@ impl Future for StakerNode {
             USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF |||||||||||||
             ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF
             */
-            if self.is_user {
+            if !self.save_history {
                 if let Some(outs) = self.outs.clone() {
                     let ring = recieve_ring(&self.rname).expect("shouldn't fail");
                     let mut rlring = ring.iter().map(|x| self.rmems[x].clone()).collect::<Vec<OTAccount>>();
@@ -1437,7 +1427,7 @@ impl Future for StakerNode {
                         if txtype == 33 /* ! */ {
                             let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(x.0,x.1.clone())).unzip();
 
-                            if self.is_user {
+                            if !self.save_history {
                                 if self.mine.len() > 0 {
                                     let helpers = self.outer.plumtree_node().all_push_peers().into_iter().collect::<Vec<_>>();
                                 
@@ -1619,10 +1609,10 @@ impl Future for StakerNode {
 
                     } else if istx == 121 /* y */ {
                         let mut mynum = self.bnum.to_le_bytes().to_vec();
-                        if self.is_user && self.oldstk.is_none(){
-                            mynum.push(108); //l
-                        } else {
+                        if self.save_history {
                             mynum.push(102); //f
+                        } else {
+                            mynum.push(108); //l
                         }
                         mynum.push(121);
                         let mut friend = self.outer.plumtree_node().all_push_peers();
