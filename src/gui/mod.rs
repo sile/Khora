@@ -140,9 +140,9 @@ impl Default for TemplateApp {
             eta: 60,
             timekeeper: Instant::now(),
             setup: false,
-            send_name: vec![],
-            send_addr: vec![],
-            send_amnt: vec![],
+            send_name: vec!["".to_string()],
+            send_addr: vec!["".to_string()],
+            send_amnt: vec!["".to_string()],
         }
     }
 }
@@ -363,26 +363,26 @@ impl epi::App for TemplateApp {
                     });
                 }
     
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(stake);
-                    if pswd_guess0 == password0 {
-                        if ui.button("Stake").clicked() && !*setup {
-                            let mut m = vec![];
-                            m.extend(stkaddr.as_bytes().to_vec());
-                            m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
-                            println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",unstaked,fee,stake);
-                            let x = unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap();
-                            if x > 0 {
-                                m.extend(addr.as_bytes().to_vec());
-                                m.extend(x.to_le_bytes().to_vec());
-                            }
-                            m.push(33);
-                            m.push(33);
-                            sender.send(m).expect("something's wrong with communication from the gui");
-                        }
-                    }
-                });
                 if *staking {
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(stake);
+                        if pswd_guess0 == password0 {
+                            if ui.button("Stake").clicked() && !*setup {
+                                let mut m = vec![];
+                                m.extend(stkaddr.as_bytes().to_vec());
+                                m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
+                                println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",unstaked,fee,stake);
+                                let x = unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap();
+                                if x > 0 {
+                                    m.extend(addr.as_bytes().to_vec());
+                                    m.extend(x.to_le_bytes().to_vec());
+                                }
+                                m.push(33);
+                                m.push(33);
+                                sender.send(m).expect("something's wrong with communication from the gui");
+                            }
+                        }
+                    });
                     ui.horizontal(|ui| {
                         ui.text_edit_singleline(unstake);
                         if pswd_guess0 == password0 {
@@ -423,7 +423,7 @@ impl epi::App for TemplateApp {
                     ui.text_edit_singleline(username);
                 });
             } else { 
-                ui.label(&*username); 
+                ui.heading(&*username); 
             }
 
             ui.horizontal(|ui| {
@@ -513,12 +513,31 @@ impl epi::App for TemplateApp {
             }
             if !*setup {
                 ui.horizontal(|ui| {
-                    if ui.button("Clear Rows").clicked() {
-                        *send_name = vec![];
-                        *send_addr = vec![];
-                        *send_amnt = vec![];
-                    }
                     ui.heading("Name                Address                                             Amount");
+                });
+                let mut delete_row_x = usize::MAX;
+                egui::ScrollArea::auto_sized().show(ui,|ui| {
+                    for (loc,((i,j),k)) in send_name.iter_mut().zip(send_addr.iter_mut()).zip(send_amnt.iter_mut()).enumerate() {
+                        ui.horizontal(|ui| {
+                            if ui.button("Delete Row").clicked() {
+                                delete_row_x = loc;
+                            }
+                            ui.label(&*i);
+                            ui.text_edit_singleline(j);
+                            ui.text_edit_singleline(k);
+                        });
+                    }
+                    if delete_row_x != usize::MAX {
+                        if send_name.len() == 1 {
+                            send_name[0] = "".to_string();
+                            send_addr[0] = "".to_string();
+                            send_amnt[0] = "".to_string();
+                        } else {
+                            send_name.remove(delete_row_x);
+                            send_addr.remove(delete_row_x);
+                            send_amnt.remove(delete_row_x);
+                        }
+                    }
                     if ui.button("Add Row").clicked() {
                         send_name.push("".to_string());
                         send_addr.push("".to_string());
@@ -562,24 +581,6 @@ impl epi::App for TemplateApp {
                     }
                     if *staking {
                         ui.add(Checkbox::new(stkspeand,"Spend with staked money"));
-                    }
-                });
-                let mut delete_row_x = usize::MAX;
-                egui::ScrollArea::auto_sized().show(ui,|ui| {
-                    for (loc,((i,j),k)) in send_name.iter_mut().zip(send_addr.iter_mut()).zip(send_amnt.iter_mut()).enumerate() {
-                        ui.horizontal(|ui| {
-                            if ui.button("Delete Row").clicked() {
-                                delete_row_x = loc;
-                            }
-                            ui.label(&*i);
-                            ui.text_edit_singleline(j);
-                            ui.text_edit_singleline(k);
-                        });
-                    }
-                    if delete_row_x != usize::MAX {
-                        send_name.remove(delete_row_x);
-                        send_addr.remove(delete_row_x);
-                        send_amnt.remove(delete_row_x);
                     }
                 });
                 if *you_cant_do_that && !*setup {
