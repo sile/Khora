@@ -1,7 +1,7 @@
 use std::{convert::TryInto, fs, time::Instant};
 
 use curve25519_dalek::scalar::Scalar;
-use eframe::{egui::{self, Checkbox, Label, Sense, Button}, epi};
+use eframe::{egui::{self, Button, Checkbox, Label, Sense, TextEdit}, epi};
 use crossbeam::channel;
 use fibers::sync::mpsc;
 
@@ -526,9 +526,9 @@ impl epi::App for TemplateApp {
                             if ui.button("Delete Row").clicked() {
                                 delete_row_x = loc;
                             }
-                            ui.text_edit_singleline(i);
-                            ui.text_edit_singleline(j);
-                            ui.text_edit_singleline(k);
+                            ui.add(TextEdit::multiline(i).desired_width(0.0));
+                            ui.add(TextEdit::multiline(j).desired_width(0.0));
+                            ui.add(TextEdit::multiline(k).desired_width(0.0));
                             if ui.button("Add Friend").clicked() {
                                 friend_names.push(i.clone());
                                 friends.push(j.clone());
