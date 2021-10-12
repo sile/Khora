@@ -166,7 +166,10 @@ fn main() -> Result<(), MainError> {
         let mut keylocation = HashSet::new();
 
         if will_stk {
-            NextBlock::initialize_saving();
+            if !lightning_yielder {
+                NextBlock::initialize_saving();
+            }
+            LightningSyncBlock::initialize_saving();
             History::initialize();
             BloomFile::initialize_bloom_file();    
         }
@@ -565,7 +568,10 @@ impl StakerNode {
                     NextBlock::pay_all_empty(&self.headshard, &mut self.comittee, &mut self.stkinfo, reward);
 
                     if self.save_history {
-                        NextBlock::save(&vec![]);
+                        if !self.lightning_yielder {
+                            NextBlock::save(&vec![]);
+                        }
+                        LightningSyncBlock::save(&vec![]);
                     }
 
                     if let Some(oldstk) = &mut self.oldstk {
@@ -594,7 +600,9 @@ impl StakerNode {
                     if self.save_history {
                         println!("saving block...");
                         lastlightning.update_bloom(&mut self.bloom,&self.is_validator);
-                        NextBlock::save(&largeblock.unwrap()); // important! if you select to recieve full blocks you CAN NOT recieve with lightning blocks (because if you do youd miss full blocks)
+                        if !self.lightning_yielder {
+                            NextBlock::save(&largeblock.unwrap()); // important! if you select to recieve full blocks you CAN NOT recieve with lightning blocks (because if you do youd miss full blocks)
+                        }
                         LightningSyncBlock::save(&m);
                     }
                     // as a user you dont save the file
@@ -609,7 +617,10 @@ impl StakerNode {
                     self.gui_sender.send(vec![!NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut self.smine, reward) as u8,1]).expect("there's a problem communicating to the gui!");
                     NextBlock::pay_all_empty(&self.headshard, &mut self.comittee, &mut self.stkinfo, reward);
                     if self.save_history {
-                        NextBlock::save(&vec![]);
+                        if !self.lightning_yielder {
+                            NextBlock::save(&vec![]);
+                        }
+                        LightningSyncBlock::save(&vec![]);
                     }
                 }
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
@@ -1320,7 +1331,7 @@ impl Future for StakerNode {
                                     println!("you're isolated");
                                 }
                             } else if mtype == 108 /* l */ {
-                                if lightning_yielder {
+                                if self.lightning_yielder {
                                     if let Ok(lastblock) = bincode::deserialize::<LightningSyncBlock>(&m) {
                                         self.readlightning(lastblock, m, None); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
                                     }

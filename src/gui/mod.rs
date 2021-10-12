@@ -397,7 +397,7 @@ impl epi::App for TemplateApp {
                 ui.label(format!("current block: {}",block_number));
                 ui.horizontal(|ui| {
                     ui.label("next block in");
-                    let x = *eta as i32 - timekeeper.elapsed().as_secs() as i32;
+                    let x = *eta as i32 - timekeeper.elapsed().as_secs() as i32 + 1i32;
                     if x > 0 {
                         ui.add(Label::new(format!("{}",x)).strong().text_color(egui::Color32::YELLOW));
                     } else {
