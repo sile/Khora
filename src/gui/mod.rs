@@ -359,6 +359,9 @@ impl epi::App for TemplateApp {
                     }
                     ui.label(format!("{} - {}",password0,secret_key));
                 });
+                if !*setup {
+                    ui.add(Label::new("password incorrect, account features disabled, enter correct password to unlock").text_color(egui::Color32::RED));
+                }
             } else if *setup {
                 ui.horizontal(|ui| {
                     if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {
@@ -509,8 +512,6 @@ impl epi::App for TemplateApp {
                     }
                 });
                 ui.add(Checkbox::new(staking,"I want to be a staker!"));
-            } else if pswd_guess0 != password0 {
-                ui.add(Label::new("password incorrect, account features disabled, enter correct password to unlock").text_color(egui::Color32::RED));
             }
             if *dont_trust_amounts {
                 ui.add(Label::new("money owned is not yet verified").text_color(egui::Color32::RED));
