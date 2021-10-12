@@ -484,7 +484,7 @@ impl epi::App for TemplateApp {
             if *dont_trust_amounts {
                 ui.add(Label::new("money owned is not yet verified").text_color(egui::Color32::RED));
             }
-            if *you_cant_do_that {
+            if *you_cant_do_that && !*setup {
                 if ui.add(Label::new("you don't have enough funds to make this transaction").text_color(egui::Color32::RED).sense(Sense::hover())).hovered() {
                     *you_cant_do_that = false;
                 }

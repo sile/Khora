@@ -51,7 +51,8 @@ const WARNINGTIME: usize = REPLACERATE*5;
 const BLANKS_IN_A_ROW: u64 = 60;
 const USURP_TIME: u64 = 3600;
 fn blocktime(cumtime: f64) -> f64 {
-    60f64/(6.337618E-8f64*cumtime+2f64).ln()
+    // 60f64/(6.337618E-8f64*cumtime+2f64).ln()
+    10.0
 }
 fn reward(cumtime: f64, blocktime: f64) -> f64 {
     (1.0/(1.653439E-6*cumtime + 1.0) - 1.0/(1.653439E-6*(cumtime + blocktime) + 1.0))*10E16f64
@@ -199,7 +200,7 @@ fn main() -> Result<(), MainError> {
             bannedlist: HashSet::new(),
             points: HashMap::new(),
             scalars: HashMap::new(),
-            timekeeper: Instant::now(),
+            timekeeper: Instant::now() + Duration::from_secs(1),
             waitingforentrybool: true,
             waitingforleaderbool: false,
             waitingforleadertime: Instant::now(),
@@ -782,7 +783,7 @@ impl Future for StakerNode {
         let mut did_something = true;
         while did_something {
             did_something = false;
-            // print!(".");
+            print!(".");
 
             /*\_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner|\
             \*/
@@ -799,6 +800,10 @@ impl Future for StakerNode {
             if self.keylocation.iter().all(|keylocation| !self.comittee[self.headshard].contains(&(*keylocation as usize)) ) { // if you're not in the comittee
                 self.is_staker = true;
                 self.is_validator = false;
+            } else { // if you're in the comittee
+                // println!("I'm in the comittee!");
+                self.is_staker = false;
+                self.is_validator = true;
                 if (self.doneerly.elapsed().as_secs() > self.blocktime as u64) && (self.doneerly.elapsed().as_secs() > self.timekeeper.elapsed().as_secs()) {
                     self.waitingforentrybool = true;
                     self.waitingforleaderbool = false;
@@ -822,9 +827,6 @@ impl Future for StakerNode {
                     self.timekeeper = Instant::now();
                     self.usurpingtime = Instant::now();
                 }
-            } else { // if you're in the comittee
-                self.is_staker = false;
-                self.is_validator = true;
             }
             self.keylocation.clone().iter().for_each(|keylocation| { // get these numbers to be based on something
                 let headqueue = self.queue[self.headshard].clone();
