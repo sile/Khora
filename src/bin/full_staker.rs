@@ -157,6 +157,7 @@ fn main() -> Result<(), MainError> {
 
         if will_stk {
             std::fs::create_dir("blocks");
+            NextBlock::initialize_saving();
             History::initialize();
             BloomFile::initialize_bloom_file();    
         }
@@ -223,7 +224,7 @@ fn main() -> Result<(), MainError> {
             moneyreset: None,
             sync_returnaddr: None,
             sync_theirnum: 0u64,
-            sync_lightning: 'b',
+            sync_lightning: false,
             outs: None,
             groupsent: [false;2],
             oldstk: None,
@@ -375,7 +376,7 @@ struct StakerNode {
     moneyreset: Option<Vec<u8>>,
     sync_returnaddr: Option<NodeId>,
     sync_theirnum: u64,
-    sync_lightning: char,
+    sync_lightning: bool,
     outs: Option<Vec<(Account, Scalar)>>,
     groupsent: [bool;2],
     oldstk: Option<(Account, Vec<[u64;2]>, u64)>,
@@ -478,7 +479,7 @@ impl StakerNode {
             moneyreset: sn.moneyreset,
             sync_returnaddr: None,
             sync_theirnum: 0u64,
-            sync_lightning: 'b',
+            sync_lightning: false,
             outs: None,
             groupsent: [false;2],
             oldstk: sn.oldstk,
@@ -549,6 +550,9 @@ impl StakerNode {
                     NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut self.smine, reward);
                     NextBlock::pay_all_empty(&self.headshard, &mut self.comittee, &mut self.stkinfo, reward);
 
+                    if self.save_history {
+                        NextBlock::save(&vec![]);
+                    }
 
                     if let Some(oldstk) = &mut self.oldstk {
                         NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut oldstk.1, reward);
@@ -574,14 +578,13 @@ impl StakerNode {
                     self.gui_sender.send(vec![guitruster as u8,1]).expect("there's a problem communicating to the gui!");
 
                     if self.save_history {
+                        println!("saving block...");
                         lastlightning.update_bloom(&mut self.bloom,&self.is_validator);
                         if let Some(lastblock) = largeblock {
-                            println!("saving block...");
-                            let mut f = File::create(format!("blocks/b{}",lastlightning.bnum)).unwrap();
-                            f.write_all(&lastblock).unwrap(); // writing doesnt show up in blocks in vs code immediatly
-                            let mut f = File::create(format!("blocks/l{}",lastlightning.bnum)).unwrap();
-                            f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
+                            NextBlock::save(&lastblock);
                         }
+                        let mut f = File::create(format!("blocks/l{}",lastlightning.bnum)).unwrap();
+                        f.write_all(&m).unwrap(); // writing doesnt show up in blocks in vs code immediatly
                     }
                     // as a user you dont save the file
                     self.keylocation = self.smine.iter().map(|x| x[0]).collect();
@@ -594,6 +597,9 @@ impl StakerNode {
                 } else {
                     self.gui_sender.send(vec![!NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut self.smine, reward) as u8,1]).expect("there's a problem communicating to the gui!");
                     NextBlock::pay_all_empty(&self.headshard, &mut self.comittee, &mut self.stkinfo, reward);
+                    if self.save_history {
+                        NextBlock::save(&vec![]);
+                    }
                 }
                 // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
@@ -1228,18 +1234,27 @@ impl Future for StakerNode {
             if self.is_staker { // users have is_staker true
                 if let Some(addr) = self.sync_returnaddr {
                     for b in self.sync_theirnum..std::cmp::min(self.sync_theirnum+10, self.bnum) {
-                        let file = format!("blocks/{}{}",self.sync_lightning,b);
-                        println!("checking for file {:?}...",file);
-                        if let Ok(mut file) = File::open(file) {
-                            let mut x = vec![];
-                            file.read_to_end(&mut x).unwrap();
-                            println!("sending block {} of {}",b,self.bnum);
-                            if self.sync_lightning == 'l' {
-                                x.push(108); //l
-                            } else {
-                                x.push(3);
+                        // let file = format!("blocks/{}{}",self.sync_lightning,b);
+                        // println!("checking for file {:?}...",file);
+                        // if let Ok(mut file) = File::open(file) {
+                        //     let mut x = vec![];
+                        //     file.read_to_end(&mut x).unwrap();
+                        //     println!("sending block {} of {}",b,self.bnum);
+                        //     if self.sync_lightning == 'l' {
+                        //         x.push(108); //l
+                        //     } else {
+                        //         x.push(3);
+                        //     }
+                        // }
+                        if self.sync_lightning {
+
+                        } else {
+                            if let Ok(mut x) = NextBlock::read(&b) {
+                                if !x.is_empty() {
+                                    x.push(3);
+                                    self.outer.dm(x,&vec![addr],false);
+                                }
                             }
-                            self.outer.dm(x,&vec![addr],false);
                         }
                         self.sync_theirnum += 1;
                     }
@@ -1333,9 +1348,9 @@ impl Future for StakerNode {
                                                 self.sync_returnaddr = Some(msg.id.node());
                                                 self.sync_theirnum = u64::from_le_bytes(m);
                                                 if theyfast == 108 {
-                                                    self.sync_lightning = 'l';
+                                                    self.sync_lightning = true;
                                                 } else {
-                                                    self.sync_lightning = 'b';
+                                                    self.sync_lightning = false;
                                                 }
                                             }
                                         }

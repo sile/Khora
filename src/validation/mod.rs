@@ -568,6 +568,49 @@ impl NextBlock {
         changed
     }
 
+    /// reads the specified block from the file
+    pub fn read(bnum: &u64) -> Result<Vec<u8>,&'static str> {
+        let mut r = BufReader::new(File::open("blocks_metadata").unwrap());
+        let mut datalocation = [0u8;16];
+        r.seek(SeekFrom::Start(bnum*8)).expect("Seek failed");
+        let bytes_read = r.read(&mut datalocation).expect("should work");
+        if bytes_read == 16 {
+            let loc1 = u64::from_le_bytes(datalocation[..8].try_into().unwrap());
+            let loc2 = u64::from_le_bytes(datalocation[8..].try_into().unwrap());
+            let mut bytes = (loc1..loc2).map(|_| 0u8).collect::<Vec<_>>();
+            let mut r = BufReader::new(File::open("blocks").unwrap());
+            r.seek(SeekFrom::Start(loc1)).expect("Seek failed");
+            r.read(&mut bytes).unwrap();
+            Ok(bytes)
+        } else if bytes_read == 8 {
+            let loc1 = u64::from_le_bytes(datalocation[..8].try_into().unwrap());
+            let mut bytes = vec![];
+            let mut r = BufReader::new(File::open("blocks").unwrap());
+            r.seek(SeekFrom::Start(loc1)).expect("Seek failed");
+            r.read_to_end(&mut bytes).unwrap();
+            Ok(bytes)
+        } else {
+            Err("We don't have that block")
+        }
+    }
+
+    /// saves the block to the full block file and adds the metadata to the metadata file
+    /// you must save empty blocks to metadata for this to work (save vec![])
+    pub fn save(serialized_block: &Vec<u8>) {
+        let mut f = OpenOptions::new().append(true).open("blocks").unwrap();
+        f.write(&serialized_block).expect("should work");
+        let currentlen = f.seek(SeekFrom::End(0)).expect("Seek failed");
+        let mut f = OpenOptions::new().append(true).open("blocks_metadata").unwrap();
+        f.write(&(currentlen + serialized_block.len() as u64).to_le_bytes()).expect("should work");
+    }
+
+    /// created the full block file and metadata to the metadata file
+    pub fn initialize_saving() {
+        File::create("blocks").expect("should work");
+        let mut f = File::create("blocks_metadata").expect("should work");
+        f.write(&[0u8;8]).expect("should work");
+    }
+
     /// converts a full block into lightning block
     pub fn tolightning(&self) -> LightningSyncBlock {
         LightningSyncBlock {
