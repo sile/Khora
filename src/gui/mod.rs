@@ -93,6 +93,7 @@ pub struct TemplateApp {
     send_name: Vec<String>,
     send_addr: Vec<String>,
     send_amnt: Vec<String>,
+    lightning_yielder: bool,
 
     #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for sender
     timekeeper: Instant,
@@ -143,6 +144,7 @@ impl Default for TemplateApp {
             send_name: vec!["".to_string()],
             send_addr: vec!["".to_string()],
             send_amnt: vec!["".to_string()],
+            lightning_yielder: true,
         }
     }
 }
@@ -269,6 +271,7 @@ impl epi::App for TemplateApp {
             send_name,
             send_addr,
             send_amnt,
+            lightning_yielder,
         } = self;
 
  
@@ -401,23 +404,19 @@ impl epi::App for TemplateApp {
                         ui.add(Label::new(format!("Shard late; initiating takeover in {}",x + 3600)).strong().text_color(egui::Color32::RED));
                     }
                 });
-            }
-            ui.horizontal(|ui| {
-                if *staking {
-                    ui.label("Unstaked Khora");
-                } else {
-                    ui.label("Khora Balance");
-                }
-                ui.label(&*unstaked);
-            });
-            if *staking {
                 ui.horizontal(|ui| {
-                    ui.label("Staked Khora");
-                    ui.label(&*staked);
+                    if *staking {
+                        ui.label("Unstaked Khora");
+                    } else {
+                        ui.label("Khora Balance");
+                    }
+                    ui.label(&*unstaked);
                 });
-            }
-            if !*setup {
                 if *staking {
+                    ui.horizontal(|ui| {
+                        ui.label("Staked Khora");
+                        ui.label(&*staked);
+                    });
                     ui.horizontal(|ui| {
                         ui.text_edit_singleline(stake);
                         if pswd_guess0 == password0 {
@@ -510,11 +509,23 @@ impl epi::App for TemplateApp {
                                 break
                             }
                         }
+                        *lightning_yielder = !*staking || *lightning_yielder;
+                        loop {
+                            if sender.send(vec![*lightning_yielder as u8]).is_ok() {
+                                break
+                            }
+                        }
                         *setup = false;
                         frame.quit();
                     }
                 });
                 ui.add(Checkbox::new(staking,"I want to be a staker!"));
+                if *staking {
+                    ui.horizontal(|ui| {
+                        ui.add(Checkbox::new(lightning_yielder,"I want to be a lightning yielder!"));
+                        ui.add(Label::new("Clicking this box means you'll only store the lightning blocks").text_color(egui::Color32::YELLOW));    
+                    });
+                }
             }
             if *dont_trust_amounts {
                 ui.add(Label::new("money owned is not yet verified").text_color(egui::Color32::RED));

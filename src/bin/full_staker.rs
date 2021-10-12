@@ -130,6 +130,7 @@ fn main() -> Result<(), MainError> {
         println!("You closed the app...");
         let pswrd: Vec<u8>;
         let will_stk: bool;
+        let lightning_yielder: bool;
         let wait_to_work = Instant::now();
         loop {
             if wait_to_work.elapsed().as_secs() > 2 {
@@ -149,6 +150,15 @@ fn main() -> Result<(), MainError> {
                 break
             }
         }
+        loop {
+            if wait_to_work.elapsed().as_secs() > 2 {
+                panic!("you didn't hit the button you should have");
+            }
+            if let Async::Ready(Some(m)) = urecv_setup.poll().expect("Shouldn't fail") {
+                lightning_yielder = m[0] == 1;
+                break
+            }
+        }
         println!("{:?}",pswrd);
         let me = Account::new(&pswrd);
         let validator = me.stake_acc().receive_ot(&me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
@@ -156,7 +166,6 @@ fn main() -> Result<(), MainError> {
         let mut keylocation = HashSet::new();
 
         if will_stk {
-            std::fs::create_dir("blocks");
             NextBlock::initialize_saving();
             History::initialize();
             BloomFile::initialize_bloom_file();    
@@ -230,6 +239,7 @@ fn main() -> Result<(), MainError> {
             oldstk: None,
             cumtime: 0f64,
             blocktime: blocktime(0.0),
+            lightning_yielder,
         };
         node.save();
     }
@@ -324,6 +334,7 @@ struct SavedNode {
     oldstk: Option<(Account, Vec<[u64;2]>, u64)>,
     cumtime: f64,
     blocktime: f64,
+    lightning_yielder: bool,
 }
 
 struct StakerNode {
@@ -382,6 +393,7 @@ struct StakerNode {
     oldstk: Option<(Account, Vec<[u64;2]>, u64)>,
     cumtime: f64,
     blocktime: f64,
+    lightning_yielder: bool,
 }
 impl StakerNode {
     fn save(&self) {
@@ -415,6 +427,7 @@ impl StakerNode {
                 oldstk: self.oldstk.clone(),
                 cumtime: self.cumtime,
                 blocktime: self.blocktime,
+                lightning_yielder: self.lightning_yielder,
             }; // just redo initial conditions on the rest
             let mut sn = bincode::serialize(&sn).unwrap();
             let mut f = File::create("myNode").unwrap();
@@ -485,6 +498,7 @@ impl StakerNode {
             oldstk: sn.oldstk,
             cumtime: sn.cumtime,
             blocktime: sn.blocktime,
+            lightning_yielder: sn.lightning_yielder,
         }
     }
     fn readblock(&mut self, lastblock: NextBlock, m: Vec<u8>) -> bool {
@@ -1289,10 +1303,10 @@ impl Future for StakerNode {
                                 }
                             } else if mtype == 60 /* < */ { // redo sync request
                                 let mut mynum = self.bnum.to_le_bytes().to_vec();
-                                if self.save_history {
-                                    mynum.push(108); //l
-                                } else {
+                                if self.lightning_yielder {
                                     mynum.push(102); //f
+                                } else {
+                                    mynum.push(108); //l
                                 }
                                 mynum.push(121);
                                 let mut friend = self.outer.plumtree_node().all_push_peers();
@@ -1306,8 +1320,10 @@ impl Future for StakerNode {
                                     println!("you're isolated");
                                 }
                             } else if mtype == 108 /* l */ {
-                                if let Ok(lastblock) = bincode::deserialize::<LightningSyncBlock>(&m) {
-                                    self.readlightning(lastblock, m, None); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
+                                if lightning_yielder {
+                                    if let Ok(lastblock) = bincode::deserialize::<LightningSyncBlock>(&m) {
+                                        self.readlightning(lastblock, m, None); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
+                                    }
                                 }
                             } else if mtype == 113 /* q */ { // they just sent you a ring member
                                 self.rmems.insert(u64::from_le_bytes(m[64..72].try_into().unwrap()),History::read_raw(&m));
@@ -1615,10 +1631,10 @@ impl Future for StakerNode {
 
                     } else if istx == 121 /* y */ {
                         let mut mynum = self.bnum.to_le_bytes().to_vec();
-                        if self.save_history {
-                            mynum.push(102); //f
-                        } else {
+                        if self.lightning_yielder {
                             mynum.push(108); //l
+                        } else {
+                            mynum.push(102); //f
                         }
                         mynum.push(121);
                         let mut friend = self.outer.plumtree_node().all_push_peers();
