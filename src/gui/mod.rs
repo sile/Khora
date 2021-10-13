@@ -94,6 +94,7 @@ pub struct TemplateApp {
     send_addr: Vec<String>,
     send_amnt: Vec<String>,
     lightning_yielder: bool,
+    validating: bool,
 
     #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for sender
     timekeeper: Instant,
@@ -145,6 +146,7 @@ impl Default for TemplateApp {
             send_addr: vec!["".to_string()],
             send_amnt: vec!["".to_string()],
             lightning_yielder: true,
+            validating: false,
         }
     }
 }
@@ -221,6 +223,8 @@ impl epi::App for TemplateApp {
                 self.dont_trust_amounts = i.pop() == Some(0);
             } else if modification == 2 {
                 self.block_number = u64::from_le_bytes(i.try_into().unwrap());
+            } else if modification == 3 {
+                self.validating = i == vec![1];
             } else if modification == 128 {
                 self.eta = i[0] as i8;
                 self.timekeeper = Instant::now();
@@ -272,6 +276,7 @@ impl epi::App for TemplateApp {
             send_addr,
             send_amnt,
             lightning_yielder,
+            validating,
         } = self;
 
  
@@ -306,7 +311,7 @@ impl epi::App for TemplateApp {
                         *show_reset = !*show_reset;
                     }
                     if ui.button("Log Out - will require resync with blockchain").clicked() {
-                        fs::remove_file("myNode");
+                        fs::remove_file("myNode").expect("should work");
                         frame.quit();
                     }
                     if ui.button("Quit").clicked() {
@@ -389,6 +394,12 @@ impl epi::App for TemplateApp {
                     if ui.add(Label::new("staking address").sense(Sense::hover())).hovered() {
                         ui.small(&*stkaddr);
                     }
+                });
+            }
+            if *validating {
+                ui.horizontal(|ui| {
+                    ui.add(Label::new("You are validating blocks,").text_color(egui::Color32::GREEN));
+                    ui.add(Label::new("please don't use all of your ram on video games").text_color(egui::Color32::RED));
                 });
             }
             ui.label("\n");

@@ -675,8 +675,10 @@ impl KhoraNode {
                 thisbnum.push(2);
                 self.gui_sender.send(thisbnum).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
 
+                self.gui_sender.send(vec![self.keylocation.iter().any(|keylocation| self.comittee[self.headshard].contains(&(*keylocation as usize))) as u8,3]).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
+                println!("That block used group signatures: {}",lastlightning.emptyness.is_some());
                 // delete the set of overthrone leaders sometimes to give them another chance
                 if self.bnum % 128 == 0 {
                     self.overthrown = HashSet::new();
@@ -1132,6 +1134,7 @@ impl Future for KhoraNode {
                     if self.points.get(&usize::MAX).is_some() && (self.timekeeper.elapsed().as_secs() > (0.5*self.blocktime) as u64) {
                         let k = self.scalars.keys().collect::<HashSet<_>>();
                         if self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > SIGNING_CUTOFF {
+                            println!("got enought keys if they're real");
                             let sumpt = self.points.remove(&usize::MAX).unwrap();
             
                             let keys = self.points.clone();
@@ -1153,6 +1156,7 @@ impl Future for KhoraNode {
                                 }
                             );
                             if k == keys.len() {
+                                println!("got enough true keys");
                                 let failed_validators = self.comittee[self.headshard].iter().enumerate().filter_map(|(i,x)|
                                     if self.points.contains_key(x) {
                                         None
@@ -1176,7 +1180,7 @@ impl Future for KhoraNode {
                                 if lastblock.verify(&self.comittee[self.headshard].iter().map(|x| *x as u64).collect(),&self.stkinfo).is_ok() {
                                     println!("block verified!");
                                     let mut m = bincode::serialize(&lastblock).unwrap();
-                                    println!("sending off block {}!!!",lastblock.bnum);
+                                    println!("sending off block WITH GROUP SIGNATURES {}!!!",lastblock.bnum);
                                     m.push(3u8);
                                     self.inner.broadcast(m);
                                 } else {
