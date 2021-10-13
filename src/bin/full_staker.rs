@@ -40,20 +40,26 @@ use kora::validation::{NUMBER_OF_VALIDATORS, SIGNING_CUTOFF, QUEUE_LENGTH, REPLA
 
 use local_ipaddress;
 
+/// this is for testing purposes. it is used to check if 2 long messages are identicle from either different variables or the same variable at differnt times
 fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
     let message = bincode::serialize(message).unwrap();
     let mut hasher = Sha3_512::new();
     hasher.update(&message);
     Scalar::from_hash(hasher)
-} /* this is for testing purposes. it is used to check if 2 long messages are identicle */
+}
 
+/// when to announce you're about to be in the comittee or how far in advance you can no longer serve as leader
 const WARNINGTIME: usize = REPLACERATE*5;
+/// number of blocks in a row you can write without saving them
 const BLANKS_IN_A_ROW: u64 = 60;
+/// amount of seconds to wait before initiating shard takeover
 const USURP_TIME: u64 = 3600;
+/// calculates the amount of time the current block takes to be created
 fn blocktime(cumtime: f64) -> f64 {
     // 60f64/(6.337618E-8f64*cumtime+2f64).ln()
     10.0
 }
+/// calculates the reward for the current block
 fn reward(cumtime: f64, blocktime: f64) -> f64 {
     (1.0/(1.653439E-6*cumtime + 1.0) - 1.0/(1.653439E-6*(cumtime + blocktime) + 1.0))*10E16f64
 }
@@ -70,17 +76,7 @@ fn get_pswrd(a: &String, b: &String, c: &String) -> Vec<u8> {
     Scalar::from_hash(hasher).as_bytes().to_vec()
 }
 fn main() -> Result<(), MainError> {
-    let matches = app_from_crate!()
-        .arg(
-            Arg::with_name("LOG_LEVEL")
-                .long("log-level")
-                .takes_value(true)
-                .default_value("info")
-                .possible_values(&["debug", "info"]),
-        )
-        .get_matches();
-    let log_level = track_any_err!(matches.value_of("LOG_LEVEL").unwrap().parse())?;
-    let logger = track!(TerminalLoggerBuilder::new().destination(Destination::Stderr).level(log_level).build())?;
+    let logger = track!(TerminalLoggerBuilder::new().destination(Destination::Stderr).level("info".parse().unwrap()).build())?; // info or debug
 
         
 
@@ -94,30 +90,23 @@ fn main() -> Result<(), MainError> {
     println!("addr: {:?}",addr);
 
 
+    // this is the number of shards they keep track of
     let max_shards = 64usize; /* this if for testing purposes... there IS NO MAX SHARDS */
     
-    // fs::remove_dir_all("blocks").unwrap(); // this would obviously not be used in the final version
-    // fs::create_dir_all("blocks").unwrap();
 
 
-
+    // the myNode file only exists if you already have an account made
     let setup = !Path::new("myNode").exists();
     if setup {
-        // let person0 = get_pswrd(&"a".to_string(),&"b".to_string(),&"abcde".to_string());
-        // println!("{:?}",person0);
-        // let leader = Account::new(&person0).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        let leader = CompressedRistretto([46, 235, 227, 188, 55, 53, 9, 126, 167, 207, 202, 101, 150, 150, 172, 207, 209, 208, 211, 52, 47, 206, 19, 115, 199, 189, 202, 10, 56, 220, 138, 55]);
-        let initial_history = vec![(leader,1u64)];
-        // let otheruser = Account::new(&format!("{}","dog")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        // let user3 = Account::new(&format!("{}","cow")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        // let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64)];
-        // let user4 = Account::new(&format!("{}","ant")).stake_acc().derive_stk_ot(&Scalar::one()).pk.compress();
-        // let initial_history = vec![(leader,1u64),(otheruser,1u64),(user3,1u64),(user4,1u64)];
+        // everyone agrees this person starts with 1 khora token
+        let person0 = CompressedRistretto([46, 235, 227, 188, 55, 53, 9, 126, 167, 207, 202, 101, 150, 150, 172, 207, 209, 208, 211, 52, 47, 206, 19, 115, 199, 189, 202, 10, 56, 220, 138, 55]);
+        let initial_history = vec![(person0,1u64)];
 
-
+        // these are used to communicate with the setup screen
         let (ui_sender_setup, mut urecv_setup) = mpsc::channel();
         let (usend_setup, ui_reciever_setup) = channel::unbounded();
 
+        // creates the setup screen (sets the values used in the loops and sets some gui options)
         let app = gui::TemplateApp::new(
             ui_reciever_setup,
             ui_sender_setup,
@@ -164,7 +153,6 @@ fn main() -> Result<(), MainError> {
         let validator = me.stake_acc().receive_ot(&me.stake_acc().derive_stk_ot(&Scalar::from(1u8))).unwrap(); //make a new account
         let key = validator.sk.unwrap();
         let mut keylocation = HashSet::new();
-
         if will_stk {
             if !lightning_yielder {
                 NextBlock::initialize_saving();
@@ -173,7 +161,7 @@ fn main() -> Result<(), MainError> {
             History::initialize();
             BloomFile::initialize_bloom_file();    
         }
-        let bloom = BloomFile::from_keys(1, 2); // everyone has different keys for this IMPORTANT TO CHANGR
+        let bloom = BloomFile::from_randomness();
 
         let mut smine = vec![];
         for i in 0..initial_history.len() {
@@ -182,11 +170,10 @@ fn main() -> Result<(), MainError> {
                 keylocation.insert(i as u64);
                 println!("\n\nhey i guess i founded this crypto!\n\n");
             }
-
         }
 
-
-        let node = StakerNode {
+        // creates the node with the specified conditions then saves it to be used from now on
+        let node = KhoraNode {
             inner: NodeBuilder::new().finish( ServiceBuilder::new(addr).finish(ThreadPoolExecutor::new().unwrap().handle(), SerialLocalNodeIdGenerator::new()).handle()),
             outer: NodeBuilder::new().finish( ServiceBuilder::new(addr).finish(ThreadPoolExecutor::new().unwrap().handle(), SerialLocalNodeIdGenerator::new()).handle()),
             save_history: will_stk,
@@ -195,7 +182,7 @@ fn main() -> Result<(), MainError> {
             smine: smine.clone(), // [location, amount]
             key,
             keylocation,
-            leader,
+            leader: person0,
             overthrown: HashSet::new(),
             votes: vec![0;NUMBER_OF_VALIDATORS],
             stkinfo: initial_history.clone(),
@@ -223,7 +210,7 @@ fn main() -> Result<(), MainError> {
             headshard: 0,
             usurpingtime: Instant::now(),
             is_validator: false,
-            is_staker: true,
+            is_user: true,
             sent_onces: HashSet::new(),
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
@@ -253,13 +240,8 @@ fn main() -> Result<(), MainError> {
         .logger(logger.clone())
         .finish(executor.handle(), SerialLocalNodeIdGenerator::new()); // everyone is node 0 rn... that going to be a problem? I mean everyone has different ips...
         
-    let mut backnode = NodeBuilder::new().logger(logger.clone()).finish(service.handle());
+    let backnode = NodeBuilder::new().logger(logger.clone()).finish(service.handle());
     println!("{:?}",backnode.id());
-    if let Some(contact) = matches.value_of("CONTACT_SERVER") {
-        let contact: SocketAddr = track_any_err!(format!("{}:{}", local_ipaddress::get().unwrap(), contact).parse())?;
-        println!("contact: {:?}",contact);
-        backnode.join(NodeId::new(contact, LocalNodeId::new(0)));
-    }
     let frontnode = NodeBuilder::new().logger(logger).finish(service.handle()); // todo: make this local_id random so people can't guess you
     println!("{:?}",frontnode.id()); // this should be the validator survice
 
@@ -271,7 +253,7 @@ fn main() -> Result<(), MainError> {
 
 
 
-    let node = StakerNode::load(frontnode, backnode, usend, urecv);
+    let node = KhoraNode::load(frontnode, backnode, usend, urecv);
     let mut mymoney = node.mine.iter().map(|x| node.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
     mymoney.extend(node.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
     mymoney.push(0);
@@ -308,6 +290,7 @@ fn main() -> Result<(), MainError> {
 
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
+/// the information that you save to a file when the app is off (not including gui information like saved friends)
 struct SavedNode {
     save_history: bool, //just testing. in real code this is true; but i need to pretend to be different people on the same computer
     me: Account,
@@ -330,7 +313,7 @@ struct SavedNode {
     sheight: u64,
     alltagsever: Vec<CompressedRistretto>,
     headshard: usize,
-    view: Vec<SocketAddr>,
+    outer_view: Vec<NodeId>,
     rmems: HashMap<u64,OTAccount>,
     rname: Vec<u8>,
     moneyreset: Option<Vec<u8>>,
@@ -340,7 +323,8 @@ struct SavedNode {
     lightning_yielder: bool,
 }
 
-struct StakerNode {
+/// the node used to run all the networking
+struct KhoraNode {
     inner: Node<Vec<u8>>, // for sending and recieving messages as a validator (as in inner sanctum)
     outer: Node<Vec<u8>>, // for sending and recieving messages as a non validator (as in not inner)
     gui_sender: channel::Sender<Vec<u8>>,
@@ -379,7 +363,7 @@ struct StakerNode {
     headshard: usize,
     usurpingtime: Instant,
     is_validator: bool,
-    is_staker: bool, // modify this depending on if staking??? is that already done?
+    is_user: bool, // modify this depending on if staking??? is that already done?
     sent_onces: HashSet<Vec<u8>>,
     knownvalidators: HashMap<u64,NodeId>,
     announcevalidationtime: Instant,
@@ -398,7 +382,9 @@ struct StakerNode {
     blocktime: f64,
     lightning_yielder: bool,
 }
-impl StakerNode {
+
+impl KhoraNode {
+    /// saves the important information like staker state and block number to a file: "myNode"
     fn save(&self) {
         if !self.moneyreset.is_some() && !self.oldstk.is_some() {
             let sn = SavedNode {
@@ -423,7 +409,7 @@ impl StakerNode {
                 sheight: self.sheight,
                 alltagsever: self.alltagsever.clone(),
                 headshard: self.headshard.clone(),
-                view: self.inner.hyparview_node().active_view().iter().map(|x| x.address()).collect::<Vec<_>>(),
+                outer_view: self.outer.plumtree_node().all_push_peers().into_iter().collect(),
                 rmems: self.rmems.clone(),
                 rname: self.rname.clone(),
                 moneyreset: self.moneyreset.clone(),
@@ -437,15 +423,19 @@ impl StakerNode {
             f.write_all(&mut sn).unwrap();
         }
     }
-    fn load(inner: Node<Vec<u8>>, outer: Node<Vec<u8>>, gui_sender: channel::Sender<Vec<u8>>, gui_reciever: mpsc::Receiver<Vec<u8>>) -> StakerNode {
+
+    /// loads the node information from a file: "myNode"
+    fn load(inner: Node<Vec<u8>>, outer: Node<Vec<u8>>, gui_sender: channel::Sender<Vec<u8>>, gui_reciever: mpsc::Receiver<Vec<u8>>) -> KhoraNode {
         let mut buf = Vec::<u8>::new();
         let mut f = File::open("myNode").unwrap();
         f.read_to_end(&mut buf).unwrap();
 
         let sn = bincode::deserialize::<SavedNode>(&buf).unwrap();
-        let mut inner = inner;
-        inner.dm(vec![], &sn.view.iter().map(|&x| NodeId::new(x, LocalNodeId::new(0))).collect::<Vec<_>>(), true);
-        StakerNode {
+
+        // tries to get back all the friends you may have lost since turning off the app
+        let mut outer = outer;
+        outer.dm(vec![], &sn.outer_view, true);
+        KhoraNode {
             inner,
             outer,
             gui_sender,
@@ -483,7 +473,7 @@ impl StakerNode {
             alltagsever: sn.alltagsever.clone(),
             headshard: sn.headshard.clone(),
             is_validator: false,
-            is_staker: true,
+            is_user: true,
             sent_onces: HashSet::new(), // maybe occasionally clear this or replace with vecdeq?
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
@@ -504,20 +494,18 @@ impl StakerNode {
             lightning_yielder: sn.lightning_yielder,
         }
     }
+
+    /// reads a full block (by converting it to lightning then reading that)
     fn readblock(&mut self, lastblock: NextBlock, m: Vec<u8>) -> bool {
         let lastlightning = lastblock.tolightning();
         let l = bincode::serialize(&lastlightning).unwrap();
         self.readlightning(lastlightning,l,Some(m.clone()))
     }
+
+    /// reads a lightning block and saves information when appropriate
     fn readlightning(&mut self, lastlightning: LightningSyncBlock, m: Vec<u8>, largeblock: Option<Vec<u8>>) -> bool {
         if lastlightning.bnum >= self.bnum {
             let com = self.comittee.par_iter().map(|x| x.par_iter().map(|y| *y as u64).collect::<Vec<_>>()).collect::<Vec<_>>();
-            println!("someone's sending block {} with name: {:?}",lastlightning.bnum,lastlightning.last_name);
-            println!("names match up: {}",lastlightning.last_name == self.lastname);
-            if lastlightning.last_name != self.lastname {
-                println!("{:?}\n{:?}",self.lastname,lastlightning.last_name);
-            }
-            println!("stkinfo: {:?}",self.stkinfo);
             if lastlightning.shards.len() == 0 {
                 println!("Error in block verification: there is no shard");
                 return false;
@@ -533,8 +521,10 @@ impl StakerNode {
                 v = false;
             }
             if v  {
+                // saves your current information BEFORE reading the new block. It's possible a leader is trying to cause a fork which can only be determined 1 block later based on what the comittee thinks is real
                 self.save();
 
+                // if you are one of the validators who leave this turn, it is your responcibility to send the block to the outside world
                 if self.exitqueue[self.headshard].range(..REPLACERATE).map(|&x| self.comittee[self.headshard][x]).any(|x| self.keylocation.contains(&(x as u64))) {
                     if let Some(mut lastblock) = largeblock.clone() {
                         lastblock.push(3);
@@ -543,22 +533,17 @@ impl StakerNode {
                     }
 
                 }
-                println!("smine: {:?}",self.smine);
-                println!("all outer push pears: {:?}",self.outer.plumtree_node().all_push_peers());
                 self.headshard = lastlightning.shards[0] as usize;
 
                 println!("=========================================================\nyay!");
-                // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
 
                 self.overthrown.remove(&self.stkinfo[lastlightning.leader.pk as usize].0);
-                println!("{{{{{{}}}}}}}}");
-                println!("stkouts: {:?}",lastlightning.info.stkout);
                 if self.stkinfo[lastlightning.leader.pk as usize].0 != self.leader {
                     self.overthrown.insert(self.leader);
                 }
-                println!("{{{{{{}}}}}}}}");
 
-                for _ in self.bnum..lastlightning.bnum { // add whole different scannings for empty blocks
+                // if you're synicng, you just infer the empty blocks that no one saves
+                for _ in self.bnum..lastlightning.bnum {
                     println!("I missed a block!");
                     let reward = reward(self.cumtime,self.blocktime);
                     self.cumtime += self.blocktime;
@@ -574,6 +559,7 @@ impl StakerNode {
                         LightningSyncBlock::save(&vec![]);
                     }
 
+                    // if you're panicing, the transaction you have saved may need to be updated based on if you gain or loose money
                     if let Some(oldstk) = &mut self.oldstk {
                         NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut oldstk.1, reward);
                     }
@@ -589,9 +575,8 @@ impl StakerNode {
                 }
 
 
-
+                // calculate the reward for this block as a function of the current time and scan either the block or an empty block based on conditions
                 let reward = reward(self.cumtime,self.blocktime);
-                // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 if !(lastlightning.info.txout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.stkout.is_empty()) || (self.bnum - self.lastbnum > BLANKS_IN_A_ROW) {
                     let mut guitruster = !lastlightning.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, reward, &self.stkinfo);
                     guitruster = !lastlightning.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever) && guitruster;
@@ -605,7 +590,6 @@ impl StakerNode {
                         }
                         LightningSyncBlock::save(&m);
                     }
-                    // as a user you dont save the file
                     self.keylocation = self.smine.iter().map(|x| x[0]).collect();
                     lastlightning.scan_as_noone(&mut self.stkinfo, &mut self.queue, &mut self.exitqueue, &mut self.comittee, reward, self.save_history);
 
@@ -623,7 +607,6 @@ impl StakerNode {
                         LightningSyncBlock::save(&vec![]);
                     }
                 }
-                // println!("vecdeque lengths: {}, {}, {}",self.randomstakers.len(),self.queue[0].len(),self.exitqueue[0].len());
                 self.votes[self.exitqueue[self.headshard][0]] = 0; self.votes[self.exitqueue[self.headshard][1]] = 0;
                 self.newest = self.queue[self.headshard][0] as u64;
                 for i in 0..self.comittee.len() {
@@ -639,11 +622,10 @@ impl StakerNode {
 
 
                 
-                println!("exitqueue: {:?}",self.exitqueue[self.headshard]);
 
                 
-                /* LEADER CHOSEN BY VOTES */
-                let abouttoleave = self.exitqueue[self.headshard].range(..10).into_iter().map(|z| self.comittee[self.headshard][*z].clone()).collect::<HashSet<_>>();
+                /* LEADER CHOSEN BY VOTES (off blockchain, says which comittee member they should send stuff to) */
+                let abouttoleave = self.exitqueue[self.headshard].range(..WARNINGTIME).into_iter().map(|z| self.comittee[self.headshard][*z].clone()).collect::<HashSet<_>>();
                 self.leader = self.stkinfo[*self.comittee[self.headshard].iter().zip(self.votes.iter()).max_by_key(|(x,&y)| {
                     if abouttoleave.contains(x) || self.overthrown.contains(&self.stkinfo[**x].0) {
                         i32::MIN
@@ -682,7 +664,10 @@ impl StakerNode {
                 } else {
                     self.leaderip = None;
                 }
-                /* LEADER CHOSEN BY VOTES */
+                /* LEADER CHOSEN BY VOTES (off blockchain, says which comittee member they should send stuff to) */
+
+
+                // send info to the gui
                 let mut mymoney = self.mine.iter().map(|x| self.me.receive_ot(&x.1).unwrap().com.amount.unwrap()).sum::<Scalar>().as_bytes()[..8].to_vec();
                 mymoney.extend(self.smine.iter().map(|x| x[1]).sum::<u64>().to_le_bytes());
                 mymoney.push(0);
@@ -695,9 +680,11 @@ impl StakerNode {
 
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
+                // delete the set of overthrone leaders sometimes to give them another chance
                 if self.bnum % 128 == 0 {
                     self.overthrown = HashSet::new();
                 }
+                // if you save the history, the txses you know about matter; otherwise, they don't (becuase you're not involved in block creation)
                 if self.save_history {
                     let s = self.stkinfo.borrow();
                     let bloom = self.bloom.borrow();
@@ -717,11 +704,11 @@ impl StakerNode {
                 } else {
                     self.txses = vec![];
                 }
-                println!("have {} tx",self.txses.len());
                 
-
+                // runs any operations needed for the panic button to function
                 self.send_panic_or_stop(&lastlightning, reward);
 
+                // if you're lonely and on the comittee, you try to reconnect with the comittee (WARNING: DOES NOT HANDLE IF YOU HAVE FRIENDS BUT THEY ARE IGNORING YOU)
                 if self.is_validator && self.inner.plumtree_node().all_push_peers().is_empty() {
                     for n in self.knownvalidators.iter() {
                         self.inner.join(n.1.with_id(1));
@@ -732,7 +719,7 @@ impl StakerNode {
                 self.cumtime += self.blocktime;
                 self.blocktime = blocktime(self.cumtime);
 
-                self.gui_sender.send(vec![self.blocktime as u8,128]).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
+                self.gui_sender.send(vec![self.blocktime as u8,128]).expect("something's wrong with the communication to the gui");
 
                 self.sigs = vec![];
                 self.groupsent = [false;2];
@@ -752,6 +739,8 @@ impl StakerNode {
         }
         false
     }
+
+    /// runs the operations needed for the panic button to work
     fn send_panic_or_stop(&mut self, lastlightning: &LightningSyncBlock, reward: f64) {
         if self.moneyreset.is_some() || self.oldstk.is_some() {
             if self.mine.len() < (self.moneyreset.is_some() as usize + self.oldstk.is_some() as usize) {
@@ -803,10 +792,8 @@ impl StakerNode {
             }
         }
     }
-
-
 }
-impl Future for StakerNode {
+impl Future for KhoraNode {
     type Item = ();
     type Error = ();
 
@@ -829,11 +816,11 @@ impl Future for StakerNode {
             /*\control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________|/
             \*/
             if self.keylocation.iter().all(|keylocation| !self.comittee[self.headshard].contains(&(*keylocation as usize)) ) { // if you're not in the comittee
-                self.is_staker = true;
+                self.is_user = true;
                 self.is_validator = false;
             } else { // if you're in the comittee
                 // println!("I'm in the comittee!");
-                self.is_staker = false;
+                self.is_user = false;
                 self.is_validator = true;
                 if (self.doneerly.elapsed().as_secs() > self.blocktime as u64) && (self.doneerly.elapsed() > self.timekeeper.elapsed()) {
                     self.waitingforentrybool = true;
@@ -864,7 +851,7 @@ impl Future for StakerNode {
 
 
                 if headqueue.range(REPLACERATE..WARNINGTIME).any(|&x| x as u64 != *keylocation) {
-                    self.is_staker = true;
+                    self.is_user = true;
                     let message = bincode::serialize(self.outer.plumtree_node().id()).unwrap();
                     if self.sent_onces.insert(message.clone().into_iter().chain(self.bnum.to_le_bytes().to_vec().into_iter()).collect::<Vec<_>>()) {
                         println!("broadcasting name!");
@@ -874,7 +861,7 @@ impl Future for StakerNode {
                     }
                 }
                 if headqueue.range(0..REPLACERATE).any(|&x| x as u64 != *keylocation) {
-                    self.is_staker = true;
+                    self.is_user = true;
                     self.is_validator = true;
                     if self.announcevalidationtime.elapsed().as_secs() > 10 { // every 10 seconds you say your name
                         let message = bincode::serialize(self.inner.plumtree_node().id()).unwrap();
@@ -1253,7 +1240,7 @@ impl Future for StakerNode {
         |--0| STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::|/
         |--0| ::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF/
              \*/
-            if self.is_staker { // users have is_staker true
+            if self.is_user { // users have is_user true
                 if let Some(addr) = self.sync_returnaddr {
                     for b in self.sync_theirnum..std::cmp::min(self.sync_theirnum+10, self.bnum) {
                         println!("checking for file location for {}...",b);
@@ -1359,12 +1346,16 @@ impl Future for StakerNode {
                                     if self.sync_returnaddr.is_none() {
                                         if let Some(theyfast) = m.pop() {
                                             if let Ok(m) = m.try_into() {
-                                                self.sync_returnaddr = Some(msg.id.node());
-                                                self.sync_theirnum = u64::from_le_bytes(m);
                                                 if theyfast == 108 {
                                                     self.sync_lightning = true;
+                                                    self.sync_returnaddr = Some(msg.id.node());
+                                                    self.sync_theirnum = u64::from_le_bytes(m);
                                                 } else {
-                                                    self.sync_lightning = false;
+                                                    if !self.lightning_yielder {
+                                                        self.sync_lightning = false;
+                                                        self.sync_returnaddr = Some(msg.id.node());
+                                                        self.sync_theirnum = u64::from_le_bytes(m);
+                                                    }
                                                 }
                                             }
                                         }

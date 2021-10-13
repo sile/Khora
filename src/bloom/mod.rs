@@ -26,7 +26,7 @@ extern crate bit_vec;
 extern crate rand;
 
 use bit_vec::BitVec;
-use rand::Rng;
+use rand::{Rng, thread_rng};
 use std::cmp::{min,max};
 use std::hash::Hasher;
 use std::iter::Iterator;
@@ -74,7 +74,8 @@ const HASHES: u32 = 6; // for tests
 
 impl BloomFile {
 
-    pub fn initialize_bloom_file() { // lol this is actually fast!
+    /// initializes the bloom file as a large binary file full of 0s
+    pub fn initialize_bloom_file() {
         // 6 hashes is best for 1_000_000_000 outputs
         // fs::remove_file(FILE_NAME).unwrap(); // this is just for testing in reality this wouldn't be unwrapped because the file may not exist
         let mut f = File::create(FILE_NAME).unwrap();
@@ -86,17 +87,33 @@ impl BloomFile {
         // }
     }
 
+    /// creates an object used to interact with the bloom file
     pub fn from_keys(key1: u128, key2: u128) -> BloomFile {
         BloomFile {
             h: AHasher::new_with_keys(key1,key2),
             key1,
             key2,
         }
-
     }
+
+    /// creates an object used to interact with the bloom file with random keys
+    pub fn from_randomness() -> BloomFile {
+        let mut rng = thread_rng();
+        let key1 = rng.gen();
+        let key2 = rng.gen();
+        
+        BloomFile {
+            h: AHasher::new_with_keys(key1,key2),
+            key1,
+            key2,
+        }
+    }
+
+    /// get the keys used to define how the bloom filter works
     pub fn get_keys(&self) -> [u128;2] {
         [self.key1, self.key2]
     }
+
     /// Insert item into this bloomfilter
     pub fn insert(&self, item: &[u8;32]) { // loc, pk, com = 32*3 = 96
         for h in self.get_hashes(item) {
@@ -114,9 +131,7 @@ impl BloomFile {
             f.read(&mut byte).unwrap();
             let mut delta = 0b00000001u8;
             delta <<= h%8;
-            // println!("{:#8b} |\n{:#8b} =",byte[0],delta);
             byte[0] |= delta;
-            // println!("{:#8b}",byte[0]);
             assert!(byte[0] & delta != 0b00000000u8);
             f.seek(SeekFrom::Start(h/8)).expect("Seek failed");
             f.write(&byte).expect("Unable to write data");
@@ -124,6 +139,8 @@ impl BloomFile {
             
         }
     }
+
+    /// test if the bloom filter contains the item
     pub fn contains(&self, item: &[u8;32]) -> bool {
         for h in self.get_hashes(item) {
             let h = h % FILE_SIZE;
