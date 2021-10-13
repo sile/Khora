@@ -198,7 +198,6 @@ fn main() -> Result<(), MainError> {
             alltagsever: vec![],
             txses: vec![],
             sigs: vec![],
-            bannedlist: HashSet::new(),
             points: HashMap::new(),
             scalars: HashMap::new(),
             timekeeper: Instant::now() + Duration::from_secs(1),
@@ -351,7 +350,6 @@ struct KhoraNode {
     alltagsever: Vec<CompressedRistretto>,
     txses: Vec<Vec<u8>>,
     sigs: Vec<NextBlock>,
-    bannedlist: HashSet<NodeId>,
     points: HashMap<usize,RistrettoPoint>, // supplier, point
     scalars: HashMap<usize,Scalar>,
     timekeeper: Instant,
@@ -448,7 +446,6 @@ impl KhoraNode {
             usurpingtime: Instant::now(),
             txses: vec![], // if someone is not a leader for a really long time they'll have a wrongly long list of tx
             sigs: vec![],
-            bannedlist: HashSet::new(),
             points: HashMap::new(),
             scalars: HashMap::new(),
             save_history: sn.save_history,
@@ -815,6 +812,9 @@ impl Future for KhoraNode {
             \*/
             /*\control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________|/
             \*/
+            // this section tells you if you're on the comittee or not
+            // if you're on the comittee you need to pull on your inner node
+            // if you're not you need to poll on your user node
             if self.keylocation.iter().all(|keylocation| !self.comittee[self.headshard].contains(&(*keylocation as usize)) ) { // if you're not in the comittee
                 self.is_user = true;
                 self.is_validator = false;
@@ -822,6 +822,8 @@ impl Future for KhoraNode {
                 // println!("I'm in the comittee!");
                 self.is_user = false;
                 self.is_validator = true;
+
+                // done early tells you if you need to wait before starting the next block stuff because you finished the last block early
                 if (self.doneerly.elapsed().as_secs() > self.blocktime as u64) && (self.doneerly.elapsed() > self.timekeeper.elapsed()) {
                     self.waitingforentrybool = true;
                     self.waitingforleaderbool = false;
@@ -831,6 +833,7 @@ impl Future for KhoraNode {
                     self.doneerly = Instant::now();
                     self.usurpingtime = Instant::now();
 
+                    // if you are the newest member of the comittee you're responcible for choosing the tx that goes into the next block
                     if self.keylocation.contains(&(self.newest as u64)) {
                         let m = bincode::serialize(&self.txses).unwrap();
                         println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
@@ -846,7 +849,8 @@ impl Future for KhoraNode {
                     self.usurpingtime = Instant::now();
                 }
             }
-            self.keylocation.clone().iter().for_each(|keylocation| { // get these numbers to be based on something
+            // if you're about to be in the comittee you need to take these actions
+            self.keylocation.clone().iter().for_each(|keylocation| {
                 let headqueue = self.queue[self.headshard].clone();
 
 
@@ -857,13 +861,15 @@ impl Future for KhoraNode {
                         println!("broadcasting name!");
                         let mut evidence = Signature::sign_message(&self.key, &message, keylocation);
                         evidence.push(118); // v
-                        self.outer.broadcast(evidence); // add a dm your transactions to this list section (also add them to your list of known validators if they are validators)
+                        self.outer.broadcast(evidence);
                     }
                 }
+                // every 10 seconds you say your name if you're about to be in the committee so people can easily send you their transactions
                 if headqueue.range(0..REPLACERATE).any(|&x| x as u64 != *keylocation) {
                     self.is_user = true;
                     self.is_validator = true;
-                    if self.announcevalidationtime.elapsed().as_secs() > 10 { // every 10 seconds you say your name
+                    // attempt to join the committee every 10 seconds
+                    if self.announcevalidationtime.elapsed().as_secs() > 10 {
                         let message = bincode::serialize(self.inner.plumtree_node().id()).unwrap();
                         let mut evidence = Signature::sign_message(&self.key, &message, &keylocation);
                         evidence.push(118); // v
@@ -902,146 +908,143 @@ impl Future for KhoraNode {
         |--0| VALIDATOR STUFF::::::::::::::::VALIDATOR STUFF::::::::::::::::VALIDATOR STUFF::::::::::::::::VALIDATOR STUFF::::::::::::::::|/
         |--0| ::::::::::::::::VALIDATOR STUFF::::::::::::::::VALIDATOR STUFF::::::::::::::::VALIDATOR STUFF::::::::::::::::VALIDATOR STUFF/
              \*/
+            // this section is for if you're on the comittee (or are very soon about to be)
             if self.is_validator {
                 while let Async::Ready(Some(fullmsg)) = track_try_unwrap!(self.inner.poll()) {
                     let msg = fullmsg.message.clone();
-                    if !self.bannedlist.contains(&msg.id.node()) {
-                        let mut m = msg.payload.to_vec();
-                        if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
-                            if mtype == 2 {print!("#{:?}", mtype);}
-                            else {println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id.node());}
+                    let mut m = msg.payload.to_vec();
+                    if let Some(mtype) = m.pop() {
+                        if mtype == 2 {print!("#{:?}", mtype);}
+                        else {println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id.node());}
 
 
-                            if mtype == 1 {
-                                if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
-                                    if (who == self.newest) || (self.stkinfo[who as usize].0 == self.leader) {
-                                        if let Ok(m) = bincode::deserialize::<Vec<Vec<u8>>>(&m) {
-                                            let m = m.into_par_iter().filter_map(|x|
-                                                if let Ok(x) = bincode::deserialize(&x) {
-                                                    Some(x)
-                                                } else {
-                                                    None
-                                                }
-                                            ).collect::<Vec<PolynomialTransaction>>();
+                        if mtype == 1 /* the transactions you're supposed to filter and make a block for */ {
+                            if let Some(who) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
+                                if (who == self.newest) || (self.stkinfo[who as usize].0 == self.leader) {
+                                    if let Ok(m) = bincode::deserialize::<Vec<Vec<u8>>>(&m) {
+                                        let m = m.into_par_iter().filter_map(|x|
+                                            if let Ok(x) = bincode::deserialize(&x) {
+                                                Some(x)
+                                            } else {
+                                                None
+                                            }
+                                        ).collect::<Vec<PolynomialTransaction>>();
 
-                                            for keylocation in &self.keylocation {
-                                                let m = NextBlock::valicreate(&self.key, &keylocation, &self.leader, &m, &(self.headshard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
-                                                if m.txs.len() > 0 || self.groupsent[0] {
-                                                    println!("{:?}",m.txs.len());
-                                                    let mut m = bincode::serialize(&m).unwrap();
-                                                    m.push(2);
-                                                    for _ in self.comittee[self.headshard].iter().filter(|&x|*x as u64 == *keylocation).collect::<Vec<_>>() {
-                                                        if let Some(x) = self.leaderip {
-                                                            self.inner.dm(m.clone(), vec![&x], false);
-                                                        } else {
-                                                            self.inner.broadcast(m.clone());
-                                                        }
+                                        for keylocation in &self.keylocation {
+                                            let m = NextBlock::valicreate(&self.key, &keylocation, &self.leader, &m, &(self.headshard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
+                                            if m.txs.len() > 0 || self.groupsent[0] {
+                                                println!("{:?}",m.txs.len());
+                                                let mut m = bincode::serialize(&m).unwrap();
+                                                m.push(2);
+                                                for _ in self.comittee[self.headshard].iter().filter(|&x|*x as u64 == *keylocation).collect::<Vec<_>>() {
+                                                    if let Some(x) = self.leaderip {
+                                                        self.inner.dm(m.clone(), vec![&x], false);
+                                                    } else {
+                                                        self.inner.broadcast(m.clone());
                                                     }
-                                                } else if (m.txs.len() == 0) && (m.emptyness.is_none()){
-                                                    println!("going for empty block");
-                                                    if !self.groupsent[0] {
-                                                        self.groupsent[0] = true;
-                                                        let m = MultiSignature::gen_group_x(&self.key,&self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
-                                                        let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
-                                                        m.push(4u8);
-                                                        if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
-                                                            // self.inner.broadcast(m.clone());
-                                                            if let Some(x) = self.leaderip {
-                                                                println!("I'm dm'ing a MESSAGE TYPE 4 to {:?}",x);
-                                                                self.inner.dm(m, vec![&x], false);
-                                                            } else {
-                                                                println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
-                                                                self.inner.broadcast(m);
-                                                            }
+                                                }
+                                            } else if (m.txs.len() == 0) && (m.emptyness.is_none()){
+                                                println!("going for empty block");
+                                                if !self.groupsent[0] {
+                                                    self.groupsent[0] = true;
+                                                    let m = MultiSignature::gen_group_x(&self.key,&self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
+                                                    let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
+                                                    m.push(4u8);
+                                                    if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
+                                                        // self.inner.broadcast(m.clone());
+                                                        if let Some(x) = self.leaderip {
+                                                            println!("I'm dm'ing a MESSAGE TYPE 4 to {:?}",x);
+                                                            self.inner.dm(m, vec![&x], false);
+                                                        } else {
+                                                            println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
+                                                            self.inner.broadcast(m);
                                                         }
                                                     }
                                                 }
                                             }
-                                            self.waitingforentrybool = false;
-                                            self.waitingforleaderbool = true;
-                                            self.waitingforleadertime = Instant::now();
-                                            self.inner.handle_gossip_now(fullmsg, true);
-                                        } else {
-                                            self.inner.handle_gossip_now(fullmsg, false);
                                         }
+                                        self.waitingforentrybool = false;
+                                        self.waitingforleaderbool = true;
+                                        self.waitingforleadertime = Instant::now();
+                                        self.inner.handle_gossip_now(fullmsg, true);
                                     } else {
                                         self.inner.handle_gossip_now(fullmsg, false);
                                     }
+                                } else {
+                                    self.inner.handle_gossip_now(fullmsg, false);
                                 }
-                            } else if mtype == 2 {
-                                if let Ok(sig) = bincode::deserialize(&m) {
-                                    self.sigs.push(sig);
+                            }
+                        } else if mtype == 2 /* the signatures you're supposed to process as the leader */ {
+                            if let Ok(sig) = bincode::deserialize(&m) {
+                                self.sigs.push(sig);
+                                self.inner.handle_gossip_now(fullmsg, true);
+                            } else {
+                                self.inner.handle_gossip_now(fullmsg, false);
+                            }
+                        } else if mtype == 3 /* the full block that was made */ {
+                            if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
+                                if self.readblock(lastblock, m) {
                                     self.inner.handle_gossip_now(fullmsg, true);
                                 } else {
                                     self.inner.handle_gossip_now(fullmsg, false);
                                 }
-                            } else if mtype == 3 {
-                                if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
-                                    if self.readblock(lastblock, m) {
-                                        self.inner.handle_gossip_now(fullmsg, true);
-                                    } else {
-                                        self.inner.handle_gossip_now(fullmsg, false);
-                                    }
-                                } else {
-                                    self.inner.handle_gossip_now(fullmsg, false);
-                                }
-                            } else if mtype == 4 {
-                                println!("recieving points phase: {}\nleader: {:?}",!self.points.contains_key(&usize::MAX),self.leader);
-                                if !self.points.contains_key(&usize::MAX) {
-                                    if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
-                                        let pk = pk as usize;
-                                        if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
-                                            if let Ok(m) = m.try_into() {
-                                                if let Some(m) = CompressedRistretto(m).decompress() {
-                                                    println!("got sent point from {}",pk);
-                                                    self.points.insert(pk,m);
-                                                }
-                                            }
-                                            
-                                        }
-                                    }
-                                }
-                                self.inner.handle_gossip_now(fullmsg, true);
-                            } else if mtype == 5 {
-                                if let Ok(m) = m.try_into() {
-                                    if self.groupsent[1] {
-                                        self.inner.handle_gossip_now(fullmsg, true);
-                                    } else {
-                                        self.groupsent[1] = true;
-                                        let xt = CompressedRistretto(m);
-                                        let mut mess = self.leader.as_bytes().to_vec();
-                                        mess.extend(&self.lastname);
-                                        mess.extend(&(self.headshard as u16).to_le_bytes().to_vec());
-                                        println!("you're trying to send a scalar!");
-                                        for keylocation in self.keylocation.iter() {
-                                            let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &mess, &xt, &self.bnum).as_bytes().to_vec(), keylocation, &self.bnum);
-                                            m.push(6u8);
-                                            if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
-                                                if let Some(x) = self.leaderip {
-                                                    self.inner.dm(m, vec![&x], true);
-                                                } else {
-                                                    self.inner.broadcast(m);
-                                                }
-                                            }
-                                        }
-                                        self.waitingforleadertime = Instant::now();
-                                        self.inner.handle_gossip_now(fullmsg, true);
-                                    }
-                                } else {
-                                    self.inner.handle_gossip_now(fullmsg, false);
-                                }
-                            } else if mtype == 6 {
-                                println!("recieving scalars phase: {}",self.points.contains_key(&usize::MAX));
+                            } else {
+                                self.inner.handle_gossip_now(fullmsg, false);
+                            }
+                        } else if mtype == 4 /* the points you use to make the group signature for empty blocks */ {
+                            println!("recieving points phase: {}\nleader: {:?}",!self.points.contains_key(&usize::MAX),self.leader);
+                            if !self.points.contains_key(&usize::MAX) {
                                 if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
                                     let pk = pk as usize;
                                     if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
                                         if let Ok(m) = m.try_into() {
-                                            println!("got sent a scalar from {}",pk);
-                                            self.scalars.insert(pk,Scalar::from_bits(m));
-                                            self.inner.handle_gossip_now(fullmsg, true);
-                                        } else {
-                                            self.inner.handle_gossip_now(fullmsg, false);
+                                            if let Some(m) = CompressedRistretto(m).decompress() {
+                                                println!("got sent point from {}",pk);
+                                                self.points.insert(pk,m);
+                                            }
                                         }
+                                        
+                                    }
+                                }
+                            }
+                            self.inner.handle_gossip_now(fullmsg, true);
+                        } else if mtype == 5 /* the sum of the group elements made in the group signature */ {
+                            if let Ok(m) = m.try_into() {
+                                if self.groupsent[1] {
+                                    self.inner.handle_gossip_now(fullmsg, true);
+                                } else {
+                                    self.groupsent[1] = true;
+                                    let xt = CompressedRistretto(m);
+                                    let mut mess = self.leader.as_bytes().to_vec();
+                                    mess.extend(&self.lastname);
+                                    mess.extend(&(self.headshard as u16).to_le_bytes().to_vec());
+                                    println!("you're trying to send a scalar!");
+                                    for keylocation in self.keylocation.iter() {
+                                        let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &mess, &xt, &self.bnum).as_bytes().to_vec(), keylocation, &self.bnum);
+                                        m.push(6u8);
+                                        if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
+                                            if let Some(x) = self.leaderip {
+                                                self.inner.dm(m, vec![&x], true);
+                                            } else {
+                                                self.inner.broadcast(m);
+                                            }
+                                        }
+                                    }
+                                    self.waitingforleadertime = Instant::now();
+                                    self.inner.handle_gossip_now(fullmsg, true);
+                                }
+                            } else {
+                                self.inner.handle_gossip_now(fullmsg, false);
+                            }
+                        } else if mtype == 6 /* the scalars made for the group signature */ {
+                            println!("recieving scalars phase: {}",self.points.contains_key(&usize::MAX));
+                            if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
+                                let pk = pk as usize;
+                                if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
+                                    if let Ok(m) = m.try_into() {
+                                        println!("got sent a scalar from {}",pk);
+                                        self.scalars.insert(pk,Scalar::from_bits(m));
+                                        self.inner.handle_gossip_now(fullmsg, true);
                                     } else {
                                         self.inner.handle_gossip_now(fullmsg, false);
                                     }
@@ -1051,10 +1054,13 @@ impl Future for KhoraNode {
                             } else {
                                 self.inner.handle_gossip_now(fullmsg, false);
                             }
+                        } else /* spam that you choose not to propegate */ {
+                            self.inner.handle_gossip_now(fullmsg, false);
                         }
                     }
                     did_something = true;
                 }
+                // if the leader didn't show up, overthrow them
                 if (self.waitingforleadertime.elapsed().as_secs() > (0.5*self.blocktime) as u64) && self.waitingforleaderbool {
                     self.waitingforleadertime = Instant::now();
                     /* change the leader, also add something about only changing the leader if block is free */
@@ -1084,8 +1090,8 @@ impl Future for KhoraNode {
                 LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||||
                 ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF|
                 *//////////////////////////////////////////////////////////////////////////////////////////////////////////
-                // if self.headshard != 0 { // that tests shard usurption
-                if self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress() == self.leader { // the computation for my stake key doesn't need to be done every time in the loop
+                // if you are the leader, run these block creation commands
+                if self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress() == self.leader {
                     if (self.sigs.len() > SIGNING_CUTOFF) && (self.timekeeper.elapsed().as_secs() > (0.25*self.blocktime) as u64) {
                         let lastblock = NextBlock::finish(&self.key, &self.keylocation.iter().next().unwrap(), &self.sigs, &self.comittee[self.headshard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(self.headshard as u16), &self.bnum, &self.lastname, &self.stkinfo);
         
@@ -1114,12 +1120,10 @@ impl Future for KhoraNode {
                         did_something = true;
                     }
                     if self.points.get(&usize::MAX).is_none() && (self.timekeeper.elapsed().as_secs() > (0.25*self.blocktime) as u64) && (self.comittee[self.headshard].iter().filter(|&x| self.points.contains_key(x)).count() > SIGNING_CUTOFF) {
-                        // should prob check that validators are accurate here?
                         let points = self.points.par_iter().map(|x| *x.1).collect::<Vec<_>>();
                         let mut m = MultiSignature::sum_group_x(&points).as_bytes().to_vec();
                         m.push(5u8);
                         self.inner.broadcast(m);
-                        // self.points = HashMap::new();
                         self.points.insert(usize::MAX,MultiSignature::sum_group_x(&points).decompress().unwrap());
                         println!("scalar time!");
                         did_something = true;
@@ -1140,7 +1144,6 @@ impl Future for KhoraNode {
                             s.update(sumpt.compress().as_bytes());
                             let e = Scalar::from_hash(s);
 
-                            // println!("keys: {:?}",keys);
                             let k = keys.len();
                             keys.retain(|&x|
                                 if self.scalars.contains_key(&x) {
@@ -1157,11 +1160,6 @@ impl Future for KhoraNode {
                                         Some(i as u8)
                                     }
                                 ).collect::<Vec<_>>();
-                                // println!("e: {:?}",e);
-                                // println!("y: {:?}",self.scalars.values().map(|x| *x).sum::<Scalar>());
-                                // println!("x: {:?}",sumpt.compress());
-                                // println!("not who: {:?}",failed_validators); // <-------this is fucked up somehow
-                                // println!("comittee: {:?}",self.comittee[self.headshard]);
                                 let mut lastblock = NextBlock::default();
                                 lastblock.bnum = self.bnum;
                                 lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});
@@ -1175,7 +1173,6 @@ impl Future for KhoraNode {
                                 let leader = Signature::sign(&self.key, &mut s,&self.keylocation.iter().next().unwrap());
                                 lastblock.leader = leader;
 
-                                // println!("sum of points is accurate: {}",sumpt == self.points.iter().map(|x| x.1).sum());
                                 if lastblock.verify(&self.comittee[self.headshard].iter().map(|x| *x as u64).collect(),&self.stkinfo).is_ok() {
                                     println!("block verified!");
                                     let mut m = bincode::serialize(&lastblock).unwrap();
@@ -1195,6 +1192,8 @@ impl Future for KhoraNode {
                                 
                             } else { // failed to make a small signature block
                                 let m = bincode::serialize(&self.txses).unwrap();
+                                self.points = HashMap::new();
+                                self.scalars = HashMap::new();
                                 println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
                                 let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
                                 m.push(1u8);
@@ -1203,6 +1202,7 @@ impl Future for KhoraNode {
                                 self.timekeeper = Instant::now();
                             }
                         } else {
+                            // group signature took to long restarting with schoore
                             let m = bincode::serialize(&self.txses).unwrap();
                             println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
                             let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum);
@@ -1213,7 +1213,8 @@ impl Future for KhoraNode {
                         did_something = true;
                     }
                 }
-                // }
+
+                // if the entry person didn't show up start trying to make an empty block
                 if self.waitingforentrybool && (self.waitingforentrytime.elapsed().as_secs() > (0.66*self.blocktime) as u64) {
                     self.waitingforentrybool = false;
                     for keylocation in &self.keylocation {
@@ -1240,7 +1241,9 @@ impl Future for KhoraNode {
         |--0| STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::|/
         |--0| ::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF::::::::::::STAKER STUFF/
              \*/
-            if self.is_user { // users have is_user true
+            // if you're not in the comittee
+            if self.is_user {
+                // if you're syncing someone sync a few more blocks every loop time
                 if let Some(addr) = self.sync_returnaddr {
                     for b in self.sync_theirnum..std::cmp::min(self.sync_theirnum+10, self.bnum) {
                         println!("checking for file location for {}...",b);
@@ -1260,118 +1263,119 @@ impl Future for KhoraNode {
                 }
 
 
-
+                // recieved a message as a non comittee member
                 while let Async::Ready(Some(fullmsg)) = track_try_unwrap!(self.outer.poll()) {
                     let msg = fullmsg.message.clone();
-                    if !self.bannedlist.contains(&msg.id.node()) {
-                        let mut m = msg.payload.to_vec();
-                        if let Some(mtype) = m.pop() { // dont do unwraps that could mess up a anyone except user
-                            println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id.node());
+                    let mut m = msg.payload.to_vec();
+                    if let Some(mtype) = m.pop() {
+                        println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id.node());
 
 
-                            if mtype == 0 {
-                                let m = m[..std::cmp::min(m.len(),100_000)].to_vec();
-                                if let Ok(t) = bincode::deserialize::<PolynomialTransaction>(&m) {
-                                    if self.save_history {
-                                        let ok = {
-                                            if t.inputs.last() == Some(&1) {
-                                                t.verifystk(&self.stkinfo).is_ok()
-                                            } else {
-                                                let bloom = self.bloom.borrow();
-                                                t.tags.iter().all(|y| !bloom.contains(y.as_bytes())) && t.verify().is_ok()
-                                            }
-                                        };
-                                        if ok {
-                                            self.txses.push(m);
-                                            print!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\ngot a tx, now at {}!",self.txses.len());
-                                            self.outer.handle_gossip_now(fullmsg, true);
+                        if mtype == 0 /* transaction someone wants to make */ {
+                            // to avoid spam
+                            let m = m[..std::cmp::min(m.len(),100_000)].to_vec();
+                            if let Ok(t) = bincode::deserialize::<PolynomialTransaction>(&m) {
+                                if self.save_history {
+                                    let ok = {
+                                        if t.inputs.last() == Some(&1) {
+                                            t.verifystk(&self.stkinfo).is_ok()
+                                        } else {
+                                            let bloom = self.bloom.borrow();
+                                            t.tags.iter().all(|y| !bloom.contains(y.as_bytes())) && t.verify().is_ok()
                                         }
-                                    } else {
+                                    };
+                                    if ok {
+                                        self.txses.push(m);
+                                        print!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\ngot a tx, now at {}!",self.txses.len());
                                         self.outer.handle_gossip_now(fullmsg, true);
                                     }
                                 } else {
-                                    self.outer.handle_gossip_now(fullmsg, false);
-                                }
-                            } else if mtype == 3 {
-                                if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
-                                    let s = self.readblock(lastblock, m);
-                                    self.outer.handle_gossip_now(fullmsg, s);
-                                } else {
-                                    self.outer.handle_gossip_now(fullmsg, false);
-                                }
-                            } else if mtype == 60 /* < */ { // redo sync request
-                                let mut mynum = self.bnum.to_le_bytes().to_vec();
-                                if self.lightning_yielder {
-                                    mynum.push(102); //f
-                                } else {
-                                    mynum.push(108); //l
-                                }
-                                mynum.push(121);
-                                let mut friend = self.outer.plumtree_node().all_push_peers();
-                                friend.remove(&msg.id.node());
-                                friend.remove(self.outer.plumtree_node().id());
-                                let friend = friend.into_iter().collect::<Vec<_>>();
-                                if let Some(friend) = friend.choose(&mut rand::thread_rng()) {
-                                    println!("asking for help from {:?}",friend);
-                                    self.outer.dm(mynum, &[*friend], false);
-                                } else {
-                                    println!("you're isolated");
-                                }
-                            } else if mtype == 108 /* l */ {
-                                if self.lightning_yielder {
-                                    if let Ok(lastblock) = bincode::deserialize::<LightningSyncBlock>(&m) {
-                                        self.readlightning(lastblock, m, None); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
-                                    }
-                                }
-                            } else if mtype == 113 /* q */ { // they just sent you a ring member
-                                self.rmems.insert(u64::from_le_bytes(m[64..72].try_into().unwrap()),History::read_raw(&m));
-                            } else if mtype == 114 /* r */ { // answer their ring question
-                                let mut y = m[..8].to_vec();
-                                let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
-                                x.append(&mut y);
-                                x.push(113);
-                                self.outer.dm(x,&vec![msg.id.node()],false);
-                            } else if mtype == 118 /* v */ {
-                                if let Some(who) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
-                                    let m = bincode::deserialize::<NodeId>(&m).unwrap();
-                                    if self.queue[self.headshard].contains(&(who as usize)) {
-                                        self.knownvalidators.insert(who,m.with_id(0));
-                                    }
                                     self.outer.handle_gossip_now(fullmsg, true);
-                                } else {
-                                    self.inner.handle_gossip_now(fullmsg, false);
                                 }
-                            } else if mtype == 121 /* y */ {
-                                if self.save_history {
-                                    if self.sync_returnaddr.is_none() {
-                                        if let Some(theyfast) = m.pop() {
-                                            if let Ok(m) = m.try_into() {
-                                                if theyfast == 108 {
-                                                    self.sync_lightning = true;
+                            } else {
+                                self.outer.handle_gossip_now(fullmsg, false);
+                            }
+                        } else if mtype == 3 /* recieved a full block */ {
+                            if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
+                                let s = self.readblock(lastblock, m);
+                                self.outer.handle_gossip_now(fullmsg, s);
+                            } else {
+                                self.outer.handle_gossip_now(fullmsg, false);
+                            }
+                        } else if mtype == 60 /* < */ { // redo sync request
+                            let mut mynum = self.bnum.to_le_bytes().to_vec();
+                            if self.lightning_yielder { // lightning users don't ask for full blocks
+                                mynum.push(108); //l
+                            } else {
+                                mynum.push(102); //f
+                            }
+                            mynum.push(121);
+                            let mut friend = self.outer.plumtree_node().all_push_peers();
+                            friend.remove(&msg.id.node());
+                            friend.remove(self.outer.plumtree_node().id());
+                            let friend = friend.into_iter().collect::<Vec<_>>();
+                            if let Some(friend) = friend.choose(&mut rand::thread_rng()) {
+                                println!("asking for help from {:?}",friend);
+                                self.outer.dm(mynum, &[*friend], false);
+                            } else {
+                                println!("you're isolated");
+                            }
+                        } else if mtype == 108 /* l */ { // a lightning block
+                            if self.lightning_yielder {
+                                if let Ok(lastblock) = bincode::deserialize::<LightningSyncBlock>(&m) {
+                                    self.readlightning(lastblock, m, None); // that whole thing with 3 and 8 makes it super unlikely to get more blocks (expecially for my small thing?)
+                                }
+                            }
+                        } else if mtype == 113 /* q */ { // they just sent you a ring member
+                            self.rmems.insert(u64::from_le_bytes(m[64..72].try_into().unwrap()),History::read_raw(&m));
+                        } else if mtype == 114 /* r */ { // answer their ring question
+                            let mut y = m[..8].to_vec();
+                            let mut x = History::get_raw(&u64::from_le_bytes(y.clone().try_into().unwrap())).to_vec();
+                            x.append(&mut y);
+                            x.push(113);
+                            self.outer.dm(x,&vec![msg.id.node()],false);
+                        } else if mtype == 118 /* v */ { // someone announcing they're about to be in the comittee
+                            if let Some(who) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
+                                let m = bincode::deserialize::<NodeId>(&m).unwrap();
+                                if self.queue[self.headshard].contains(&(who as usize)) {
+                                    self.knownvalidators.insert(who,m.with_id(0));
+                                }
+                                self.outer.handle_gossip_now(fullmsg, true);
+                            } else {
+                                self.inner.handle_gossip_now(fullmsg, false);
+                            }
+                        } else if mtype == 121 /* y */ { // someone sent a sync request
+                            let mut i_cant_do_this = true;
+                            if self.save_history {
+                                if self.sync_returnaddr.is_none() {
+                                    if let Some(theyfast) = m.pop() {
+                                        if let Ok(m) = m.try_into() {
+                                            if theyfast == 108 {
+                                                self.sync_lightning = true;
+                                                self.sync_returnaddr = Some(msg.id.node());
+                                                self.sync_theirnum = u64::from_le_bytes(m);
+                                                i_cant_do_this = false;
+                                            } else {
+                                                if !self.lightning_yielder {
+                                                    self.sync_lightning = false;
                                                     self.sync_returnaddr = Some(msg.id.node());
                                                     self.sync_theirnum = u64::from_le_bytes(m);
-                                                } else {
-                                                    if !self.lightning_yielder {
-                                                        self.sync_lightning = false;
-                                                        self.sync_returnaddr = Some(msg.id.node());
-                                                        self.sync_theirnum = u64::from_le_bytes(m);
-                                                    }
+                                                    i_cant_do_this = false;
                                                 }
                                             }
                                         }
                                     }
-                                } else {
-                                    if msg.id.node() != *self.outer.plumtree_node().id() {
-                                        self.outer.dm(vec![60], &[msg.id.node()], false);
-                                    }
                                 }
-                            } else {
-                                self.inner.handle_gossip_now(fullmsg, false);
                             }
+                            if msg.id.node() != *self.outer.plumtree_node().id() && i_cant_do_this {
+                                self.outer.dm(vec![60], &[msg.id.node()], false);
+                            }
+                        } else /* spam */ {
+                            self.inner.handle_gossip_now(fullmsg, false);
                         }
                     }
-                    did_something = true;
                 }
+                did_something = true;
             }
 
 
@@ -1396,6 +1400,7 @@ impl Future for KhoraNode {
             USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF |||||||||||||
             ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF ||||||||||||| USER STUFF
             */
+            // handles ring formation for people who don't have access to the history of the blockchain
             if !self.save_history {
                 if let Some(outs) = self.outs.clone() {
                     let ring = recieve_ring(&self.rname).expect("shouldn't fail");
@@ -1421,10 +1426,11 @@ impl Future for KhoraNode {
                     }
                 }
             }
+            // interacting with the gui
             while let Async::Ready(Some(mut m)) = self.gui_reciever.poll().expect("Never fails") {
                 println!("got message from gui!\n{}",String::from_utf8_lossy(&m));
                 if let Some(istx) = m.pop() {
-                    if istx == 33 /* ! */ {
+                    if istx == 33 /* ! */ { // a transaction
                         let txtype = m.pop().unwrap();
                         let mut outs = vec![];
                         while m.len() > 0 {
@@ -1435,10 +1441,8 @@ impl Future for KhoraNode {
                                 pks.push(CompressedRistretto(h1.into_iter().zip(h2).map(|(x,y)|x+y).collect::<Vec<u8>>().try_into().unwrap()));
                             }
                             let x: [u8;8] = m.drain(..8).collect::<Vec<_>>().try_into().unwrap();
-                            // println!("hi {:?}",x);
                             let x = u64::from_le_bytes(x);
                             println!("amounts {:?}",x);
-                            // println!("ha {:?}",1u64.to_le_bytes());
                             let y = x/2u64.pow(BETA as u32) + 1;
                             println!("need to split this up into {} txses!",y);
                             let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
@@ -1449,9 +1453,10 @@ impl Future for KhoraNode {
                         }
 
                         let mut txbin: Vec<u8>;
-                        if txtype == 33 /* ! */ {
+                        if txtype == 33 /* ! */ { // transaction should be spent with unstaked money
                             let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(x.0,x.1.clone())).unzip();
 
+                            // if you need help with ring generation
                             if !self.save_history {
                                 if self.mine.len() > 0 {
                                     let helpers = self.outer.plumtree_node().all_push_peers().into_iter().collect::<Vec<_>>();
@@ -1459,13 +1464,12 @@ impl Future for KhoraNode {
                                     let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(*x.0,x.1.clone())).unzip();
                 
                                     println!("loc: {:?}",loc);
-                                    println!("height: {}",self.height); // need to get the true height first!
+                                    println!("height: {}",self.height);
                                     for (i,j) in loc.iter().zip(acc) {
                                         println!("i: {}, j.pk: {:?}",i,j.pk.compress());
                                         self.rmems.insert(*i,j);
                                     }
                                     
-                                    // maybe have bigger rings than 5? it's a choice i dont forbid anything
                                     self.rname = generate_ring(&loc.iter().map(|x|*x as usize).collect::<Vec<_>>(), &(loc.len() as u16 + 4), &self.height);
                                     let ring = recieve_ring(&self.rname).expect("shouldn't fail");
                                     let ring = ring.into_iter().filter(|x| loc.iter().all(|y|x!=y)).collect::<Vec<_>>();
@@ -1474,7 +1478,7 @@ impl Future for KhoraNode {
                                     for (i,r) in ring.iter().enumerate() {
                                         let mut r = r.to_le_bytes().to_vec();
                                         r.push(114u8);
-                                        self.outer.dm(r,&[helpers[i%alen],helpers[(i+1)%alen]],false); // worry about txting self
+                                        self.outer.dm(r,&[helpers[i%alen],helpers[(i+1)%alen]],false);
                                     }
 
                                     self.outs = Some(outs);
@@ -1509,7 +1513,7 @@ impl Future for KhoraNode {
                                     println!("you can't make that transaction!");
                                 }
                             }
-                        } else if txtype == 63 /* ? */ {
+                        } else if txtype == 63 /* ? */ { // transaction should be spent with staked money
                             let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.iter().map(|x|(x[0] as u64,x[1].clone())).unzip();
                             let inps = amnt.into_iter().map(|x| self.me.receive_ot(&self.me.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
                             let tx = Transaction::spend_ring(&inps, &outs.iter().map(|x|(&x.0,&x.1)).collect::<Vec<(&Account,&Scalar)>>());
@@ -1531,6 +1535,7 @@ impl Future for KhoraNode {
                             println!("somethings wrong with your query!");
 
                         }
+                        // if that tx is valid and ready as far as you know
                         if !txbin.is_empty() {
                             self.txses.push(txbin.clone());
                             txbin.push(0);
@@ -1547,7 +1552,8 @@ impl Future for KhoraNode {
                             stkamnt -= 1;
                         }
                         let newacc = Account::new(&format!("{}",String::from_utf8_lossy(&m)));
-                        println!("understood command");
+
+                        // send unstaked money
                         if self.mine.len() > 0 {
                             let (loc, _acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(x.0,x.1.clone())).unzip();
 
@@ -1556,10 +1562,8 @@ impl Future for KhoraNode {
                             let ring = recieve_ring(&rname).expect("shouldn't fail");
 
                             println!("made rings");
-                            /* this is where people send you the ring members */ 
-                            // let mut rlring = ring.into_par_iter().map(|x| OTAccount::summon_ota(&History::get(&x))).collect::<Vec<OTAccount>>();
+                            /* you don't use a ring for panics (the ring is just your own accounts) */ 
                             let mut rlring = ring.iter().map(|&x| self.mine.iter().filter(|(&y,_)| y == x).collect::<Vec<_>>()[0].1.clone()).collect::<Vec<OTAccount>>();
-                            /* this is where people send you the ring members */ 
                             let me = self.me;
                             rlring.iter_mut().for_each(|x|if let Ok(y)=me.receive_ot(&x) {*x = y;});
                             
@@ -1575,7 +1579,9 @@ impl Future for KhoraNode {
                             println!("{:?}",amnt);
                             if tx.verify().is_ok() {
                                 let tx = tx.polyform(&rname);
-                                // tx.verify().unwrap(); // as a user you won't be able to check this
+                                if self.save_history {
+                                    tx.verify().unwrap(); // as a user you won't be able to check this
+                                }
                                 let mut txbin = bincode::serialize(&tx).unwrap();
                                 self.txses.push(txbin.clone());
                                 txbin.push(0);
@@ -1587,7 +1593,7 @@ impl Future for KhoraNode {
                             }
                         }
 
-
+                        // send staked money
                         if self.smine.len() > 0 {
                             let (loc, amnt): (Vec<u64>,Vec<u64>) = self.smine.iter().map(|x|(x[0],x[1])).unzip();
                             let inps = amnt.into_iter().map(|x| self.me.receive_ot(&self.me.derive_stk_ot(&Scalar::from(x))).unwrap()).collect::<Vec<_>>();
@@ -1631,7 +1637,7 @@ impl Future for KhoraNode {
                         self.gui_sender.send(m1).expect("should be working");
                         self.gui_sender.send(m2).expect("should be working");
 
-                    } else if istx == 121 /* y */ {
+                    } else if istx == 121 /* y */ { // you clicked sync
                         let mut mynum = self.bnum.to_le_bytes().to_vec();
                         if self.lightning_yielder {
                             mynum.push(108); //l
@@ -1648,7 +1654,7 @@ impl Future for KhoraNode {
                         } else {
                             println!("you're isolated");
                         }
-                    } else if istx == 42 /* * */ { // ips to talk to
+                    } else if istx == 42 /* * */ { // entry address
                         let m = String::from_utf8_lossy(&m);
                         self.outer.dm(vec![],&[NodeId::new(m.parse::<SocketAddr>().unwrap(), LocalNodeId::new(0))],true);
                     }
@@ -1665,22 +1671,8 @@ impl Future for KhoraNode {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            if self.usurpingtime.elapsed().as_secs() > USURP_TIME { // this will be much larger
+            // if you need to usurp shard 0 because of huge network failure
+            if self.usurpingtime.elapsed().as_secs() > USURP_TIME {
                 self.timekeeper = self.usurpingtime;
                 self.usurpingtime = Instant::now();
                 self.headshard += 1;
