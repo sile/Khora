@@ -13,8 +13,8 @@ panic = 'abort'     # Abort on panic
 # cargo build
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [[bin]]
-name = "full_staker"
-path = "src/bin/full_staker.rs"
+name = "main"
+path = "src/bin/main.rs"
 
 [dependencies]
 curve25519-dalek = { version = "3", features = ["serde"] }

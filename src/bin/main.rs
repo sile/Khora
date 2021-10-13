@@ -361,7 +361,7 @@ struct KhoraNode {
     headshard: usize,
     usurpingtime: Instant,
     is_validator: bool,
-    is_user: bool, // modify this depending on if staking??? is that already done?
+    is_user: bool,
     sent_onces: HashSet<Vec<u8>>,
     knownvalidators: HashMap<u64,NodeId>,
     announcevalidationtime: Instant,
