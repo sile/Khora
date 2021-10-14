@@ -54,6 +54,8 @@ const WARNINGTIME: usize = REPLACERATE*5;
 const BLANKS_IN_A_ROW: u64 = 60;
 /// amount of seconds to wait before initiating shard takeover
 const USURP_TIME: u64 = 3600;
+/// the default port
+const DEFAULT_PORT: u64 = 8334;
 /// calculates the amount of time the current block takes to be created
 fn blocktime(cumtime: f64) -> f64 {
     // 60f64/(6.337618E-8f64*cumtime+2f64).ln()
@@ -81,8 +83,8 @@ fn main() -> Result<(), MainError> {
         
 
     /* server should use local ip or 0.0.0.0 client should connect through global ip address */
-    // let addr: SocketAddr = format!("{}:{}", local_ipaddress::get().unwrap(), 9876).parse().unwrap();
-    let addr: SocketAddr = "0.0.0.0:9876".parse().unwrap();
+    // let addr: SocketAddr = format!("{}:{}", local_ipaddress::get().unwrap(), DEFAULT_PORT).parse().unwrap();
+    let addr: SocketAddr = format!("0.0.0.0:{}",DEFAULT_PORT).parse().unwrap();
 
 
 
@@ -1659,7 +1661,7 @@ impl Future for KhoraNode {
                             println!("you're isolated");
                         }
                     } else if istx == 42 /* * */ { // entry address
-                        let m = String::from_utf8_lossy(&m);
+                        let m = format!("{}:{}",String::from_utf8_lossy(&m),format!("0.0.0.0:{}",DEFAULT_PORT));
                         self.outer.dm(vec![],&[NodeId::new(m.parse::<SocketAddr>().unwrap(), LocalNodeId::new(0))],true);
                     }
                 }
