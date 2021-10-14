@@ -4,6 +4,7 @@ extern crate clap;
 extern crate trackable;
 
 use clap::Arg;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_COMPRESSED;
 use fibers::sync::mpsc;
 use fibers::{Executor, Spawn, ThreadPoolExecutor};
 use futures::{Async, Future, Poll, Stream};
@@ -1410,25 +1411,41 @@ impl Future for KhoraNode {
                         while m.len() > 0 {
                             let mut pks = vec![];
                             for _ in 0..3 { // read the pk address
-                                let h1 = m.drain(..32).collect::<Vec<_>>().iter().map(|x| (x-97)).collect::<Vec<_>>();
-                                let h2 = m.drain(..32).collect::<Vec<_>>().iter().map(|x| (x-97)*16).collect::<Vec<_>>();
-                                if let Ok(p) = h1.into_iter().zip(h2).map(|(x,y)|x+y).collect::<Vec<u8>>().try_into() {
-                                    pks.push(CompressedRistretto(p));
+                                if m.len() >= 64 {
+                                    let h1 = m.drain(..32).collect::<Vec<_>>().iter().map(|x| (x-97)).collect::<Vec<_>>();
+                                    let h2 = m.drain(..32).collect::<Vec<_>>().iter().map(|x| (x-97)*16).collect::<Vec<_>>();
+                                    if let Ok(p) = h1.into_iter().zip(h2).map(|(x,y)|x+y).collect::<Vec<u8>>().try_into() {
+                                        pks.push(CompressedRistretto(p));
+                                    } else {
+                                        pks.push(RISTRETTO_BASEPOINT_COMPRESSED);
+                                        validtx = false;
+                                    }
                                 } else {
+                                    pks.push(RISTRETTO_BASEPOINT_COMPRESSED);
                                     validtx = false;
                                 }
                             }
-                            if let Ok(x) = m.drain(..8).collect::<Vec<_>>().try_into() {
-                                let x = u64::from_le_bytes(x);
-                                println!("amounts {:?}",x);
-                                let y = x/2u64.pow(BETA as u32) + 1;
-                                println!("need to split this up into {} txses!",y);
-                                let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
-                                for _ in 0..y {
-                                    let amnt = Scalar::from(x/y);
+                            if m.len() >= 8 {
+                                if let Ok(x) = m.drain(..8).collect::<Vec<_>>().try_into() {
+                                    let x = u64::from_le_bytes(x);
+                                    println!("amounts {:?}",x);
+                                    let y = x/2u64.pow(BETA as u32) + 1;
+                                    println!("need to split this up into {} txses!",y);
+                                    let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
+                                    for _ in 0..y {
+                                        let amnt = Scalar::from(x/y);
+                                        outs.push((recv,amnt));
+                                    }
+                                } else {
+                                    let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
+                                    let amnt = Scalar::zero();
                                     outs.push((recv,amnt));
+                                    validtx = false;
                                 }
                             } else {
+                                let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
+                                let amnt = Scalar::zero();
+                                outs.push((recv,amnt));
                                 validtx = false;
                             }
                         }
@@ -1521,6 +1538,9 @@ impl Future for KhoraNode {
                             self.txses.push(txbin.clone());
                             txbin.push(0);
                             self.outer.broadcast_now(txbin);
+                            println!("transaction broadcasted");
+                        } else {
+                            println!("transaction not made right now");
                         }
                     } else if istx == u8::MAX /* panic button */ {
                         
