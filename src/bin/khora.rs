@@ -215,7 +215,6 @@ fn main() -> Result<(), MainError> {
             sent_onces: HashSet::new(),
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
-            leaderip: None,
             newest: 0u64,
             rmems: HashMap::new(),
             rname: vec![],
@@ -367,7 +366,6 @@ struct KhoraNode {
     sent_onces: HashSet<Vec<u8>>,
     knownvalidators: HashMap<u64,NodeId>,
     announcevalidationtime: Instant,
-    leaderip: Option<NodeId>,
     newest: u64,
     rmems: HashMap<u64,OTAccount>,
     rname: Vec<u8>,
@@ -477,7 +475,6 @@ impl KhoraNode {
             knownvalidators: HashMap::new(),
             announcevalidationtime: Instant::now() - Duration::from_secs(10),
             doneerly: Instant::now(),
-            leaderip: None,
             newest: 0u64,
             rmems: HashMap::new(),
             rname: vec![],
@@ -656,12 +653,6 @@ impl KhoraNode {
                             None
                         }
                     }).collect::<HashMap<_,_>>();
-                }
-
-                if let Some(&x) = self.knownvalidators.iter().filter(|&x| self.stkinfo[*x.0 as usize].0 == self.leader).map(|(_,&x)| x).collect::<Vec<_>>().get(0) {
-                    self.leaderip = Some(x.with_id(1u64));
-                } else {
-                    self.leaderip = None;
                 }
                 /* LEADER CHOSEN BY VOTES (off blockchain, says which comittee member they should send stuff to) */
 
@@ -940,11 +931,7 @@ impl Future for KhoraNode {
                                                 let mut m = bincode::serialize(&m).unwrap();
                                                 m.push(2);
                                                 for _ in self.comittee[self.headshard].iter().filter(|&x|*x as u64 == *keylocation).collect::<Vec<_>>() {
-                                                    if let Some(x) = self.leaderip {
-                                                        self.inner.dm(m.clone(), vec![&x], false);
-                                                    } else {
-                                                        self.inner.broadcast(m.clone());
-                                                    }
+                                                    self.inner.broadcast(m.clone());
                                                 }
                                             } else if (m.txs.len() == 0) && (m.emptyness.is_none()){
                                                 println!("going for empty block");
@@ -955,13 +942,8 @@ impl Future for KhoraNode {
                                                     m.push(4u8);
                                                     if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
                                                         // self.inner.broadcast(m.clone());
-                                                        if let Some(x) = self.leaderip {
-                                                            println!("I'm dm'ing a MESSAGE TYPE 4 to {:?}",x);
-                                                            self.inner.dm(m, vec![&x], false);
-                                                        } else {
-                                                            println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
-                                                            self.inner.broadcast(m);
-                                                        }
+                                                        println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
+                                                        self.inner.broadcast(m);
                                                     }
                                                 }
                                             }
@@ -1026,11 +1008,7 @@ impl Future for KhoraNode {
                                         let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &mess, &xt, &self.bnum).as_bytes().to_vec(), keylocation, &self.bnum);
                                         m.push(6u8);
                                         if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
-                                            if let Some(x) = self.leaderip {
-                                                self.inner.dm(m, vec![&x], true);
-                                            } else {
-                                                self.inner.broadcast(m);
-                                            }
+                                            self.inner.broadcast(m);
                                         }
                                     }
                                     self.waitingforleadertime = Instant::now();
@@ -1077,11 +1055,6 @@ impl Future for KhoraNode {
                             y
                         }
                     }).unwrap().0].0;
-                    if let Some(&x) = self.knownvalidators.iter().filter(|&x| self.stkinfo[*x.0 as usize].0 == self.leader).map(|(_,&x)| x).collect::<Vec<_>>().get(0) {
-                        self.leaderip = Some(x.with_id(1u64));
-                    } else {
-                        self.leaderip = None;
-                    }
                 }
                 /*_________________________________________________________________________________________________________
                 LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||| LEADER STUFF ||||||||||||||
