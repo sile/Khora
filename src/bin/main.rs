@@ -1661,8 +1661,12 @@ impl Future for KhoraNode {
                             println!("you're isolated");
                         }
                     } else if istx == 42 /* * */ { // entry address
-                        let m = format!("{}:{}",String::from_utf8_lossy(&m),format!("0.0.0.0:{}",DEFAULT_PORT));
-                        self.outer.dm(vec![],&[NodeId::new(m.parse::<SocketAddr>().unwrap(), LocalNodeId::new(0))],true);
+                        let m = format!("{}:{}",String::from_utf8_lossy(&m),DEFAULT_PORT);
+                        println!("{}",m);
+                        if let Ok(socket) = m.parse() {
+                            println!("it's a socket");
+                            self.outer.dm(vec![],&[NodeId::new(socket, LocalNodeId::new(0))],true);
+                        }
                     }
                 }
             }
