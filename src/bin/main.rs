@@ -802,7 +802,6 @@ impl Future for KhoraNode {
         let mut did_something = true;
         while did_something {
             did_something = false;
-            print!(".");
 
             /*\_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner|\
             \*/
