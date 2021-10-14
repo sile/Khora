@@ -302,11 +302,6 @@ impl epi::App for TemplateApp {
 
             egui::menu::bar(ui, |ui| {
                 egui::menu::menu(ui, "File", |ui| {
-                    if ui.button("Mesh Network Gate IP").clicked() && !*setup {
-                        let mut m = entrypoint.as_bytes().to_vec();
-                        m.push(42);
-                        sender.send(m).expect("something's wrong with communication from the gui");
-                    }
                     if ui.button("Panic Options").clicked() {
                         *show_reset = !*show_reset;
                     }
@@ -321,6 +316,11 @@ impl epi::App for TemplateApp {
                 });
                 ui.label("Connection Gate");
                 ui.add(TextEdit::singleline(entrypoint).hint_text("put entry here"));
+                if ui.button("Mesh Network Gate IP").clicked() && !*setup {
+                    let mut m = entrypoint.as_bytes().to_vec();
+                    m.push(42);
+                    sender.send(m).expect("something's wrong with communication from the gui");
+                }
             });
             ui.heading("KHORA");
             ui.horizontal(|ui| {
