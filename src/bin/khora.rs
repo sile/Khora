@@ -1418,12 +1418,7 @@ impl Future for KhoraNode {
                         let mut txbin = bincode::serialize(&tx).unwrap();
                         txbin.push(0);
                         let needtosend = (txbin,self.mine.iter().map(|x| *x.0).collect::<Vec<_>>());
-                        // self.needtosend = Some(needtosend.clone());
-                        if self.knownvalidators.len() > 0 {
-                            self.outer.dm_now(needtosend.0.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
-                        } else {
-                            self.outer.broadcast_now(needtosend.0.clone());
-                        }
+                        self.outer.broadcast_now(needtosend.0.clone());
                         println!("transaction made!");
                         self.outs = None;
                     } else {
@@ -1544,7 +1539,6 @@ impl Future for KhoraNode {
                         if !txbin.is_empty() {
                             self.txses.push(txbin.clone());
                             txbin.push(0);
-                            self.outer.dm_now(txbin.clone(),self.knownvalidators.iter().map(|x| x.1).collect::<Vec<_>>(),false);
                             self.outer.broadcast_now(txbin);
                         }
                     } else if istx == u8::MAX /* panic button */ {
