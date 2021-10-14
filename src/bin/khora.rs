@@ -1403,6 +1403,7 @@ impl Future for KhoraNode {
             while let Async::Ready(Some(mut m)) = self.gui_reciever.poll().expect("Never fails") {
                 println!("got message from gui!\n{}",String::from_utf8_lossy(&m));
                 if let Some(istx) = m.pop() {
+                    let mut validtx = true;
                     if istx == 33 /* ! */ { // a transaction
                         let txtype = m.pop().unwrap();
                         let mut outs = vec![];
@@ -1411,17 +1412,24 @@ impl Future for KhoraNode {
                             for _ in 0..3 { // read the pk address
                                 let h1 = m.drain(..32).collect::<Vec<_>>().iter().map(|x| (x-97)).collect::<Vec<_>>();
                                 let h2 = m.drain(..32).collect::<Vec<_>>().iter().map(|x| (x-97)*16).collect::<Vec<_>>();
-                                pks.push(CompressedRistretto(h1.into_iter().zip(h2).map(|(x,y)|x+y).collect::<Vec<u8>>().try_into().unwrap()));
+                                if let Ok(p) = h1.into_iter().zip(h2).map(|(x,y)|x+y).collect::<Vec<u8>>().try_into() {
+                                    pks.push(CompressedRistretto(p));
+                                } else {
+                                    validtx = false;
+                                }
                             }
-                            let x: [u8;8] = m.drain(..8).collect::<Vec<_>>().try_into().unwrap();
-                            let x = u64::from_le_bytes(x);
-                            println!("amounts {:?}",x);
-                            let y = x/2u64.pow(BETA as u32) + 1;
-                            println!("need to split this up into {} txses!",y);
-                            let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
-                            for _ in 0..y {
-                                let amnt = Scalar::from(x/y);
-                                outs.push((recv,amnt));
+                            if let Ok(x) = m.drain(..8).collect::<Vec<_>>().try_into() {
+                                let x = u64::from_le_bytes(x);
+                                println!("amounts {:?}",x);
+                                let y = x/2u64.pow(BETA as u32) + 1;
+                                println!("need to split this up into {} txses!",y);
+                                let recv = Account::from_pks(&pks[0], &pks[1], &pks[2]);
+                                for _ in 0..y {
+                                    let amnt = Scalar::from(x/y);
+                                    outs.push((recv,amnt));
+                                }
+                            } else {
+                                validtx = false;
                             }
                         }
 
@@ -1509,7 +1517,7 @@ impl Future for KhoraNode {
 
                         }
                         // if that tx is valid and ready as far as you know
-                        if !txbin.is_empty() {
+                        if validtx && !txbin.is_empty() {
                             self.txses.push(txbin.clone());
                             txbin.push(0);
                             self.outer.broadcast_now(txbin);
