@@ -1,4 +1,4 @@
-
+Concept overview:
 Transaction:
 	we use the Omniring signature scheme where amounts and identities are hidden. fees are implimented as sending money to a default address (like monero). fees are visible so everyone knows to add that money to the stakers who validated the block. Users can't recieve the fee money by pretending to be the default address they were sent to.
 	validation accounts use your true secret key but a tracking and viewing secret key of 1 (so everyone can see the amounts you start with). When you make money (or are punished by loosing 1/1000th of your money for missing a block), everyone knows to add that amount of money to the transaction you used to become a staker. The money lost to punishments are given to the backup comittee.
@@ -9,9 +9,39 @@ Block Creation:
 	if the block is empty, the validators sign off on an empty block using a group multisignature scheme which consists of a Dalek-Cryptography Eliptic Curve Point, a scalar, and the curve points of all who signed it. The comittee who is allowed to sign off on blocks is the output of a random orical with an input of the blockchain.  All comittee members are known 128 blocks in advance. To save space on multisignatures, the public keys are refered to as the index within the comittee they are (1 byte instead of 32 bytes) and those who didn't sign are written in the block (because at least 2/3 need to sign for a block to be approved, this collection of bytes will between 0% to 50% smaller at 64+[0-42] bytes). This requires an extra round of communication. The first round of communication lasts for 1/4 of the time to make the block and the second lasts for another 1/4 of the block creation time.
 	If that fails or the block is non empty, the comittee moves to standard schoore signatures (where they have 1/4 of the block creation time to agree) at 65 bytes per person signing. If a block is empty, the validators may not have to save it. They are allowed to write 60 empty blocks in a row without saving anything on their computers. When writing an empty block, all validators recieve equal reward, reguardless of if they signed.
 	2/3s of the comittee need to sign off on a block for it to be considered real. There are 2 forms of blocks: full blocks and lightning blocks. Full blocks contain proofs the transactions are valid and lightning blocks only have the word of the comittee. Everyone on the network recieves the full blocks and lightning blocks are only used to sync new users to the current block. Validators sign the lightning blocks so they can be verified and you can derive a lightning block from a full block.
-	The comittee members are chosen porportionally to the amount of money they have staked (if you own x% of the staked money, you have and x% chance of being selected in any position). The newest comittee member tells them about the transactions going on in the outside world (because the comittee is isolated). If they don't show up in 0.25 of the block creation time, you start  making an empty block. When the comittee has their transactions, they send the transaction info to the leader that they all sign off on to select which comittee members actually signed the block. The leader has the ability to cause forks that can last exactly 1 block so you have to wait an extra block for your transaction to be considered valid. If the leader doesn't show up within half the blocktime you ban that person from acting as leader and wait for the next leader. This happens over and over again if they don't show up over and over again. If the entire comittee doesn't show up for an hour, there's unlimeted backup comittees to take their place.
+	The comittee members are chosen porportionally to the amount of money they have staked (if you own x% of the staked money, you have and x% chance of being selected in any position). The newest comittee member tells them about the transactions going on in the outside world (because the comittee is isolated). If they don't show up in 0.25 of the block creation time, you start  making an empty block. When the comittee has their transactions, they gossip their version of the transaction info to the leader that they all sign off on to select which comittee members actually signed the block. The leader has the ability to cause forks that can last exactly 1 block so you have to wait an extra block for your transaction to be considered valid. If the leader doesn't show up within half the blocktime you ban that person from acting as leader and wait for the next leader. This happens over and over again if they don't show up over and over again. If the entire comittee doesn't show up for an hour, there's unlimeted backup comittees to take their place.
 	When comittee members make blocks, they filter out any invalid transactions by verifying them and filtering out double spend attacks. A double speand is identified with a tag that would be the same if someone is trying to speand the same transaction twice. Each comittee member has their own bloom filter for identifying these. To see where the money came from, each staker has a file with 64 bytes per account specifying the comittments and public keys (which is enough to verify transactions). The fact that they save blocks is only to sync new people.
 	We also implimented sharding for when the network gets big. The comittee can call on its replacements to verify their own blocks to save time and then all they have to do is aggregate it and prevent double speands between the seperate blocks and in testing on a laptop with 8 cores, it can verify over 1000 transactions in under 5 seconds not accounting for network speed. Each of the backup comittees are paid only in fees and as a group (either they all get paid or none do). This is so you don't need to save the signatures of the comittees; only if the whole group should be paid. Comittee 0 verifies that they put the block together so it's still the case that any transaction needs to pass through a comittee of 128 people who verify it to be recorded.
 	
 Mesh Network:
 	We use Plumcast for networking. It is a rust crate that combines the ideas of Plumtree (what Solana uses, where messages are likely to be transmitted via a minimum spanning tree and and heals fractured networks) and HyparView (which gives users some awareness of the network outside their immediate gossip peers).
+
+Code overview:
+plumcast_used:
+	a copy of the plumcast crate with slight modifictions.
+	1) When recieving a plumtree gossip message, it no longer automatically propegates it. Propegation is controlled by handle_gossip_now(message, send) where send is if the message should be propegated. This is to filter out spam.
+	2) A hopcount of 0 reserves messages for DMs, where you send a direct message to someone that is automatically not propegated.
+	3) Included "_now" versions of various functions to indicate the action should skip to the front of the action queue.
+	4) Added direct message functionality where you send direct messages instead of gossip.
+		dm(message: the message you are trying to send, peers: the NodeIDs of the people you are trying to contant, stay: weather you should send a HyparView join request and add them to your plumtee eager push peers)
+	5) (unused) Added kill friend functionalities where you delete communication lines with people.
+
+khora.rs:
+	Central code that is used in the app.
+	The gui runs in the main thread. And sends messages to KhoraNode, which is polled in a seperate thread.
+	KhoraNode stores 2 plumcast Nodes (inner and outer), along with data used keep track of the blockchain.
+	inner)
+		Acts as the node you use if you're on the comittee. It is only polled it you are on the comittee or are about to be.
+	outer)
+		Acts as the node you use if you're not on the comittee. It is only polled if you are not in the comittee or are about to leave.
+	The code is split into 5 general sections.
+	1) Says which Nodes you should poll on. It says if you are a validator or about to be (and if you are, if you're waiting to send out the block because you finished early)
+	2) If you're a validator, poll on the inner node; if you're the leader, run leader actions.
+		If you recieved a message, respond accordingly (for example, if you recieved a list of transactions, convirt it into a block and send it to the leader)
+		If it's a signed transaction list (or the extra steps involved for a group signature), save it.
+		If it is the finalized block, process it.
+		If the leader isn't responding, replace them with a new one.
+		If you're the leader, make a block if you're capable of it, oversee the group signature protocol, and send out a transaction list if the newest member didn't show up.
+	3) If you're not a validator, poll on the outer node, sync users
+		If you are syncing anyone, sync them 10 more blocks.
+		If you recieved a message, 
