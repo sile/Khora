@@ -95,6 +95,7 @@ pub struct TemplateApp {
     send_amnt: Vec<String>,
     lightning_yielder: bool,
     validating: bool,
+    lonely: u16,
 
     #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for sender
     timekeeper: Instant,
@@ -147,6 +148,7 @@ impl Default for TemplateApp {
             send_amnt: vec!["".to_string()],
             lightning_yielder: true,
             validating: false,
+            lonely: 0,
         }
     }
 }
@@ -225,6 +227,8 @@ impl epi::App for TemplateApp {
                 self.block_number = u64::from_le_bytes(i.try_into().unwrap());
             } else if modification == 3 {
                 self.validating = i == vec![1];
+            } else if modification == 4 {
+                self.lonely = u16::from_le_bytes(i.try_into().unwrap());
             } else if modification == 128 {
                 self.eta = i[0] as i8;
                 self.timekeeper = Instant::now();
@@ -277,6 +281,7 @@ impl epi::App for TemplateApp {
             send_amnt,
             lightning_yielder,
             validating,
+            lonely,
         } = self;
 
  
@@ -320,6 +325,18 @@ impl epi::App for TemplateApp {
                     let mut m = entrypoint.as_bytes().to_vec();
                     m.push(42);
                     sender.send(m).expect("something's wrong with communication from the gui");
+                }
+                ui.add(Label::new(format!("you have {} connections",lonely)).text_color({
+                    if *lonely == 0 {
+                        egui::Color32::RED
+                    } else if *lonely < 5 {
+                        egui::Color32::YELLOW
+                    } else {
+                        egui::Color32::LIGHT_GRAY
+                    }
+                }));
+                if ui.add(Button::new("Refresh").small().enabled(!*setup)).clicked() {
+                    sender.send(vec![64]).expect("something's wrong with communication from the gui");
                 }
             });
             ui.heading("KHORA");

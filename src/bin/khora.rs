@@ -1647,7 +1647,12 @@ impl Future for KhoraNode {
                         mynum.push(121);
                         let mut friend = self.outer.plumtree_node().all_push_peers();
                         friend.remove(self.outer.plumtree_node().id());
+                        println!("{:?}",friend);
                         let friend = friend.into_iter().collect::<Vec<_>>();
+                        println!("friends: {:?}",friend);
+                        let mut gm = (friend.len() as u16).to_le_bytes().to_vec();
+                        gm.push(4);
+                        self.gui_sender.send(gm).expect("should be working");
                         if let Some(friend) = friend.choose(&mut rand::thread_rng()) {
                             println!("asking for help from {:?}",friend);
                             self.outer.dm(mynum, &[*friend], false);
@@ -1661,6 +1666,15 @@ impl Future for KhoraNode {
                             println!("it's a socket");
                             self.outer.dm(vec![],&[NodeId::new(socket, LocalNodeId::new(0))],true);
                         }
+                    } else if istx == 64 /* @ */ {
+                        let mut friend = self.outer.plumtree_node().all_push_peers();
+                        friend.remove(self.outer.plumtree_node().id());
+                        println!("{:?}",friend);
+                        let friend = friend.into_iter().collect::<Vec<_>>();
+                        println!("friends: {:?}",friend);
+                        let mut gm = (friend.len() as u16).to_le_bytes().to_vec();
+                        gm.push(4);
+                        self.gui_sender.send(gm).expect("should be working");
                     }
                 }
             }
