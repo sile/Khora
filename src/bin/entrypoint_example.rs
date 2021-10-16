@@ -16,12 +16,12 @@ use trackable::error::MainError;
 const DEFAULT_PORT: u64 = 8334;
 
 fn main() -> Result<(), MainError> {
-    let logger = track!(TerminalLoggerBuilder::new().destination(Destination::Stderr).level("info".parse().unwrap()).build())?; // info or debug
+    let logger = track!(TerminalLoggerBuilder::new().destination(Destination::Stderr).level("debug".parse().unwrap()).build())?; // info or debug
 
         
 
     /* server should use local ip or 0.0.0.0 client should connect through global ip address */
-    // let addr: SocketAddr = format!("{}:{}", local_ipaddress::get().unwrap(), DEFAULT_PORT).parse().unwrap();
+    println!("*{}", local_ipaddress::get().unwrap());
     let addr: SocketAddr = format!("0.0.0.0:{}",DEFAULT_PORT).parse().unwrap();
 
 
@@ -97,7 +97,7 @@ impl Future for TestNode {
                 if msg.get(0) == Some(&42) /* * */ { // *192.168.0.101
                     let addr: SocketAddr = track_any_err!(format!("{}:{}",String::from_utf8_lossy(&msg[1..]),DEFAULT_PORT).parse()).unwrap();
                     let nodeid = NodeId::new(addr, LocalNodeId::new(0));
-                    self.node.dm(vec![],&vec![nodeid],true);
+                    self.node.dm("hello!".as_bytes().to_vec(),&vec![nodeid],true);
                 } else {
                     self.node.broadcast(msg);
                 }

@@ -136,7 +136,7 @@ impl NodeBuilder {
             message_rx,
             hyparview_node: HyparviewNode::with_options(id, rng, self.hyparview_options.clone()),
             plumtree_node,
-            message_seqno: 0,
+            message_seqno: 1,
             hyparview_shuffle_time,
             hyparview_sync_active_view_time,
             hyparview_fill_active_view_time,
@@ -364,6 +364,7 @@ impl<M: MessagePayload> Node<M> {
     /// Note that the message will also be delivered to the sender node.
     pub fn broadcast(&mut self, message_payload: M) -> MessageId {
         let id = MessageId::new(self.id(), self.message_seqno);
+        println!("{:?}",id);
         self.message_seqno += 1;
         debug!(self.logger, "Starts broadcasting a message: {:?}", id);
 
