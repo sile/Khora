@@ -25,7 +25,8 @@ plumcast_used:
 	4) Added direct message functionality where you send direct messages instead of gossip.
 		dm(message: the message you are trying to send, peers: the NodeIDs of the people you are trying to contant, stay: weather you should send a HyparView join request and add them to your plumtee eager push peers)
 		Removed filter where you ignore messages from those not in your plumtree push peers
-	5) (unused) Added kill friend functionalities where you delete communication lines with people.
+	5) (unused) Added kill friend functionalities where you delete communication lines with people. These may be used in the future to filter spam.
+	6) Removed functionality where ignore gossip from people who aren't your peers. (This is because right now you need to be able to DM people in certain situations)
 
 khora.rs:
 	Central code that is used in the app.
