@@ -16,6 +16,10 @@ panic = 'abort'     # Abort on panic
 name = "khora"
 path = "src/bin/khora.rs"
 
+[[bin]]
+name = "entrypoint_example"
+path = "src/bin/entrypoint_example.rs"
+
 [dependencies]
 curve25519-dalek = { version = "3", features = ["serde"] }
 rand = "0.7.3"

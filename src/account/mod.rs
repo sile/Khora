@@ -38,7 +38,7 @@ impl PartialEq for Account{
 pub type Tag = CompressedRistretto;
 
 #[derive(Debug, Clone, Eq, Serialize, Deserialize)]
-pub struct OTAccount{ //i made all but first 2 public
+pub struct OTAccount{
     pub pk: RistrettoPoint,
     pub com: Commitment,
     pub account: Option<Account>,
@@ -46,8 +46,8 @@ pub struct OTAccount{ //i made all but first 2 public
     pub eck: Option<Ciphertext>,
     pub ek: Option<Vec<u8>>,
     pub s: Option<Scalar>,
-    pub sk: Option<Scalar>, //made this public (so I could sign lightning)
-    pub tag: Option<Tag>, //made this public
+    pub sk: Option<Scalar>,
+    pub tag: Option<Tag>,
 }
 
 impl PartialEq for OTAccount{
@@ -74,7 +74,8 @@ impl Default for OTAccount{
     }
 }
 
-pub fn stakereader_acc() -> Account { // use this to check the to staker verifies
+/// use this to check the to staker verifies
+pub fn stakereader_acc() -> Account {
     Account{
         sk: Scalar::one(),
         pk: Account::tag_k_gen(Scalar::one()),
@@ -84,8 +85,8 @@ pub fn stakereader_acc() -> Account { // use this to check the to staker verifie
         vpk: RISTRETTO_BASEPOINT_POINT,
     }
 }
-
-pub fn fee_ota(amount: &Scalar) -> OTAccount { //makes the fee output account
+/// makes the fee output account
+pub fn fee_ota(amount: &Scalar) -> OTAccount {
     let com = Commitment::commit(amount, &Scalar::from(0u8));
 
     OTAccount{
@@ -105,7 +106,8 @@ impl Account {
         x.invert() * RISTRETTO_BASEPOINT_POINT
     }
 
-    pub fn new<T: std::convert::AsRef<[u8]>>(x: &T) -> Account { //makes accounts from a string
+    /// makes an account from a password that can be expressed as a lot of data types
+    pub fn new<T: std::convert::AsRef<[u8]>>(x: &T) -> Account {
         let mut hasher = Sha3_512::new();
         hasher.update(x);
         let sk = Scalar::from_hash(hasher.clone());
@@ -118,11 +120,12 @@ impl Account {
             pk: Account::tag_k_gen(sk),
             ask,
             apk: ask*RISTRETTO_BASEPOINT_POINT,
-            vsk, // appendix B has info on ask (tsk in the paper) and vsk
+            vsk, // appendix B in omniring has info on ask (tsk in the paper) and vsk
             vpk: vsk*RISTRETTO_BASEPOINT_POINT,
         }
     }
 
+    /// name of an account used to copy and paste in the gui
     pub fn name(&self) -> String {
         std::str::from_utf8(&[self.pk,self.apk,self.vpk].into_par_iter().map(|key| {
             let key = key.compress();
@@ -131,6 +134,7 @@ impl Account {
         }).flatten().collect::<Vec<u8>>()).unwrap().to_string()
     }
 
+    /// makes a fake account with specified pks to send transactions to
     pub fn from_pks(pk: &CompressedRistretto,apk: &CompressedRistretto,vpk: &CompressedRistretto) -> Self {
         Account{
             sk: Scalar::zero(),
@@ -142,6 +146,7 @@ impl Account {
         }        
     }
 
+    /// derives a one time account from an account and amount
     pub fn derive_ot(&self, amount: &Scalar) -> OTAccount{
         let mut csprng = thread_rng();
         let randomness = Scalar::random(&mut csprng);
@@ -171,8 +176,8 @@ impl Account {
             ..Default::default()
         }
     }
-    /* i could probably delete all of eek if i wanted to */
 
+    /// decripts an OTA to fill in all unknowns
     pub fn receive_ot(&self, acc: &OTAccount) -> Result<OTAccount, AccountError> {
         let mut label = acc.pk.compress().as_bytes().to_vec();
         label.extend( acc.com.com.compress().as_bytes().to_vec());
@@ -213,6 +218,7 @@ impl Account {
         })
     }
 
+    /// reads the coin key and unwraps the comittment. This Account you run this on should have the vsk but may not have the sk
     pub fn read_ot(&self, acc: &OTAccount) -> Result<OTAccount, AccountError> {
         let mut label = acc.pk.compress().as_bytes().to_vec();
         label.extend( acc.com.com.compress().as_bytes().to_vec());
@@ -237,13 +243,13 @@ impl Account {
         })
     }
 
+    /// derives a staking ot with more public information
     pub fn derive_stk_ot(&self, amount: &Scalar) -> OTAccount{
         let randomness = Scalar::from(0u8);
         let com = Commitment::commit(amount, &randomness);
         let contains = ( *amount, randomness);
         let serialized = bincode::serialize(&contains).unwrap();
-        let ek = [0u8; 32]; // <----- if you want OT stk account, set this to something else (thugh they can't actually associate it with you)
-        // anyone with a the viewing key can read this so it being zeros doesnt make it less secure
+        let ek = [0u8; 32];
         
         let mut hasher = Sha3_512::new();
         hasher.update(&self.pk.compress().as_bytes());

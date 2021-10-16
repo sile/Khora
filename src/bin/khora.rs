@@ -1,9 +1,6 @@
 #[macro_use]
-extern crate clap;
-#[macro_use]
 extern crate trackable;
 
-use clap::Arg;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_COMPRESSED;
 use fibers::sync::mpsc;
 use fibers::{Executor, Spawn, ThreadPoolExecutor};
@@ -14,7 +11,7 @@ use plumcast::service::ServiceBuilder;
 use rand::prelude::SliceRandom;
 use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::Build;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;
