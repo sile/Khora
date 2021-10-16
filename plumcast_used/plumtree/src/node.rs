@@ -197,9 +197,9 @@ impl<T: System> Node<T>
     ///
     /// This method will return `false` if the sender of the message is not a neighbor of this node.
     pub fn handle_protocol_message(&mut self, message: ProtocolMessage<T>) -> bool {
-        if !self.is_known_node(message.sender()) {
-            return false;
-        }
+        // if !self.is_known_node(message.sender()) {
+        //     return false;
+        // }
         match message {
             ProtocolMessage::Gossip(m) => self.handle_gossip(m),
             ProtocolMessage::Ihave(m) => self.handle_ihave(m),
@@ -281,64 +281,6 @@ impl<T: System> Node<T>
         }
     }
 
-
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    pub fn kill_condition(gossip: &GossipMessage<T>) -> bool {
-        false // maybe some conditions on a message being valid???
-    }
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-    /* {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} */
-
-
-    // #[allow(clippy::map_entry)]
-    // fn handle_gossip_old(&mut self, gossip: GossipMessage<T>) {
-    //     if self.messages.contains_key(&gossip.message.id) {
-    //         self.eager_push_peers.remove(&gossip.sender);
-    //         self.lazy_push_peers.insert(gossip.sender.clone());
-    //         self.actions
-    //             .send(gossip.sender, PruneMessage::new(&self.id));
-    //     } else if gossip.round == 0 { // this handels DMs
-    //         if gossip.message.payload.clone().into_iter().count() == 0 {
-    //             self.eager_push_peers.insert(gossip.sender);
-    //         } else {
-    //             self.actions.deliver(gossip);
-    //         }
-    //     } else if Node::kill_condition(&gossip) {
-    //         self.eager_push_peers.remove(&gossip.sender);
-    //         // self.lazy_push_peers.insert(gossip.sender.clone()); // this one makes the muted noisy still
-    //         // self.lazy_push_peers.remove(&gossip.sender); // this is redundent because lazy and eager are disjoint
-    //         // self.actions // this is probably convenient for the other person
-    //         //     .send(gossip.sender, PruneMessage::new(&self.id));
-    //     } else {
-    //         self.actions.deliver(gossip.clone());
-
-    //         self.eager_push(&gossip);
-    //         self.lazy_push(&gossip);
-    //         self.eager_push_peers.insert(gossip.sender.clone());
-    //         self.lazy_push_peers.remove(&gossip.sender);
-
-    //         self.optimize(&gossip);
-    //         self.missings.remove(&gossip.message.id);
-    //         self.messages
-    //             .insert(gossip.message.id, gossip.message.payload);
-    //     }
-    // }
-
     #[allow(clippy::map_entry)]
     fn handle_gossip(&mut self, gossip: GossipMessage<T>) {
         if self.messages.contains_key(&gossip.message.id) {
@@ -352,12 +294,6 @@ impl<T: System> Node<T>
             } else {
                 self.actions.deliver(gossip);
             }
-        } else if Node::kill_condition(&gossip) {
-            self.eager_push_peers.remove(&gossip.sender);
-            // self.lazy_push_peers.insert(gossip.sender.clone()); // this one makes the muted noisy still
-            // self.lazy_push_peers.remove(&gossip.sender); // this is redundent because lazy and eager are disjoint
-            // self.actions // this is probably convenient for the other person
-            //     .send(gossip.sender, PruneMessage::new(&self.id));
         } else {
             self.actions.deliver(gossip.clone());
         }
