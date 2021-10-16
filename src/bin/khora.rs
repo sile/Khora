@@ -41,14 +41,6 @@ use kora::validation::{NUMBER_OF_VALIDATORS, SIGNING_CUTOFF, QUEUE_LENGTH, REPLA
 
 use local_ipaddress;
 
-/// this is for testing purposes. it is used to check if 2 long messages are identicle from either different variables or the same variable at differnt times
-fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
-    let message = bincode::serialize(message).unwrap();
-    let mut hasher = Sha3_512::new();
-    hasher.update(&message);
-    Scalar::from_hash(hasher)
-}
-
 /// when to announce you're about to be in the comittee or how far in advance you can no longer serve as leader
 const WARNINGTIME: usize = REPLACERATE*5;
 /// number of blocks in a row you can write without saving them
@@ -67,17 +59,6 @@ fn reward(cumtime: f64, blocktime: f64) -> f64 {
     (1.0/(1.653439E-6*cumtime + 1.0) - 1.0/(1.653439E-6*(cumtime + blocktime) + 1.0))*10E16f64
 }
 
-/// this is different from the one in the gui (b then a then c)
-fn get_pswrd(a: &String, b: &String, c: &String) -> Vec<u8> {
-    println!("{}",b);
-    println!("{}",a);
-    println!("{}",c);
-    let mut hasher = Sha3_512::new();
-    hasher.update(&b.as_bytes());
-    hasher.update(&a.as_bytes());
-    hasher.update(&c.as_bytes());
-    Scalar::from_hash(hasher).as_bytes().to_vec()
-}
 fn main() -> Result<(), MainError> {
     let logger = track!(TerminalLoggerBuilder::new().destination(Destination::Stderr).level("info".parse().unwrap()).build())?; // info or debug
 
@@ -881,7 +862,12 @@ impl Future for KhoraNode {
                     }
                 }
             });
-
+            // if you need to usurp shard 0 because of huge network failure
+            if self.usurpingtime.elapsed().as_secs() > USURP_TIME {
+                self.timekeeper = self.usurpingtime;
+                self.usurpingtime = Instant::now();
+                self.headshard += 1;
+            }
 
 
 
@@ -1689,12 +1675,6 @@ impl Future for KhoraNode {
 
 
 
-            // if you need to usurp shard 0 because of huge network failure
-            if self.usurpingtime.elapsed().as_secs() > USURP_TIME {
-                self.timekeeper = self.usurpingtime;
-                self.usurpingtime = Instant::now();
-                self.headshard += 1;
-            }
 
         }
         Ok(Async::NotReady)

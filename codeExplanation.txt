@@ -34,8 +34,8 @@ khora.rs:
 		Acts as the node you use if you're on the comittee. It is only polled it you are on the comittee or are about to be.
 	outer)
 		Acts as the node you use if you're not on the comittee. It is only polled if you are not in the comittee or are about to leave.
-	The code is split into 5 general sections.
-	1) Says which Nodes you should poll on. It says if you are a validator or about to be (and if you are, if you're waiting to send out the block because you finished early)
+	The code is split into 4 general sections.
+	1) Says which Nodes you should poll on. It says if you are a validator or about to be (and if you are, if you're waiting to send out the block because you finished early). Also replace the head shard if they're an hour late
 	2) If you're a validator, poll on the inner node; if you're the leader, run leader actions.
 		If you recieved a message, respond accordingly (for example, if you recieved a list of transactions, convirt it into a block and send it to the leader)
 		If it's a signed transaction list (or the extra steps involved for a group signature), save it.
@@ -44,4 +44,8 @@ khora.rs:
 		If you're the leader, make a block if you're capable of it, oversee the group signature protocol, and send out a transaction list if the newest member didn't show up.
 	3) If you're not a validator, poll on the outer node, sync users
 		If you are syncing anyone, sync them 10 more blocks.
-		If you recieved a message, 
+		If you recieved a message, respond accordingly. This includes recieveing blocks, helping sync people, sending regular users their ring members
+	4) Recieve messages from the gui
+		Make transactions
+		Ask a neighbot to sync you
+		Connect to the network by DMing a specified IPv4 address with port 8334. The function dm with stay set to true is used
