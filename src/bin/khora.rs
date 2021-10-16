@@ -1020,6 +1020,7 @@ impl Future for KhoraNode {
                                 self.inner.handle_gossip_now(fullmsg, false);
                             }
                         } else /* spam that you choose not to propegate */ {
+                            // self.inner.kill(&fullmsg.sender);
                             self.inner.handle_gossip_now(fullmsg, false);
                         }
                     }
@@ -1272,15 +1273,19 @@ impl Future for KhoraNode {
                                 mynum.push(102); //f
                             }
                             mynum.push(121);
-                            let mut friend = self.outer.plumtree_node().all_push_peers();
-                            friend.remove(&msg.id.node());
-                            friend.remove(self.outer.plumtree_node().id());
-                            let friend = friend.into_iter().collect::<Vec<_>>();
-                            if let Some(friend) = friend.choose(&mut rand::thread_rng()) {
-                                println!("asking for help from {:?}",friend);
-                                self.outer.dm(mynum, &[*friend], false);
+                            if let Ok(x) = bincode::deserialize(&m) {
+                                self.outer.dm(mynum, &[x], false);
                             } else {
-                                println!("you're isolated");
+                                let mut friend = self.outer.plumtree_node().all_push_peers();
+                                friend.remove(&msg.id.node());
+                                friend.remove(self.outer.plumtree_node().id());
+                                let friend = friend.into_iter().collect::<Vec<_>>();
+                                if let Some(friend) = friend.choose(&mut rand::thread_rng()) {
+                                    println!("asking for help from {:?}",friend);
+                                    self.outer.dm(mynum, &[*friend], false);
+                                } else {
+                                    println!("you're isolated");
+                                }
                             }
                         } else if mtype == 108 /* l */ { // a lightning block
                             if self.lightning_yielder {
@@ -1304,7 +1309,7 @@ impl Future for KhoraNode {
                                 }
                                 self.outer.handle_gossip_now(fullmsg, true);
                             } else {
-                                self.inner.handle_gossip_now(fullmsg, false);
+                                self.outer.handle_gossip_now(fullmsg, false);
                             }
                         } else if mtype == 121 /* y */ { // someone sent a sync request
                             let mut i_cant_do_this = true;
@@ -1330,10 +1335,21 @@ impl Future for KhoraNode {
                                 }
                             }
                             if msg.id.node() != *self.outer.plumtree_node().id() && i_cant_do_this {
-                                self.outer.dm(vec![60], &[msg.id.node()], false);
+                                let mut friend = self.outer.plumtree_node().all_push_peers().into_iter().collect::<Vec<_>>();
+                                friend.retain(|&x| x != fullmsg.sender);
+                                if let Some(friend) = friend.choose(&mut rand::thread_rng()) {
+                                    println!("asking for help from {:?}",friend);
+                                    let mut m = bincode::serialize(friend).unwrap();
+                                    m.push(60);
+                                    self.outer.dm(m, &[*friend], false);
+                                } else {
+                                    self.outer.dm(vec![60], &[msg.id.node()], false);
+                                    println!("you're isolated");
+                                }
                             }
                         } else /* spam */ {
-                            self.inner.handle_gossip_now(fullmsg, false);
+                            // self.outer.kill(&fullmsg.sender);
+                            self.outer.handle_gossip_now(fullmsg, false);
                         }
                     }
                 }
@@ -1439,9 +1455,7 @@ impl Future for KhoraNode {
 
                             // if you need help with ring generation
                             if !self.save_history {
-                                if self.mine.len() > 0 {
-                                    let helpers = self.outer.plumtree_node().all_push_peers().into_iter().collect::<Vec<_>>();
-                                
+                                if self.mine.len() > 0 {                                
                                     let (loc, acc): (Vec<u64>,Vec<OTAccount>) = self.mine.iter().map(|x|(*x.0,x.1.clone())).unzip();
                 
                                     println!("loc: {:?}",loc);
@@ -1455,11 +1469,10 @@ impl Future for KhoraNode {
                                     let ring = recieve_ring(&self.rname).expect("shouldn't fail");
                                     let ring = ring.into_iter().filter(|x| loc.iter().all(|y|x!=y)).collect::<Vec<_>>();
                                     println!("ring:----------------------------------\n{:?}",ring);
-                                    let alen = helpers.len();
-                                    for (i,r) in ring.iter().enumerate() {
+                                    for r in ring.iter() {
                                         let mut r = r.to_le_bytes().to_vec();
                                         r.push(114u8);
-                                        self.outer.dm(r,&[helpers[i%alen],helpers[(i+1)%alen]],false);
+                                        self.outer.dm(r,&self.outer.plumtree_node().all_push_peers(),false);
                                     }
 
                                     self.outs = Some(outs);
