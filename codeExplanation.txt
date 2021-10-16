@@ -24,6 +24,7 @@ plumcast_used:
 	3) Included "_now" versions of various functions to indicate the action should skip to the front of the action queue.
 	4) Added direct message functionality where you send direct messages instead of gossip.
 		dm(message: the message you are trying to send, peers: the NodeIDs of the people you are trying to contant, stay: weather you should send a HyparView join request and add them to your plumtee eager push peers)
+		Removed filter where you ignore messages from those not in your plumtree push peers
 	5) (unused) Added kill friend functionalities where you delete communication lines with people.
 
 khora.rs:
