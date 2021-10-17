@@ -395,29 +395,27 @@ impl epi::App for TemplateApp {
             if *password0 != *pswd_guess0 && !*setup {
                 ui.add(Label::new("password incorrect, account features disabled, enter correct password to unlock").text_color(egui::Color32::RED));
             }
-            ui.horizontal(|ui| {
-                if ui.button("📋").on_hover_text("Click to copy your wallet address to clipboard").clicked() {
-                    ui.output().copied_text = addr.clone();
-                }
-                if ui.add(Label::new("address").sense(Sense::hover())).hovered() {
-                    ui.small(&*addr);
-                }
-            });
-            if *staking {
+            if !*setup {
                 ui.horizontal(|ui| {
-                    if ui.button("📋").on_hover_text("Click to copy your staking wallet address to clipboard").clicked() {
-                        ui.output().copied_text = stkaddr.clone();
+                    if ui.button("📋").on_hover_text("Click to copy your wallet address to clipboard").clicked() {
+                        ui.output().copied_text = addr.clone();
                     }
-                    if ui.add(Label::new("staking address").sense(Sense::hover())).hovered() {
-                        ui.small(&*stkaddr);
-                    }
+                    ui.label("address").on_hover_text(&*addr);
                 });
-            }
-            if *validating {
-                ui.horizontal(|ui| {
-                    ui.add(Label::new("You are validating blocks,").text_color(egui::Color32::GREEN));
-                    ui.add(Label::new("please don't use all of your ram on video games").text_color(egui::Color32::RED));
-                });
+                if *staking {
+                    ui.horizontal(|ui| {
+                        if ui.button("📋").on_hover_text("Click to copy your staking wallet address to clipboard").clicked() {
+                            ui.output().copied_text = stkaddr.clone();
+                        }
+                        ui.label("staking address").on_hover_text(&*stkaddr);
+                    });
+                }
+                if *validating {
+                    ui.horizontal(|ui| {
+                        ui.add(Label::new("You are validating blocks,").text_color(egui::Color32::GREEN));
+                        ui.add(Label::new("please don't use all of your ram on video games").text_color(egui::Color32::RED));
+                    });
+                }
             }
             ui.label("\n");
 
@@ -559,13 +557,19 @@ impl epi::App for TemplateApp {
                 ui.add(Label::new("money owned is not yet verified").text_color(egui::Color32::RED));
             }
             if !*setup {
-                ui.horizontal(|ui| {
-                    ui.heading("                            Name                                      Address                                     Amount");
-                });
                 let mut delete_row_x = usize::MAX;
                 egui::ScrollArea::auto_sized().show(ui,|ui| {
-                    for (loc,((i,j),k)) in send_name.iter_mut().zip(send_addr.iter_mut()).zip(send_amnt.iter_mut()).enumerate() {
-                        ui.horizontal(|ui| {
+                    egui::Grid::new("spending_grid").min_col_width(90.0).max_col_width(300.0).show(ui, |ui| {
+                        if ui.button("Add Row").clicked() {
+                            send_name.push("".to_string());
+                            send_addr.push("".to_string());
+                            send_amnt.push("".to_string());
+                        }
+                        ui.add(Label::new("Name").heading());
+                        ui.add(Label::new("Address").heading());
+                        ui.add(Label::new("Amount").heading());
+                        ui.end_row();
+                        for (loc,((i,j),k)) in send_name.iter_mut().zip(send_addr.iter_mut()).zip(send_amnt.iter_mut()).enumerate() {
                             if ui.button("Delete Row").clicked() {
                                 delete_row_x = loc;
                             }
@@ -577,8 +581,9 @@ impl epi::App for TemplateApp {
                                 friends.push(j.clone());
                                 edit_names.push(false);
                             }
-                        });
-                    }
+                            ui.end_row();
+                        }
+                    });
                     if delete_row_x != usize::MAX {
                         if send_name.len() == 1 {
                             send_name[0] = "".to_string();
@@ -589,11 +594,6 @@ impl epi::App for TemplateApp {
                             send_addr.remove(delete_row_x);
                             send_amnt.remove(delete_row_x);
                         }
-                    }
-                    if ui.button("Add Row").clicked() {
-                        send_name.push("".to_string());
-                        send_addr.push("".to_string());
-                        send_amnt.push("".to_string());
                     }
                     if pswd_guess0 == password0 {
                         ui.horizontal(|ui| {
