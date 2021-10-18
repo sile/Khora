@@ -96,6 +96,9 @@ pub struct TemplateApp {
     lightning_yielder: bool,
     validating: bool,
     lonely: u16,
+    sk: Vec<u8>,
+    vsk: Vec<u8>,
+    tsk: Vec<u8>,
 
     #[cfg_attr(feature = "persistence", serde(skip))] // this feature doesn't work for sender
     timekeeper: Instant,
@@ -149,6 +152,9 @@ impl Default for TemplateApp {
             lightning_yielder: true,
             validating: false,
             lonely: 0,
+            sk: vec![],
+            vsk: vec![],
+            tsk: vec![],
         }
     }
 }
@@ -156,13 +162,16 @@ impl TemplateApp {
     pub fn new_minimal(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>) -> Self {
         TemplateApp{reciever, sender, ..Default::default()}
     }
-    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, addr: String, stkaddr: String, setup: bool) -> Self {
+    pub fn new(reciever: channel::Receiver<Vec<u8>>, sender: mpsc::Sender<Vec<u8>>, addr: String, stkaddr: String, sk: Vec<u8>, vsk: Vec<u8>, tsk: Vec<u8>, setup: bool) -> Self {
         TemplateApp{
             reciever,
             sender,
             addr,
             stkaddr,
             setup,
+            sk,
+            vsk,
+            tsk,
             ..Default::default()
         }
     }
@@ -190,11 +199,17 @@ impl epi::App for TemplateApp {
                 let s = self.sender.clone();
                 let a = self.addr.clone();
                 let sa = self.stkaddr.clone();
+                let sk = self.sk.clone();
+                let vsk = self.vsk.clone();
+                let tsk = self.tsk.clone();
                 *self = epi::get_value(storage, "Khora").unwrap_or_default();
                 self.sender = s;
                 self.reciever = r;
                 self.addr = a;
                 self.stkaddr = sa;
+                self.sk = sk;
+                self.vsk = vsk;
+                self.tsk = tsk;
             }
         } else {
             self.secret_key = random_pswrd()[..5].to_string();
@@ -233,10 +248,17 @@ impl epi::App for TemplateApp {
                 self.eta = i[0] as i8;
                 self.timekeeper = Instant::now();
             } else if modification == u8::MAX {
-                if i.pop() == Some(0) {
+                let info = i.pop().unwrap();
+                if info == 0 {
                     self.addr = String::from_utf8_lossy(&i).to_string();
-                } else {
+                } else if info == 1 {
                     self.stkaddr = String::from_utf8_lossy(&i).to_string();
+                } else if info == 2 {
+                    self.sk = i;
+                } else if info == 3 {
+                    self.vsk = i;
+                } else if info == 4 {
+                    self.tsk = i;
                 }
             }
         }
@@ -282,6 +304,9 @@ impl epi::App for TemplateApp {
             lightning_yielder,
             validating,
             lonely,
+            sk,
+            vsk,
+            tsk,
         } = self;
 
  
@@ -384,6 +409,14 @@ impl epi::App for TemplateApp {
                     }
                     ui.label(format!("{} - {}",password0,secret_key));
                 });
+                if !*setup {
+                    ui.horizontal(|ui| {
+                        if ui.button("📋").on_hover_text("Click to copy your account secret keys to clipboard").clicked() {
+                            ui.output().copied_text = format!("sk: {:?}\nvsk: {:?}\ntsk: {:?}",sk,vsk,tsk);
+                        }
+                        ui.label(format!("sk: {:?}\nvsk: {:?}\ntsk: {:?}",sk,vsk,tsk));
+                    });
+                }
             } else if *setup {
                 ui.horizontal(|ui| {
                     if ui.button("📋").on_hover_text("Click to copy your password and secret key to clipboard").clicked() {

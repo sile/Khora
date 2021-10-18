@@ -93,6 +93,9 @@ fn main() -> Result<(), MainError> {
             ui_sender_setup,
             "".to_string(),
             "".to_string(),
+            vec![],
+            vec![],
+            vec![],
             true,
         );
         let native_options = eframe::NativeOptions::default();
@@ -249,6 +252,9 @@ fn main() -> Result<(), MainError> {
         ui_sender,
         node.me.name(),
         node.me.stake_acc().name(),
+        node.me.sk.as_bytes().to_vec(),
+        node.me.vsk.as_bytes().to_vec(),
+        node.me.ask.as_bytes().to_vec(),
         false,
     );
     println!("starting!");
@@ -1630,8 +1636,17 @@ impl Future for KhoraNode {
                         m1.extend([0,u8::MAX]);
                         let mut m2 = self.me.stake_acc().name().as_bytes().to_vec();
                         m2.extend([1,u8::MAX]);
+                        let mut m3 = self.me.sk.as_bytes().to_vec();
+                        m3.extend([2,u8::MAX]);
+                        let mut m4 = self.me.vsk.as_bytes().to_vec();
+                        m4.extend([3,u8::MAX]);
+                        let mut m5 = self.me.ask.as_bytes().to_vec();
+                        m5.extend([4,u8::MAX]);
                         self.gui_sender.send(m1).expect("should be working");
                         self.gui_sender.send(m2).expect("should be working");
+                        self.gui_sender.send(m3).expect("should be working");
+                        self.gui_sender.send(m4).expect("should be working");
+                        self.gui_sender.send(m5).expect("should be working");
 
                     } else if istx == 121 /* y */ { // you clicked sync
                         let mut mynum = self.bnum.to_le_bytes().to_vec();
