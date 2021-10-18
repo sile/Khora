@@ -411,7 +411,7 @@ impl epi::App for TemplateApp {
                 });
                 if !*setup {
                     ui.horizontal(|ui| {
-                        if ui.button("📋").on_hover_text("Click to copy your account secret keys to clipboard").clicked() {
+                        if ui.button("📋").on_hover_text("Click to copy your backend secret keys to clipboard (all of these are generated from your front end secret key, username, and password)").clicked() {
                             ui.output().copied_text = format!("sk: {:?}\nvsk: {:?}\ntsk: {:?}",sk,vsk,tsk);
                         }
                         ui.label(format!("sk: {:?}\nvsk: {:?}\ntsk: {:?}",sk,vsk,tsk));
