@@ -149,7 +149,7 @@ impl Default for TemplateApp {
             send_name: vec!["".to_string()],
             send_addr: vec!["".to_string()],
             send_amnt: vec!["".to_string()],
-            lightning_yielder: true,
+            lightning_yielder: false,
             validating: false,
             lonely: 0,
             sk: vec![],
@@ -386,9 +386,7 @@ impl epi::App for TemplateApp {
 
             ui.horizontal(|ui| {
                 if !*setup {
-                    if ui.button("show/hide password").clicked() {
-                        *pswd_shown = !*pswd_shown;
-                    }
+                    ui.add(Checkbox::new(pswd_shown,"show password"));
                 }
             });
             if *pswd_shown || *setup {
@@ -581,8 +579,8 @@ impl epi::App for TemplateApp {
                 ui.add(Checkbox::new(staking,"I want to be a staker!"));
                 if *staking {
                     ui.horizontal(|ui| {
-                        ui.add(Checkbox::new(lightning_yielder,"I want to be a lightning yielder!"));
-                        ui.add(Label::new("Clicking this box means you'll only store the lightning blocks").text_color(egui::Color32::YELLOW));    
+                        ui.add(Checkbox::new(lightning_yielder,"I pnly want to store lightning blocks!"));
+                        ui.add(Label::new("Clicking this box means you'll use less memory on your computer").text_color(egui::Color32::YELLOW));    
                     });
                 }
             }
