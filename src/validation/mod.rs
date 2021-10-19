@@ -1,4 +1,4 @@
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+use curve25519_dalek::ristretto::{CompressedRistretto};
 use curve25519_dalek::scalar::Scalar;
 use crate::account::*;
 use rayon::prelude::*;
@@ -79,66 +79,6 @@ impl Syncedtx {
     /// the message block creaters sign so even lightning blocks can be verified
     pub fn to_sign(txs: &Vec<PolynomialTransaction>)->Vec<u8> {
         bincode::serialize(&Syncedtx::from(txs)).unwrap()
-    }
-}
-
-
-#[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
-/// an object representing a collection of people in the comittee signing a block together. the pk vector specifies the members who didn't sign
-pub struct MultiSignature{
-    pub x: CompressedRistretto,
-    pub y: Scalar,
-    pub pk: Vec<u8>,
-}
-
-impl PartialEq for MultiSignature {
-    fn eq(&self, other: &Self) -> bool {
-        self.x == other.x && self.y == other.y && self.pk == other.pk
-    }
-}
-
-impl MultiSignature {
-    /// gemerates your personal group element for a group signature
-    pub fn gen_group_x(key: &Scalar, nonce: &u64) -> CompressedRistretto {
-        let mut s = Sha3_512::new();
-        s.update(&key.as_bytes());
-        s.update(nonce.to_le_bytes());
-        let m = ((Scalar::from_hash(s))*PEDERSEN_H()).compress();
-        m
-    }
-
-    /// sums the group elements of each member in the group
-    pub fn sum_group_x<'a, I: IntoParallelRefIterator<'a, Item = &'a RistrettoPoint>>(x: &'a I) -> CompressedRistretto {
-        x.par_iter().sum::<RistrettoPoint>().compress()
-    }
-
-    /// generates your personal scalar as a signer
-    pub fn try_get_y(key: &Scalar, message: &Vec<u8>, xt: &CompressedRistretto, nonce: &u64) -> Scalar {
-        let mut s = Sha3_512::new();
-        s.update(&key.as_bytes());
-        s.update(nonce.to_le_bytes());
-        let r = Scalar::from_hash(s);
-
-        let mut s = Sha3_512::new();
-        s.update(&message);
-        s.update(&xt.as_bytes());
-        let e = Scalar::from_hash(s);
-        let y = e*key+r;
-        y
-    }
-
-    /// creates the scalar used in the group signature
-    pub fn sum_group_y<'a, I: IntoParallelRefIterator<'a, Item = &'a Scalar>>(y: &'a I) -> Scalar {
-        y.par_iter().sum()
-    }
-
-    /// verifies a group signature
-    pub fn verify_group(yt: &Scalar, xt: &CompressedRistretto, message: &Vec<u8>, who: &Vec<CompressedRistretto>) -> bool {
-        let mut s = Sha3_512::new();
-        s.update(&message);
-        s.update(&xt.as_bytes());
-        let e = Scalar::from_hash(s);
-        (yt*PEDERSEN_H()) == (xt.decompress().unwrap() + e*who.into_par_iter().collect::<HashSet<_>>().into_par_iter().map(|x|x.decompress().unwrap()).sum::<RistrettoPoint>())
     }
 }
 
@@ -301,8 +241,7 @@ impl Signature {
 #[derive(Default, Clone, Eq, Serialize, Deserialize, Hash, Debug)]
 /// a full block that no one truly has to interact with except the comittee
 pub struct NextBlock {
-    pub emptyness: Option<MultiSignature>,
-    pub validators: Option<Vec<Signature>>,
+    pub validators: Vec<Signature>,
     pub leader: Signature,
     pub txs: Vec<PolynomialTransaction>,
     pub last_name: Vec<u8>,
@@ -352,8 +291,7 @@ impl NextBlock {
         let mut s = Sha3_512::new();
         s.update(&m);
         NextBlock {
-            emptyness: None,
-            validators: None,
+            validators: vec![],
             leader: Signature::sign(&key,&mut s,&location),
             txs: txs.to_owned(),
             last_name: last_name.to_owned(),
@@ -363,7 +301,7 @@ impl NextBlock {
     }
 
     /// creates a full block from a collection of signatures in the comittee
-    pub fn finish(key: &Scalar, location: &u64, sigs: &Vec<NextBlock>, validator_pool: &Vec<u64>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> NextBlock { // <----do i need to reference previous block explicitly?
+    pub fn finish(key: &Scalar, location: &u64, sigs: &Vec<NextBlock>, validator_pool: &Vec<u64>, pool: &u16, bnum: &u64, last_name: &Vec<u8>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<NextBlock,&'static str> { // <----do i need to reference previous block explicitly?
         let leader = (key*PEDERSEN_H()).compress().as_bytes().to_vec();
         let mut sigs = sigs.into_par_iter().filter(|x| !validator_pool.into_par_iter().all(|y| x.leader.pk != *y)).map(|x| x.to_owned()).collect::<Vec<NextBlock>>();
         let mut sigfinale: Vec<NextBlock>;
@@ -395,7 +333,7 @@ impl NextBlock {
                 s.update(&m);
                 let leader = Signature::sign(&key, &mut s,&location);
                 if validator_pool.par_iter().filter(|x| !sigfinale.par_iter().all(|y| x.to_owned() != &y.leader.pk)).count() > SIGNING_CUTOFF {
-                    return NextBlock{emptyness: None, validators: Some(sigs), leader, txs: sigfinale[0].txs.to_owned(), last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned()}
+                    return Ok(NextBlock{validators: sigs, leader, txs: sigfinale[0].txs.to_owned(), last_name: last_name.to_owned(), shards: vec![*pool], bnum: bnum.to_owned()})
                 } else {
                     print!("not enough sigs... ");
                     break
@@ -403,7 +341,7 @@ impl NextBlock {
             }
         }
         println!("failed to make block :(");
-        return NextBlock::default()
+        return Err("Not enoguh true sigs")
     }
 
     /// creates the final block from the collection of subblocks and signatures from the main shard
@@ -474,75 +412,36 @@ impl NextBlock {
         let mut s = Sha3_512::new();
         s.update(&m);
         let leader = Signature::sign(&key, &mut s, &location);
-        NextBlock{emptyness: None, validators: Some(sigs), leader, txs: blk.txs, last_name: last_name.clone(), shards: blk.shards, bnum: bnum.to_owned()}
+        NextBlock{validators: sigs, leader, txs: blk.txs, last_name: last_name.clone(), shards: blk.shards, bnum: bnum.to_owned()}
     }
 
     /// verifies a full block (that the comittee acted as they should)
     pub fn verify(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
-        if let Some(validators) = self.validators.clone() {
-            if self.emptyness.is_some() {
-                return Err("both the validators and the emptyness are some")
-            }
-            let mut s = Sha3_512::new();
-            s.update(&bincode::serialize(&validators).unwrap().to_vec());
-            let c = s.finalize();
-            let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut s = Sha3_512::new();
-            s.update(&m);
+        let mut s = Sha3_512::new();
+        s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
+        let c = s.finalize();
+        let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+        let mut s = Sha3_512::new();
+        s.update(&m);
 
-            if !self.leader.verify(&mut s, &stkstate) {
-                return Err("leader is fake")
-            }
-            let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(),bincode::serialize(&self.shards).unwrap(),Syncedtx::to_sign(&self.txs),self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut h = Sha3_512::new();
-            h.update(&m);
-            if !validators.par_iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
-                return Err("at least 1 validator is fake")
-            }
-            if !validators.par_iter().all(|x| !validator_pool.par_iter().all(|y| x.pk != *y)) {
-                return Err("at least 1 validator is not in the pool")
-            }
-            if validator_pool.par_iter().filter(|x| !validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() <= SIGNING_CUTOFF {
-                return Err("there aren't enough validators")
-            }
-            let x = validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>();
-            if !x.clone().par_iter().enumerate().all(|(i,y)| x[..i].par_iter().all(|z| y != z)) {
-                return Err("there's multiple signatures from the same validator")
-            }
-        } else if let Some(emptyness) = self.emptyness.clone() {
-            if self.txs.len() > 0 {
-                return Err("the block isn't empty!")
-            }
-            if emptyness.pk.len() != emptyness.pk.par_iter().collect::<HashSet<_>>().len() {
-                return Err("someone failed to sign twice as the same validator")
-            }
-            let who = validator_pool.into_par_iter().filter_map(|&x|
-                if emptyness.pk.par_iter().all(|&y| validator_pool[y as usize]!=x) {
-                    Some(stkstate[x as usize].0)
-                } else {
-                    None
-                }
-            ).collect::<Vec<_>>();
-            if who.len() <= 2*NUMBER_OF_VALIDATORS/3 {
-                return Err("there's not enough validators for the empty block")
-            }
-            if self.leader.pk as usize >= stkstate.len() {
-                return Err("you're probably behind on blocks")
-            }
-            let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
-            m.extend(&self.last_name);
-            m.extend(&self.shards[0].to_le_bytes().to_vec());
-            if !MultiSignature::verify_group(&emptyness.y,&emptyness.x,&m,&who) {
-                return Err("multisignature can not be verified")
-            }
-            let m = vec![self.shards[0].to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut s = Sha3_512::new();
-            s.update(&m);
-            if !self.leader.verify(&mut s,&stkstate) {
-                return Err("there's a problem with the leader's multisignature group signature")
-            }
-        } else {
-            return Err("both the validators and the emptyness are none")
+        if !self.leader.verify(&mut s, &stkstate) {
+            return Err("leader is fake")
+        }
+        let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(),bincode::serialize(&self.shards).unwrap(),Syncedtx::to_sign(&self.txs),self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+        let mut h = Sha3_512::new();
+        h.update(&m);
+        if !self.validators.par_iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
+            return Err("at least 1 validator is fake")
+        }
+        if !self.validators.par_iter().all(|x| !validator_pool.par_iter().all(|y| x.pk != *y)) {
+            return Err("at least 1 validator is not in the pool")
+        }
+        if validator_pool.par_iter().filter(|x| !self.validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() <= SIGNING_CUTOFF {
+            return Err("there aren't enough validators")
+        }
+        let x = self.validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>();
+        if !x.clone().par_iter().enumerate().all(|(i,y)| x[..i].par_iter().all(|z| y != z)) {
+            return Err("there's multiple signatures from the same validator")
         }
         return Ok(true)
     }
@@ -622,7 +521,6 @@ impl NextBlock {
     /// converts a full block into lightning block
     pub fn tolightning(&self) -> LightningSyncBlock {
         LightningSyncBlock {
-            emptyness: self.emptyness.to_owned(),
             validators: self.validators.to_owned(),
             leader: self.leader.to_owned(),
             info: Syncedtx::from(&self.txs),
@@ -636,8 +534,7 @@ impl NextBlock {
 #[derive(Default, Clone, Serialize, Deserialize, Hash, Debug)]
 /// a shrunk block in the blockchain with less structure and not containing any proofs that would be in the full block
 pub struct LightningSyncBlock {
-    pub emptyness: Option<MultiSignature>,
-    pub validators: Option<Vec<Signature>>,
+    pub validators: Vec<Signature>,
     pub leader: Signature,
     pub info: Syncedtx,
     pub shards: Vec<u16>,
@@ -647,132 +544,60 @@ pub struct LightningSyncBlock {
 impl LightningSyncBlock {
     /// verifies that the block is real and the 128 comittee members came to consensus. all computations are carried out in parallell
     pub fn verify_multithread(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
-        if let Some(validators) = self.validators.clone() {
-            if self.emptyness.is_some() {
-                return Err("both the validators and the emptyness are some")
-            }
-            let mut s = Sha3_512::new();
-            s.update(&bincode::serialize(&validators).unwrap().to_vec());
-            let c = s.finalize();
-            let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut h = Sha3_512::new();
-            h.update(&m);
-            if !self.leader.verify(&mut h, &stkstate) {
-                return Err("leader is fake")
-            }
-            let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(), bincode::serialize(&self.shards).unwrap(), bincode::serialize(&self.info).unwrap(), self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut h = Sha3_512::new();
-            h.update(&m);
-            if !validators.par_iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
-                return Err("at least 1 validator is fake")
-            }
-            if !validators.par_iter().all(|x| !validator_pool.into_par_iter().all(|y| x.pk != *y)) {
-                return Err("at least 1 validator is not in the pool")
-            }
-            if validator_pool.par_iter().filter(|x| !validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < SIGNING_CUTOFF {
-                return Err("there aren't enough validators")
-            }
-            let x = validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>();
-            if !x.clone().par_iter().enumerate().all(|(i,y)| x.clone()[..i].into_par_iter().all(|z| y != z)) {
-                return Err("there's multiple signatures from the same validator")
-            }
-        } else if let Some(emptyness) = self.emptyness.clone() {
-            if self.info.tags.len() > 0 { //this is neccesary so that you cant just add transactions that no one signed off on (unless I also have them sign an empty vector)
-                return Err("the block isn't empty!") // i should allow multisignatures for full blocks??
-            }
-            if emptyness.pk.len() != emptyness.pk.par_iter().collect::<HashSet<_>>().len() {
-                return Err("someone failed to sign twice as the same validator")
-            }
-            let who = validator_pool.into_par_iter().filter_map(|&x|
-                if emptyness.pk.par_iter().all(|&y| validator_pool[y as usize]!=x) {
-                    Some(stkstate[x as usize].0)
-                } else { // may need to add more checks here
-                    None
-                }
-            ).collect::<Vec<_>>();
-            if who.len() < SIGNING_CUTOFF {
-                return Err("there's not enough validators for the empty block")
-            }
-            let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
-            m.extend(&self.last_name);
-            m.extend(&self.shards[0].to_le_bytes().to_vec());
-            if !MultiSignature::verify_group(&emptyness.y,&emptyness.x,&m,&who) {
-                return Err("there's a problem with the multisignature")
-            }
-            let m = vec![self.shards[0].to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut s = Sha3_512::new();
-            s.update(&m);
-            if !self.leader.verify(&mut s,&stkstate) {
-                return Err("there's a problem with the leader's multisignature group signature")
-            }
-        } else {
-            return Err("both the validators and the emptyness are none")
+        let mut s = Sha3_512::new();
+        s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
+        let c = s.finalize();
+        let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+        let mut h = Sha3_512::new();
+        h.update(&m);
+        if !self.leader.verify(&mut h, &stkstate) {
+            return Err("leader is fake")
+        }
+        let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(), bincode::serialize(&self.shards).unwrap(), bincode::serialize(&self.info).unwrap(), self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+        let mut h = Sha3_512::new();
+        h.update(&m);
+        if !self.validators.par_iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
+            return Err("at least 1 validator is fake")
+        }
+        if !self.validators.par_iter().all(|x| !validator_pool.into_par_iter().all(|y| x.pk != *y)) {
+            return Err("at least 1 validator is not in the pool")
+        }
+        if validator_pool.par_iter().filter(|x| !self.validators.par_iter().all(|y| x.to_owned() != &y.pk)).count() < SIGNING_CUTOFF {
+            return Err("there aren't enough validators")
+        }
+        let x = self.validators.par_iter().map(|x| x.pk).collect::<Vec<u64>>();
+        if !x.clone().par_iter().enumerate().all(|(i,y)| x.clone()[..i].into_par_iter().all(|z| y != z)) {
+            return Err("there's multiple signatures from the same validator")
         }
         return Ok(true)
     }
 
     /// verifies that the block is real and the 128 comittee members came to consensus
     pub fn verify(&self, validator_pool: &Vec<u64>, stkstate: &Vec<(CompressedRistretto,u64)>) -> Result<bool, &'static str> {
-        if let Some(validators) = self.validators.clone() {
-            if self.emptyness.is_some() {
-                return Err("both the validators and the emptyness are some")
-            }
-            let mut s = Sha3_512::new();
-            s.update(&bincode::serialize(&validators).unwrap().to_vec());
-            let c = s.finalize();
-            let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut h = Sha3_512::new();
-            h.update(&m);
-            if !self.leader.verify(&mut h, &stkstate) {
-                return Err("leader is fake")
-            }
-            let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(), bincode::serialize(&self.shards).unwrap(), bincode::serialize(&self.info).unwrap(), self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut h = Sha3_512::new();
-            h.update(&m);
-            if !validators.iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
-                return Err("at least 1 validator is fake")
-            }
-            if !validators.iter().all(|x| !validator_pool.into_iter().all(|y| x.pk != *y)) {
-                return Err("at least 1 validator is not in the pool")
-            }
-            if validator_pool.iter().filter(|x| !validators.iter().all(|y| x.to_owned() != &y.pk)).count() < SIGNING_CUTOFF {
-                return Err("there aren't enough validators")
-            }
-            let x = validators.iter().map(|x| x.pk).collect::<Vec<u64>>();
-            if !x.clone().iter().enumerate().all(|(i,y)| x.clone()[..i].into_iter().all(|z| y != z)) {
-                return Err("there's multiple signatures from the same validator")
-            }
-        } else if let Some(emptyness) = self.emptyness.clone() {
-            if self.info.tags.len() > 0 { //this is neccesary so that you cant just add transactions that no one signed off on (unless I also have them sign an empty vector)
-                return Err("the block isn't empty!") // i should allow multisignatures for full blocks??
-            }
-            if emptyness.pk.len() != emptyness.pk.iter().collect::<HashSet<_>>().len() {
-                return Err("someone failed to sign twice as the same validator")
-            }
-            let who = validator_pool.into_iter().filter_map(|&x|
-                if emptyness.pk.iter().all(|&y| validator_pool[y as usize]!=x) {
-                    Some(stkstate[x as usize].0)
-                } else { // may need to add more checks here
-                    None
-                }
-            ).collect::<Vec<_>>();
-            if who.len() < SIGNING_CUTOFF {
-                return Err("there's not enough validators for the empty block")
-            }
-            let mut m = stkstate[self.leader.pk as usize].0.as_bytes().to_vec();
-            m.extend(&self.last_name);
-            m.extend(&self.shards[0].to_le_bytes().to_vec());
-            if !MultiSignature::verify_group(&emptyness.y,&emptyness.x,&m,&who) {
-                return Err("there's a problem with the multisignature")
-            }
-            let m = vec![self.shards[0].to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.last_name.clone(),bincode::serialize(&self.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
-            let mut s = Sha3_512::new();
-            s.update(&m);
-            if !self.leader.verify(&mut s,&stkstate) {
-                return Err("there's a problem with the leader's multisignature group signature")
-            }
-        } else {
-            return Err("both the validators and the emptyness are none")
+        let mut s = Sha3_512::new();
+        s.update(&bincode::serialize(&self.validators).unwrap().to_vec());
+        let c = s.finalize();
+        let m = vec![bincode::serialize(&self.shards).unwrap(),self.bnum.to_le_bytes().to_vec(), self.last_name.clone(),c.to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
+        let mut h = Sha3_512::new();
+        h.update(&m);
+        if !self.leader.verify(&mut h, &stkstate) {
+            return Err("leader is fake")
+        }
+        let m = vec![stkstate[self.leader.pk as usize].0.as_bytes().to_vec().clone(), bincode::serialize(&self.shards).unwrap(), bincode::serialize(&self.info).unwrap(), self.bnum.to_le_bytes().to_vec(), self.last_name.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+        let mut h = Sha3_512::new();
+        h.update(&m);
+        if !self.validators.iter().all(|x| x.verify(&mut h.clone(), &stkstate)) {
+            return Err("at least 1 validator is fake")
+        }
+        if !self.validators.iter().all(|x| !validator_pool.into_iter().all(|y| x.pk != *y)) {
+            return Err("at least 1 validator is not in the pool")
+        }
+        if validator_pool.iter().filter(|x| !self.validators.iter().all(|y| x.to_owned() != &y.pk)).count() < SIGNING_CUTOFF {
+            return Err("there aren't enough validators")
+        }
+        let x = self.validators.iter().map(|x| x.pk).collect::<Vec<u64>>();
+        if !x.clone().iter().enumerate().all(|(i,y)| x.clone()[..i].into_iter().all(|z| y != z)) {
+            return Err("there's multiple signatures from the same validator")
         }
         return Ok(true)
     }
@@ -785,25 +610,16 @@ impl LightningSyncBlock {
         let masochists: Vec<usize>;
         let lucky: Vec<usize>;
         let feelovers: Vec<usize>;
-        if let Some(x) = self.validators.clone() {
-            let x = x.iter().map(|x| x.pk as usize).collect::<HashSet<_>>();
+        let x = self.validators.iter().map(|x| x.pk as usize).collect::<HashSet<_>>();
 
-            winners = comittee[self.shards[0] as usize].iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
-            masochists = comittee[self.shards[0] as usize].iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
-            if self.shards.len() > 1 {
-                feelovers = self.shards[1..].iter().map(|x| comittee[*x as usize].clone()).flatten().chain(winners.clone()).collect::<Vec<_>>();
-            } else {
-                feelovers = winners.clone();
-            }
-            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
+        winners = comittee[self.shards[0] as usize].iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+        masochists = comittee[self.shards[0] as usize].iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+        if self.shards.len() > 1 {
+            feelovers = self.shards[1..].iter().map(|x| comittee[*x as usize].clone()).flatten().chain(winners.clone()).collect::<Vec<_>>();
         } else {
-            let x = self.emptyness.clone().unwrap().pk.par_iter().map(|x| *x as usize).collect::<HashSet<_>>();
-
-            winners = comittee[self.shards[0] as usize].par_iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
-            masochists = comittee[self.shards[0] as usize].par_iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
-            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
             feelovers = winners.clone();
         }
+        lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
         let fees = self.info.fees/(feelovers.len() as u64);
         let inflation = (reward/winners.len() as f64) as u64;
 
@@ -937,25 +753,18 @@ impl LightningSyncBlock {
         let masochists: Vec<usize>;
         let lucky: Vec<usize>;
         let feelovers: Vec<usize>;
-        if let Some(x) = self.validators.clone() {
-            let x = x.iter().map(|x| x.pk as usize).collect::<HashSet<_>>();
 
-            winners = comittee[self.shards[0] as usize].iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
-            masochists = comittee[self.shards[0] as usize].iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
-            if self.shards.len() > 1 {
-                feelovers = self.shards[1..].iter().map(|x| comittee[*x as usize].clone()).flatten().chain(winners.clone()).collect::<Vec<_>>();
-            } else {
-                feelovers = winners.clone();
-            }
-            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
+        let x = self.validators.iter().map(|x| x.pk as usize).collect::<HashSet<_>>();
+
+        winners = comittee[self.shards[0] as usize].iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+        masochists = comittee[self.shards[0] as usize].iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
+        if self.shards.len() > 1 {
+            feelovers = self.shards[1..].iter().map(|x| comittee[*x as usize].clone()).flatten().chain(winners.clone()).collect::<Vec<_>>();
         } else {
-            let x = self.emptyness.clone().unwrap().pk.iter().map(|x| *x as usize).collect::<HashSet<_>>();
-
-            winners = comittee[self.shards[0] as usize].iter().filter(|&y| !x.contains(y)).map(|x| *x).collect::<Vec<_>>();
-            masochists = comittee[self.shards[0] as usize].iter().filter(|&y| x.contains(y)).map(|x| *x).collect::<Vec<_>>();
-            lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
             feelovers = winners.clone();
         }
+        lucky = comittee[*self.shards.iter().max().unwrap() as usize + 1].clone();
+        
         let fees = self.info.fees/(feelovers.len() as u64);
         let inflation = (reward/winners.len() as f64) as u64;
 
@@ -1183,27 +992,6 @@ mod tests {
     use crate::constants::PEDERSEN_H;
 
 
-    #[test]
-    fn multisignature_test() {
-        use curve25519_dalek::scalar::Scalar;
-        use crate::validation::MultiSignature;
-
-        let message = "hi!!!".as_bytes().to_vec();
-        let sk = (0..100).into_iter().map(|_| Scalar::from(rand::random::<u64>())).collect::<Vec<_>>();
-        let pk = sk.iter().map(|x| x*PEDERSEN_H()).collect::<Vec<_>>();
-
-        let x = sk.iter().map(|k| MultiSignature::gen_group_x(&k, &0).decompress().unwrap()).collect::<Vec<_>>();
-        let xt = MultiSignature::sum_group_x(&x);
-        let y = sk.iter().map(|k| MultiSignature::try_get_y(&k, &message, &xt, &0)).collect::<Vec<_>>();
-        let yt = MultiSignature::sum_group_y(&y);
-
-
-
-        assert!(MultiSignature::verify_group(&yt, &xt, &message, &pk.iter().map(|x| x.compress()).collect::<Vec<_>>()));
-        assert!(MultiSignature::verify_group(&yt, &xt, &message, &pk.iter().rev().map(|x| x.compress()).collect::<Vec<_>>()));
-        assert!(!MultiSignature::verify_group(&yt, &xt, &message, &pk[..99].iter().map(|x| x.compress()).collect::<Vec<_>>()));
-        assert!(!MultiSignature::verify_group(&yt, &xt, &"bye!!!".as_bytes().to_vec(), &pk.iter().map(|x| x.compress()).collect::<Vec<_>>()));
-    }
 
     #[test]
     fn message_signing_test() {

@@ -40,8 +40,6 @@ use local_ipaddress;
 
 /// when to announce you're about to be in the comittee or how far in advance you can no longer serve as leader
 const WARNINGTIME: usize = REPLACERATE*5;
-/// number of blocks in a row you can write without saving them
-const BLANKS_IN_A_ROW: u64 = 60;
 /// amount of seconds to wait before initiating shard takeover
 const USURP_TIME: u64 = 3600;
 /// the default port
@@ -182,8 +180,6 @@ fn main() -> Result<(), MainError> {
             alltagsever: vec![],
             txses: vec![],
             sigs: vec![],
-            points: HashMap::new(),
-            scalars: HashMap::new(),
             timekeeper: Instant::now() + Duration::from_secs(1),
             waitingforentrybool: true,
             waitingforleaderbool: false,
@@ -207,7 +203,6 @@ fn main() -> Result<(), MainError> {
             sync_theirnum: 0u64,
             sync_lightning: false,
             outs: None,
-            groupsent: [false;2],
             oldstk: None,
             cumtime: 0f64,
             blocktime: blocktime(0.0),
@@ -336,8 +331,6 @@ struct KhoraNode {
     alltagsever: Vec<CompressedRistretto>,
     txses: Vec<Vec<u8>>,
     sigs: Vec<NextBlock>,
-    points: HashMap<usize,RistrettoPoint>, // supplier, point
-    scalars: HashMap<usize,Scalar>,
     timekeeper: Instant,
     waitingforentrybool: bool,
     waitingforleaderbool: bool,
@@ -359,7 +352,6 @@ struct KhoraNode {
     sync_theirnum: u64,
     sync_lightning: bool,
     outs: Option<Vec<(Account, Scalar)>>,
-    groupsent: [bool;2],
     oldstk: Option<(Account, Vec<[u64;2]>, u64)>,
     cumtime: f64,
     blocktime: f64,
@@ -431,8 +423,6 @@ impl KhoraNode {
             usurpingtime: Instant::now(),
             txses: vec![], // if someone is not a leader for a really long time they'll have a wrongly long list of tx
             sigs: vec![],
-            points: HashMap::new(),
-            scalars: HashMap::new(),
             save_history: sn.save_history,
             me: sn.me,
             mine: sn.mine.clone(),
@@ -468,7 +458,6 @@ impl KhoraNode {
             sync_theirnum: 0u64,
             sync_lightning: false,
             outs: None,
-            groupsent: [false;2],
             oldstk: sn.oldstk,
             cumtime: sn.cumtime,
             blocktime: sn.blocktime,
@@ -530,7 +519,7 @@ impl KhoraNode {
                     self.cumtime += self.blocktime;
                     self.blocktime = blocktime(self.cumtime);
 
-                    NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut self.smine, reward);
+                    self.gui_sender.send(vec![!NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut self.smine, reward) as u8,1]).expect("there's a problem communicating to the gui!");
                     NextBlock::pay_all_empty(&self.headshard, &mut self.comittee, &mut self.stkinfo, reward);
 
                     if self.save_history {
@@ -558,7 +547,7 @@ impl KhoraNode {
 
                 // calculate the reward for this block as a function of the current time and scan either the block or an empty block based on conditions
                 let reward = reward(self.cumtime,self.blocktime);
-                if !(lastlightning.info.txout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.stkout.is_empty()) || (self.bnum - self.lastbnum > BLANKS_IN_A_ROW) {
+                if !(lastlightning.info.txout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.stkout.is_empty()) {
                     let mut guitruster = !lastlightning.scanstk(&self.me, &mut self.smine, &mut self.sheight, &self.comittee, reward, &self.stkinfo);
                     guitruster = !lastlightning.scan(&self.me, &mut self.mine, &mut self.height, &mut self.alltagsever) && guitruster;
                     self.gui_sender.send(vec![guitruster as u8,1]).expect("there's a problem communicating to the gui!");
@@ -595,11 +584,8 @@ impl KhoraNode {
                 }
                 self.bnum += 1;
 
-                if lastlightning.emptyness.is_some() {
-                    self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z - lastlightning.emptyness.clone().unwrap().pk.iter().filter(|&&y| self.comittee[self.headshard][y as usize] == x).count() as i32).collect::<Vec<_>>();
-                } else {
-                    self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z + lastlightning.validators.clone().unwrap().iter().filter(|y| y.pk == x as u64).count() as i32).collect::<Vec<_>>();
-                }
+                self.votes = self.votes.iter().zip(self.comittee[self.headshard].iter()).map(|(z,&x)| z + lastlightning.validators.iter().filter(|y| y.pk == x as u64).count() as i32).collect::<Vec<_>>();
+                
 
 
                 
@@ -656,7 +642,6 @@ impl KhoraNode {
                 self.gui_sender.send(vec![self.keylocation.iter().any(|keylocation| self.comittee[self.headshard].contains(&(*keylocation as usize))) as u8,3]).expect("something's wrong with the communication to the gui"); // this is how you send info to the gui
                 println!("block {} name: {:?}",self.bnum, self.lastname);
 
-                println!("That block used group signatures: {}",lastlightning.emptyness.is_some());
                 // delete the set of overthrone leaders sometimes to give them another chance
                 if self.bnum % 128 == 0 {
                     self.overthrown = HashSet::new();
@@ -699,9 +684,6 @@ impl KhoraNode {
                 self.gui_sender.send(vec![self.blocktime as u8,128]).expect("something's wrong with the communication to the gui");
 
                 self.sigs = vec![];
-                self.groupsent = [false;2];
-                self.points = HashMap::new();
-                self.scalars = HashMap::new();
                 self.doneerly = self.timekeeper;
                 self.waitingforentrybool = true;
                 self.waitingforleaderbool = false;
@@ -726,7 +708,7 @@ impl KhoraNode {
                     if !self.mine.iter().all(|x| x.1.com.amount.unwrap() != Scalar::from(oldstk.2)) {
                         oldstkcheck = true;
                     }
-                    if !(lastlightning.info.stkout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.txout.is_empty()) || (self.bnum - self.lastbnum > BLANKS_IN_A_ROW) {
+                    if !(lastlightning.info.stkout.is_empty() && lastlightning.info.stkin.is_empty() && lastlightning.info.txout.is_empty()) {
                         lastlightning.scanstk(&oldstk.0, &mut oldstk.1, &mut self.sheight.clone(), &self.comittee, reward, &self.stkinfo);
                     } else {
                         NextBlock::pay_self_empty(&self.headshard, &self.comittee, &mut oldstk.1, reward);
@@ -916,26 +898,11 @@ impl Future for KhoraNode {
 
                                         for keylocation in &self.keylocation {
                                             let m = NextBlock::valicreate(&self.key, &keylocation, &self.leader, &m, &(self.headshard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
-                                            if m.txs.len() > 0 || self.groupsent[0] {
-                                                println!("{:?}",m.txs.len());
-                                                let mut m = bincode::serialize(&m).unwrap();
-                                                m.push(2);
-                                                for _ in self.comittee[self.headshard].iter().filter(|&x|*x as u64 == *keylocation).collect::<Vec<_>>() {
-                                                    self.inner.broadcast(m.clone());
-                                                }
-                                            } else if (m.txs.len() == 0) && (m.emptyness.is_none()){
-                                                println!("going for empty block");
-                                                if !self.groupsent[0] {
-                                                    self.groupsent[0] = true;
-                                                    let m = MultiSignature::gen_group_x(&self.key,&self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
-                                                    let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
-                                                    m.push(4u8);
-                                                    if !self.comittee[self.headshard].iter().all(|&x|x as u64 != *keylocation) {
-                                                        // self.inner.broadcast(m.clone());
-                                                        println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
-                                                        self.inner.broadcast(m);
-                                                    }
-                                                }
+                                            println!("{:?}",m.txs.len());
+                                            let mut m = bincode::serialize(&m).unwrap();
+                                            m.push(2);
+                                            for _ in self.comittee[self.headshard].iter().filter(|&x|*x as u64 == *keylocation).collect::<Vec<_>>() {
+                                                self.inner.broadcast(m.clone());
                                             }
                                         }
                                         self.waitingforentrybool = false;
@@ -960,65 +927,6 @@ impl Future for KhoraNode {
                             if let Ok(lastblock) = bincode::deserialize::<NextBlock>(&m) {
                                 if self.readblock(lastblock, m) {
                                     self.inner.handle_gossip_now(fullmsg, true);
-                                } else {
-                                    self.inner.handle_gossip_now(fullmsg, false);
-                                }
-                            } else {
-                                self.inner.handle_gossip_now(fullmsg, false);
-                            }
-                        } else if mtype == 4 /* the points you use to make the group signature for empty blocks */ {
-                            println!("recieving points phase: {}\nleader: {:?}",!self.points.contains_key(&usize::MAX),self.leader);
-                            if !self.points.contains_key(&usize::MAX) {
-                                if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
-                                    let pk = pk as usize;
-                                    if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
-                                        if let Ok(m) = m.try_into() {
-                                            if let Some(m) = CompressedRistretto(m).decompress() {
-                                                println!("got sent point from {}",pk);
-                                                self.points.insert(pk,m);
-                                            }
-                                        }
-                                        
-                                    }
-                                }
-                            }
-                            self.inner.handle_gossip_now(fullmsg, true);
-                        } else if mtype == 5 /* the sum of the group elements made in the group signature */ {
-                            if let Ok(m) = m.try_into() {
-                                if self.groupsent[1] {
-                                    self.inner.handle_gossip_now(fullmsg, true);
-                                } else {
-                                    self.groupsent[1] = true;
-                                    let xt = CompressedRistretto(m);
-                                    let mut mess = self.leader.as_bytes().to_vec();
-                                    mess.extend(&self.lastname);
-                                    mess.extend(&(self.headshard as u16).to_le_bytes().to_vec());
-                                    println!("you're trying to send a scalar!");
-                                    for keylocation in self.keylocation.iter() {
-                                        let mut m = Signature::sign_message_nonced(&self.key, &MultiSignature::try_get_y(&self.key, &mess, &xt, &self.bnum).as_bytes().to_vec(), keylocation, &self.bnum);
-                                        m.push(6u8);
-                                        if !self.comittee[self.headshard].iter().all(|&x| !self.keylocation.contains(&(x as u64))) {
-                                            self.inner.broadcast(m);
-                                        }
-                                    }
-                                    self.waitingforleadertime = Instant::now();
-                                    self.inner.handle_gossip_now(fullmsg, true);
-                                }
-                            } else {
-                                self.inner.handle_gossip_now(fullmsg, false);
-                            }
-                        } else if mtype == 6 /* the scalars made for the group signature */ {
-                            println!("recieving scalars phase: {}",self.points.contains_key(&usize::MAX));
-                            if let Some(pk) = Signature::recieve_signed_message_nonced(&mut m, &self.stkinfo, &self.bnum) {
-                                let pk = pk as usize;
-                                if !self.comittee[self.headshard].par_iter().all(|x| x!=&pk) {
-                                    if let Ok(m) = m.try_into() {
-                                        println!("got sent a scalar from {}",pk);
-                                        self.scalars.insert(pk,Scalar::from_bits(m));
-                                        self.inner.handle_gossip_now(fullmsg, true);
-                                    } else {
-                                        self.inner.handle_gossip_now(fullmsg, false);
-                                    }
                                 } else {
                                     self.inner.handle_gossip_now(fullmsg, false);
                                 }
@@ -1060,11 +968,10 @@ impl Future for KhoraNode {
                 // if you are the leader, run these block creation commands
                 if self.me.stake_acc().derive_stk_ot(&Scalar::one()).pk.compress() == self.leader {
                     if (self.sigs.len() > SIGNING_CUTOFF) && (self.timekeeper.elapsed().as_secs() > (0.25*self.blocktime) as u64) {
-                        let lastblock = NextBlock::finish(&self.key, &self.keylocation.iter().next().unwrap(), &self.sigs, &self.comittee[self.headshard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(self.headshard as u16), &self.bnum, &self.lastname, &self.stkinfo);
-        
-                        if lastblock.validators.is_some() {
+                        if let Ok(lastblock) = NextBlock::finish(&self.key, &self.keylocation.iter().next().unwrap(), &self.sigs, &self.comittee[self.headshard].par_iter().map(|x|*x as u64).collect::<Vec<u64>>(), &(self.headshard as u16), &self.bnum, &self.lastname, &self.stkinfo) {
+                            
                             lastblock.verify(&self.comittee[self.headshard].iter().map(|&x| x as u64).collect::<Vec<_>>(), &self.stkinfo).unwrap();
-
+    
                             let mut m = bincode::serialize(&lastblock).unwrap();
                             m.push(3u8);
                             self.inner.broadcast(m);
@@ -1073,113 +980,13 @@ impl Future for KhoraNode {
                             self.sigs = vec![];
         
                             println!("made a block with {} transactions!",lastblock.txs.len());
+    
+                            did_something = true;
+
                         } else {
-                            println!("failed to make a block :(");
-
-                            self.sigs = vec![];
-                            let m = bincode::serialize(&self.txses).unwrap();
-                            println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
-                            let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum);
-                            m.push(1u8);
-                            self.inner.broadcast(m);
-
+                            println!("failed to make block right now");
                         }
-                        did_something = true;
-                    }
-                    if self.points.get(&usize::MAX).is_none() && (self.timekeeper.elapsed().as_secs() > (0.25*self.blocktime) as u64) && (self.comittee[self.headshard].iter().filter(|&x| self.points.contains_key(x)).count() > SIGNING_CUTOFF) {
-                        let points = self.points.par_iter().map(|x| *x.1).collect::<Vec<_>>();
-                        let mut m = MultiSignature::sum_group_x(&points).as_bytes().to_vec();
-                        m.push(5u8);
-                        self.inner.broadcast(m);
-                        self.points.insert(usize::MAX,MultiSignature::sum_group_x(&points).decompress().unwrap());
-                        println!("scalar time!");
-                        did_something = true;
         
-                    }
-                    if self.points.get(&usize::MAX).is_some() && (self.timekeeper.elapsed().as_secs() > (0.5*self.blocktime) as u64) {
-                        let k = self.scalars.keys().collect::<HashSet<_>>();
-                        if self.comittee[self.headshard].iter().filter(|x| k.contains(x)).count() > SIGNING_CUTOFF {
-                            println!("got enought keys if they're real");
-                            let sumpt = self.points.remove(&usize::MAX).unwrap();
-            
-                            let keys = self.points.clone();
-                            let mut keys = keys.keys().collect::<Vec<_>>();
-                            let mut m = self.leader.as_bytes().to_vec();
-                            m.extend(&self.lastname);
-                            m.extend(&(self.headshard as u16).to_le_bytes().to_vec());
-                            let mut s = Sha3_512::new();
-                            s.update(&m);
-                            s.update(sumpt.compress().as_bytes());
-                            let e = Scalar::from_hash(s);
-
-                            let k = keys.len();
-                            keys.retain(|&x|
-                                if self.scalars.contains_key(&x) {
-                                    (self.points[x] + e*self.stkinfo[*x].0.decompress().unwrap() == self.scalars[x]*PEDERSEN_H()) && self.comittee[self.headshard].contains(x)
-                                } else {
-                                    false
-                                }
-                            );
-                            if k == keys.len() {
-                                println!("got enough true keys");
-                                let failed_validators = self.comittee[self.headshard].iter().enumerate().filter_map(|(i,x)|
-                                    if self.points.contains_key(x) {
-                                        None
-                                    } else {
-                                        Some(i as u8)
-                                    }
-                                ).collect::<Vec<_>>();
-                                let mut lastblock = NextBlock::default();
-                                lastblock.bnum = self.bnum;
-                                lastblock.emptyness = Some(MultiSignature{x: sumpt.compress(), y: MultiSignature::sum_group_y(&self.scalars.values().map(|x| *x).collect::<Vec<_>>()), pk: failed_validators});
-                                lastblock.last_name = self.lastname.clone();
-                                lastblock.shards = vec![self.headshard as u16];
-                
-                                
-                                let m = vec![(self.headshard as u16).to_le_bytes().to_vec(),self.bnum.to_le_bytes().to_vec(),self.lastname.clone(),bincode::serialize(&lastblock.emptyness).unwrap().to_vec()].into_par_iter().flatten().collect::<Vec<u8>>();
-                                let mut s = Sha3_512::new();
-                                s.update(&m);
-                                let leader = Signature::sign(&self.key, &mut s,&self.keylocation.iter().next().unwrap());
-                                lastblock.leader = leader;
-
-                                if lastblock.verify(&self.comittee[self.headshard].iter().map(|x| *x as u64).collect(),&self.stkinfo).is_ok() {
-                                    println!("block verified!");
-                                    let mut m = bincode::serialize(&lastblock).unwrap();
-                                    println!("sending off block WITH GROUP SIGNATURES {}!!!",lastblock.bnum);
-                                    m.push(3u8);
-                                    self.inner.broadcast(m);
-                                } else {
-                                    println!("block NOT verified... this shouldn't happen... restarting this selection stuff");
-                                    let m = bincode::serialize(&self.txses).unwrap();
-                                    println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
-                                    let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
-                                    m.push(1u8);
-                                }
-                                self.points = HashMap::new();
-                                self.scalars = HashMap::new();
-                                self.sigs = vec![];
-                                
-                            } else { // failed to make a small signature block
-                                let m = bincode::serialize(&self.txses).unwrap();
-                                self.points = HashMap::new();
-                                self.scalars = HashMap::new();
-                                println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
-                                let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum); // add wipe last few histories button? (save 2 states, 1 tracking from before)
-                                m.push(1u8);
-                                println!("a validator was corrupted I'm restarting this bitch");
-                                self.inner.broadcast(m);
-                                self.timekeeper = Instant::now();
-                            }
-                        } else {
-                            // group signature took to long restarting with schoore
-                            let m = bincode::serialize(&self.txses).unwrap();
-                            println!("_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._.\nsending {} txses!",self.txses.len());
-                            let mut m = Signature::sign_message_nonced(&self.key, &m, &(self.comittee[self.headshard].clone().into_iter().filter(|&who| self.stkinfo[who].0 == self.leader).collect::<Vec<_>>()[0] as u64),&self.bnum);
-                            m.push(1u8);
-                            self.inner.broadcast(m);
-                            self.timekeeper = Instant::now();
-                        }
-                        did_something = true;
                     }
                 }
 
@@ -1187,15 +994,13 @@ impl Future for KhoraNode {
                 if self.waitingforentrybool && (self.waitingforentrytime.elapsed().as_secs() > (0.66*self.blocktime) as u64) {
                     self.waitingforentrybool = false;
                     for keylocation in &self.keylocation {
-                        if !self.groupsent[0] {
-                            self.groupsent[0] = true;
-                            let m = MultiSignature::gen_group_x(&self.key, &self.bnum).as_bytes().to_vec();// add ,(self.headshard as u16).to_le_bytes().to_vec() to m
-                            let mut m = Signature::sign_message_nonced(&self.key, &m, keylocation, &self.bnum);
-                            m.push(4u8);
-                            if self.comittee[self.headshard].contains(&(*keylocation as usize)) {
-                                println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
-                                self.inner.broadcast(m);
-                            }
+                        let m = NextBlock::valicreate(&self.key, &keylocation, &self.leader, &vec![], &(self.headshard as u16), &self.bnum, &self.lastname, &self.bloom, &self.stkinfo);
+                        println!("trying to make an empty block...");
+                        let mut m = bincode::serialize(&m).unwrap();
+                        m.push(2);
+                        if self.comittee[self.headshard].contains(&(*keylocation as usize)) {
+                            println!("I'm sending a MESSAGE TYPE 4 to {:?}",self.inner.plumtree_node().all_push_peers());
+                            self.inner.broadcast(m);
                         }
                     }
                 }
