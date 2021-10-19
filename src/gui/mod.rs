@@ -384,11 +384,11 @@ impl epi::App for TemplateApp {
                 });
             }
 
-            ui.horizontal(|ui| {
-                if !*setup {
+            if !*setup {
+                ui.horizontal(|ui| {
                     ui.add(Checkbox::new(pswd_shown,"show password"));
-                }
-            });
+                });
+            }
             if *pswd_shown || *setup {
                 ui.horizontal(|ui| {
                     ui.text_edit_singleline(pswd_guess0);
