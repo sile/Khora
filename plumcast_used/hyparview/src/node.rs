@@ -6,7 +6,7 @@ use crate::{Action, NodeOptions, TimeToLive};
 use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::hash::Hash;
 
 /// HyParView node.
@@ -26,7 +26,9 @@ use std::hash::Hash;
 pub struct Node<T, R = ThreadRng> {
     id: T,
     actions: VecDeque<Action<T>>,
+    /// the active view of the hyparview node
     pub active_view: Vec<T>,
+    /// the passive view of the hyparview node
     pub passive_view: Vec<T>,
     paused: [HashSet<T>;2],
     rng: R,
@@ -355,6 +357,7 @@ where
         }
     }
 
+    /// removes a node from the hy[arview passive view]
     pub fn remove_from_passive_view(&mut self, node: &T) {
         let position = self.passive_view.iter().position(|n| n == node);
         if let Some(i) = position {

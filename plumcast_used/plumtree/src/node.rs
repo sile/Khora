@@ -7,7 +7,6 @@ use crate::time::{Clock, NodeTime};
 use crate::System;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
-use std::iter::Cloned;
 use std::time::Duration;
 
 /// Options for Plumtree [Node].
@@ -67,12 +66,18 @@ impl Default for NodeOptions {
 /// [`handle_neighbor_down`]: ./struct.Node.html#method.handle_neighbor_down
 /// [`clock_mut`]: ./struct.Node.html#method.clock_mut
 pub struct Node<T: System> {
+    /// the id of the node
     pub id: T::NodeId,
     options: NodeOptions,
+    /// the eager push peers
     pub eager_push_peers: HashSet<T::NodeId>,
+    /// the lazy push peers
     pub lazy_push_peers: HashSet<T::NodeId>,
+    /// the list of all messages seen
     pub messages: HashMap<T::MessageId, T::MessagePayload>,
+    /// the list of message id's such that you have not seen the message
     pub missings: MissingMessages<T>,
+    /// the action queue that says what actions you have planned
     pub actions: ActionQueue<T>,
     clock: Clock,
 }
@@ -366,7 +371,7 @@ impl<T: System> Node<T>
         }
     }
 
-    fn optimize(&mut self, gossip: &GossipMessage<T>) {
+    fn _optimize(&mut self, gossip: &GossipMessage<T>) {
         if let Some((ihave_round, ihave_owner)) = self.missings.get_ihave(&gossip.message.id) {
             let optimize =
                 gossip.round.checked_sub(ihave_round) >= Some(self.options.optimization_threshold);

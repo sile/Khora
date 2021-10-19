@@ -30,13 +30,6 @@ pub const REPLACERATE: usize = 2;
 /// the fraction of money you use for failing to do your duties as a comittee member
 pub const PUNISHMENT_FRACTION: u64 = 1000;
 
-/// this is a generic function only used in testing purposes to check if 2 variables are identicle or to see if the variable changes
-fn hash_to_scalar<T: Serialize> (message: &T) -> Scalar {
-    let message = bincode::serialize(message).unwrap();
-    let mut hasher = Sha3_512::new();
-    hasher.update(&message);
-    Scalar::from_hash(hasher)
-}
 
 #[derive(Default, Clone, Serialize, Deserialize, Eq, Hash, Debug)]
 /// the information on the transactions made that is saved in lightning blocks

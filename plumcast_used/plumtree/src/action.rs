@@ -1,4 +1,4 @@
-use crate::message::{GossipMessage, Message, ProtocolMessage};
+use crate::message::{GossipMessage, ProtocolMessage};
 use crate::System;
 use std::collections::VecDeque;
 use std::fmt;

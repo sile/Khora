@@ -25,16 +25,14 @@ extern crate core;
 extern crate bit_vec;
 extern crate rand;
 
-use bit_vec::BitVec;
 use rand::{Rng, thread_rng};
 use std::cmp::{min,max};
 use std::hash::Hasher;
 use std::iter::Iterator;
-use std::fs;
 use ahash::AHasher;
 use std::fs::OpenOptions;
 use std::fs::File;
-use std::io::{Seek, SeekFrom, Read, Write, BufReader};
+use std::io::{Seek, SeekFrom, Read, Write};
 
 #[derive(Clone)]
 
@@ -281,8 +279,8 @@ mod tests {
     #[test]
     fn bloom_test() {
         let cnt = 500_000;
-        let bits = 4_000_000;
-        let hashes = 6; // the problem disapears when there's 1 hash..., problem starts at like 3ish
+        let _bits = 4_000_000;
+        let _hashes = 6; // the problem disapears when there's 1 hash..., problem starts at like 3ish
         let rate = 0.021577141 as f32;
 
         BloomFile::initialize_bloom_file();
@@ -327,8 +325,8 @@ mod tests {
     #[test]
     fn bloom_parallell() {
         let cnt = 500_000 as usize;
-        let bits = 4_000_000;
-        let hashes = 6; // the problem disapears when there's 1 hash..., problem starts at like 3ish
+        let _bits = 4_000_000;
+        let _hashes = 6; // the problem disapears when there's 1 hash..., problem starts at like 3ish
         let rate = 0.021577141 as f32;
 
         BloomFile::initialize_bloom_file();
@@ -373,8 +371,8 @@ mod tests {
     #[test]
     fn bloom_parallell_writing() {
         let cnt = 500_000 as usize;
-        let bits = 4_000_000;
-        let hashes = 6; // the problem disapears when there's 1 hash..., problem starts at like 3ish
+        let _bits = 4_000_000;
+        let _hashes = 6; // the problem disapears when there's 1 hash..., problem starts at like 3ish
         let rate = 0.021577141 as f32;
 
         BloomFile::initialize_bloom_file();

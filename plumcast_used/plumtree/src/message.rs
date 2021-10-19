@@ -134,6 +134,7 @@ pub struct GossipMessage<T: System> {
     pub round: u16,
 }
 impl<T: System> GossipMessage<T> {
+    /// creates a new gossip message
     pub fn new(sender: &T::NodeId, message: Message<T>, round: u16) -> Self {
         GossipMessage {
             sender: sender.clone(),
@@ -270,6 +271,7 @@ pub struct PruneMessage<T: System> {
     pub sender: T::NodeId,
 }
 impl<T: System> PruneMessage<T> {
+    /// creates a new prune message
     pub fn new(sender: &T::NodeId) -> Self {
         PruneMessage {
             sender: sender.clone(),
