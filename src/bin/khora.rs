@@ -1061,7 +1061,7 @@ impl Future for KhoraNode {
                     let msg = fullmsg.message.clone();
                     let mut m = msg.payload.to_vec();
                     if let Some(mtype) = m.pop() {
-                        println!("# MESSAGE TYPE: {:?} FROM: {:?}", mtype,msg.id.node());
+                        println!("# MESSAGE TYPE: {:?}", mtype);
 
 
                         if mtype == 0 /* transaction someone wants to make */ {

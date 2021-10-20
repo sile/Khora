@@ -657,17 +657,17 @@ impl epi::App for TemplateApp {
                                 }
                                 if !*you_cant_do_that {
                                     if *stkspeand {
-                                        let x = staked.parse::<u64>().unwrap() as i64 - tot as i64 - fee.parse::<u64>().unwrap() as i64;
+                                        let x = staked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
                                         if x > 0 {
                                             m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
-                                            m.extend((x as u64).to_le_bytes());
+                                            m.extend(x.to_le_bytes());
                                         }
                                         m.push(63);
                                     } else {
-                                        let x = unstaked.parse::<u64>().unwrap() as i64 - tot as i64 - fee.parse::<u64>().unwrap() as i64;
+                                        let x = unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
                                         if x > 0 {
                                             m.extend(str::to_ascii_lowercase(&addr).as_bytes());
-                                            m.extend((x as u64).to_le_bytes());
+                                            m.extend(x.to_le_bytes());
                                         }
                                         m.push(33);
                                     }
