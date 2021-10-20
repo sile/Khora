@@ -1113,6 +1113,8 @@ impl Future for KhoraNode {
                                     println!("you're isolated");
                                 }
                             }
+                        } else if mtype == 97 /* a */ {
+                            self.outer.plumtree_node.lazy_push_peers.insert(fullmsg.sender);
                         } else if mtype == 108 /* l */ { // a lightning block
                             if self.lightning_yielder {
                                 if let Ok(lastblock) = bincode::deserialize::<LightningSyncBlock>(&m) {
@@ -1500,7 +1502,7 @@ impl Future for KhoraNode {
                         println!("{}",m);
                         if let Ok(socket) = m.parse() {
                             println!("it's a socket");
-                            self.outer.dm(vec![],&[NodeId::new(socket, LocalNodeId::new(0))],true);
+                            self.outer.dm(vec![97],&[NodeId::new(socket, LocalNodeId::new(0))],true);
                         }
                     } else if istx == 64 /* @ */ {
                         let mut friend = self.outer.plumtree_node().all_push_peers();
