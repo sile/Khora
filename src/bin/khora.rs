@@ -43,6 +43,8 @@ const EXIT_TIME: usize = REPLACERATE*5;
 const USURP_TIME: u64 = 3600;
 /// the default port
 const DEFAULT_PORT: u64 = 8334;
+/// total money ever produced
+const TOTAL_KHORA: f64 = 1.0e16;
 /// calculates the amount of time the current block takes to be created
 fn blocktime(cumtime: f64) -> f64 {
     // 60f64/(6.337618E-8f64*cumtime+2f64).ln()
@@ -50,7 +52,7 @@ fn blocktime(cumtime: f64) -> f64 {
 }
 /// calculates the reward for the current block
 fn reward(cumtime: f64, blocktime: f64) -> f64 {
-    (1.0/(1.653439E-6*cumtime + 1.0) - 1.0/(1.653439E-6*(cumtime + blocktime) + 1.0))*10E16f64
+    (1.0/(1.653439E-6*cumtime + 1.0) - 1.0/(1.653439E-6*(cumtime + blocktime) + 1.0))*TOTAL_KHORA
 }
 
 fn main() -> Result<(), MainError> {

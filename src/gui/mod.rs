@@ -4,7 +4,7 @@ use curve25519_dalek::scalar::Scalar;
 use eframe::{egui::{self, Button, Checkbox, Label, Sense, TextEdit}, epi};
 use crossbeam::channel;
 use fibers::sync::mpsc;
-
+use separator::Separatable;
 use getrandom::getrandom;
 use sha3::{Digest, Sha3_512};
 
@@ -61,8 +61,8 @@ pub struct TemplateApp {
 
     // Example stuff:
     fee: String,
-    unstaked: String,
-    staked: String,
+    unstaked: u64,
+    staked: u64,
     friends: Vec<String>,
     friend_adding: String,
     name_adding: String,
@@ -117,8 +117,8 @@ impl Default for TemplateApp {
             fee: "0".to_string(),
             reciever: r,
             sender: s,
-            unstaked: "0".to_string(),
-            staked: "0".to_string(),
+            unstaked: 0u64,
+            staked: 0u64,
             friends: vec![],
             edit_names: vec![],
             friend_names: vec![],
@@ -234,8 +234,8 @@ impl epi::App for TemplateApp {
             let modification = i.pop().unwrap();
             if modification == 0 {
                 let u = i.drain(..8).collect::<Vec<_>>();
-                self.unstaked = format!("{}",u64::from_le_bytes(u.try_into().unwrap()));
-                self.staked = format!("{}",u64::from_le_bytes(i.try_into().unwrap()));
+                self.unstaked = u64::from_le_bytes(u.try_into().unwrap());
+                self.staked = u64::from_le_bytes(i.try_into().unwrap());
             } else if modification == 1 {
                 self.dont_trust_amounts = i.pop() == Some(0);
             } else if modification == 2 {
@@ -471,12 +471,12 @@ impl epi::App for TemplateApp {
                     } else {
                         ui.label("Khora Balance");
                     }
-                    ui.label(&*unstaked);
+                    ui.label(&unstaked.separated_string());
                 });
                 if *staking {
                     ui.horizontal(|ui| {
                         ui.label("Staked Khora");
-                        ui.label(&*staked);
+                        ui.label(&staked.separated_string());
                     });
                     ui.horizontal(|ui| {
                         ui.text_edit_singleline(stake);
@@ -486,7 +486,7 @@ impl epi::App for TemplateApp {
                                 m.extend(stkaddr.as_bytes().to_vec());
                                 m.extend(stake.parse::<u64>().unwrap().to_le_bytes().to_vec());
                                 println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",unstaked,fee,stake);
-                                let x = unstaked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap();
+                                let x = *unstaked - fee.parse::<u64>().unwrap() - stake.parse::<u64>().unwrap();
                                 if x > 0 {
                                     m.extend(addr.as_bytes().to_vec());
                                     m.extend(x.to_le_bytes().to_vec());
@@ -506,7 +506,7 @@ impl epi::App for TemplateApp {
                                 m.extend(addr.as_bytes().to_vec());
                                 m.extend(unstake.parse::<u64>().unwrap().to_le_bytes());
                                 // println!("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n{},{},{}",staked,fee,unstake);
-                                let x = staked.parse::<u64>().unwrap() - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap();
+                                let x = *staked - fee.parse::<u64>().unwrap() - unstake.parse::<u64>().unwrap();
                                 if x > 0 {
                                     m.extend(stkaddr.as_bytes());
                                     m.extend(x.to_le_bytes());
@@ -651,20 +651,20 @@ impl epi::App for TemplateApp {
                                     }
                                 }
                                 if *stkspeand {
-                                    *you_cant_do_that = staked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
+                                    *you_cant_do_that = *staked < tot + fee.parse::<u64>().unwrap();
                                 } else {
-                                    *you_cant_do_that = unstaked.parse::<u64>().unwrap() < tot + fee.parse::<u64>().unwrap();
+                                    *you_cant_do_that = *unstaked < tot + fee.parse::<u64>().unwrap();
                                 }
                                 if !*you_cant_do_that {
                                     if *stkspeand {
-                                        let x = staked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
+                                        let x = *staked - tot - fee.parse::<u64>().unwrap();
                                         if x > 0 {
                                             m.extend(str::to_ascii_lowercase(&stkaddr).as_bytes());
                                             m.extend(x.to_le_bytes());
                                         }
                                         m.push(63);
                                     } else {
-                                        let x = unstaked.parse::<u64>().unwrap() - tot - fee.parse::<u64>().unwrap();
+                                        let x = *unstaked - tot - fee.parse::<u64>().unwrap();
                                         if x > 0 {
                                             m.extend(str::to_ascii_lowercase(&addr).as_bytes());
                                             m.extend(x.to_le_bytes());
@@ -725,13 +725,13 @@ impl epi::App for TemplateApp {
                     let mut x = vec![];
                     let pf = panic_fee.parse::<u64>().unwrap();
 
-                    let s = unstaked.parse::<u64>().unwrap();
+                    let s = *unstaked;
                     if s > pf {
                         x.extend((s - pf).to_le_bytes());
                     } else {
                         x.extend(s.to_le_bytes());
                     }
-                    let s = staked.parse::<u64>().unwrap();
+                    let s = *staked;
                     if s > pf {
                         x.extend((s - pf).to_le_bytes());
                     } else {
