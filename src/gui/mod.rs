@@ -344,10 +344,10 @@ impl epi::App for TemplateApp {
                         frame.quit();
                     }
                 });
-                ui.label("Connection Gate");
+                ui.label("Mesh Network Gate IP");
                 ui.add(TextEdit::singleline(entrypoint).hint_text("put entry here"));
-                ui.add(Label::new(":8334").text_color(egui::Color32::GRAY));
-                if ui.button("Mesh Network Gate IP").clicked() && !*setup {
+                ui.add(Label::new(":8334").text_color(egui::Color32::LIGHT_GRAY));
+                if ui.button("Connect").clicked() && !*setup {
                     let mut m = entrypoint.as_bytes().to_vec();
                     m.push(42);
                     sender.send(m).expect("something's wrong with communication from the gui");
@@ -416,7 +416,7 @@ impl epi::App for TemplateApp {
                         if ui.button("📋").on_hover_text("Click to copy your backend secret keys to clipboard (all of these are generated from your front end secret key, username, and password)").clicked() {
                             ui.output().copied_text = format!("sk: {:?}\nvsk: {:?}\ntsk: {:?}",sk,vsk,tsk);
                         }
-                        ui.label(format!("sk: {:?}\nvsk: {:?}\ntsk: {:?}",sk,vsk,tsk));
+                        ui.add(Label::new(format!("sk: {:?}\nvsk: {:?}\ntsk: {:?}",sk,vsk,tsk)).underline());
                     });
                 }
             } else if *setup {
@@ -435,14 +435,14 @@ impl epi::App for TemplateApp {
                     if ui.button("📋").on_hover_text("Click to copy your wallet address to clipboard").clicked() {
                         ui.output().copied_text = addr.clone();
                     }
-                    ui.label("address").on_hover_text(&*addr);
+                    ui.add(Label::new("address").underline()).on_hover_text(&*addr);
                 });
                 if *staking {
                     ui.horizontal(|ui| {
                         if ui.button("📋").on_hover_text("Click to copy your staking wallet address to clipboard").clicked() {
                             ui.output().copied_text = stkaddr.clone();
                         }
-                        ui.label("staking address").on_hover_text(&*stkaddr);
+                        ui.add(Label::new("staking address").underline()).on_hover_text(&*stkaddr);
                     });
                 }
                 if *validating {
@@ -583,8 +583,8 @@ impl epi::App for TemplateApp {
                 ui.add(Checkbox::new(staking,"I want to be a staker!"));
                 if *staking {
                     ui.horizontal(|ui| {
-                        ui.add(Checkbox::new(lightning_yielder,"I pnly want to store lightning blocks!"));
-                        ui.add(Label::new("Clicking this box means you'll use less memory on your computer").text_color(egui::Color32::YELLOW));    
+                        ui.add(Checkbox::new(lightning_yielder,"I only want to store lightning blocks!"));
+                        ui.add(Label::new("Checking this box means you'll use less memory on your computer").text_color(egui::Color32::YELLOW));    
                     });
                 }
             }
