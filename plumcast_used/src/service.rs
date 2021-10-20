@@ -48,6 +48,11 @@ impl ServiceBuilder {
         }
     }
 
+    pub fn server_addr(mut self, addr: SocketAddr) -> Self {
+        self.server_addr = addr;
+        self
+    }
+
     /// Sets the logger used by the service.
     ///
     /// The default value is `Logger::root(Discard, o!())`.
@@ -163,7 +168,8 @@ where
         &self.rpc_client_service
     }
 
-    fn handle_command(&mut self, command: Command<M>) -> Result<()> { // made this public
+    fn handle_command(&mut self, command: Command<M>) -> Result<()> {
+        // made this public
         match command {
             Command::Register(node) => {
                 info!(self.logger, "Registers a local node: {:?}", node);
@@ -251,10 +257,10 @@ pub struct ServiceHandle<M: MessagePayload> {
 }
 impl<M: MessagePayload> ServiceHandle<M> {
     /// Returns the rpc survice handler of the service.
-    pub fn rpc_service(&self) -> &RpcClientServiceHandle { // i wrote this
+    pub fn rpc_service(&self) -> &RpcClientServiceHandle {
+        // i wrote this
         &self.rpc_service
     }
-
 
     /// Returns the address of the RPC server used for inter node communications.
     pub fn rpc_server_addr(&self) -> SocketAddr {
