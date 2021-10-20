@@ -850,6 +850,7 @@ impl Future for KhoraNode {
             }
 
 
+            // updates some gui info
             if self.gui_timer.elapsed().as_secs() > 5 {
                 self.gui_timer = Instant::now();
                 let mut friend = self.outer.plumtree_node().all_push_peers();
