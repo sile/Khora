@@ -159,8 +159,10 @@ pub struct Node<M: MessagePayload> {
     logger: Logger,
     service: ServiceHandle<M>,
     message_rx: mpsc::Receiver<RpcMessage<M>>,
-    hyparview_node: HyparviewNode,
-    plumtree_node: PlumtreeNode<M>,
+    /// the hyparview node
+    pub hyparview_node: HyparviewNode,
+    /// the plumtree node
+    pub plumtree_node: PlumtreeNode<M>,
     message_seqno: u64,
     hyparview_shuffle_time: NodeTime,
     hyparview_sync_active_view_time: NodeTime,

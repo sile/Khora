@@ -38,7 +38,7 @@ use kora::validation::{NUMBER_OF_VALIDATORS, SIGNING_CUTOFF, QUEUE_LENGTH, REPLA
 use local_ipaddress;
 
 /// when to announce you're about to be in the comittee or how far in advance you can no longer serve as leader
-const WARNINGTIME: usize = REPLACERATE*5;
+const EXIT_TIME: usize = REPLACERATE*5;
 /// amount of seconds to wait before initiating shard takeover
 const USURP_TIME: u64 = 3600;
 /// the default port
@@ -591,7 +591,7 @@ impl KhoraNode {
 
                 
                 /* LEADER CHOSEN BY VOTES (off blockchain, says which comittee member they should send stuff to) */
-                let abouttoleave = self.exitqueue[self.headshard].range(..WARNINGTIME).into_iter().map(|z| self.comittee[self.headshard][*z].clone()).collect::<HashSet<_>>();
+                let abouttoleave = self.exitqueue[self.headshard].range(..EXIT_TIME).into_iter().map(|z| self.comittee[self.headshard][*z].clone()).collect::<HashSet<_>>();
                 self.leader = self.stkinfo[*self.comittee[self.headshard].iter().zip(self.votes.iter()).max_by_key(|(x,&y)| {
                     if abouttoleave.contains(x) || self.overthrown.contains(&self.stkinfo[**x].0) {
                         i32::MIN
@@ -599,6 +599,8 @@ impl KhoraNode {
                         y
                     }
                 }).unwrap().0].0;
+                /* LEADER CHOSEN BY VOTES (off blockchain, says which comittee member they should send stuff to) */
+                // which ip's are in the comittee
                 self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
                     if lastlightning.info.stkout.contains(&location) {
                         None
@@ -607,24 +609,13 @@ impl KhoraNode {
                         Some((location,node))
                     }
                 }).collect::<HashMap<_,_>>();
-                if self.keylocation.iter().all(|&key| !self.queue[self.headshard].contains(&(key as usize))) && self.keylocation.iter().all(|&key| !self.comittee[self.headshard].contains(&(key as usize))) {
-                    self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
-                        if self.queue[self.headshard].contains(&(location as usize)) {
-                            Some((location,node.with_id(0)))
-                        } else {
-                            None
-                        }
-                    }).collect::<HashMap<_,_>>();
-                } else {
-                    self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
-                        if self.queue[self.headshard].contains(&(location as usize)) || self.comittee[self.headshard].contains(&(location as usize)) {
-                            Some((location,node.with_id(1)))
-                        } else {
-                            None
-                        }
-                    }).collect::<HashMap<_,_>>();
-                }
-                /* LEADER CHOSEN BY VOTES (off blockchain, says which comittee member they should send stuff to) */
+                self.knownvalidators = self.knownvalidators.iter().filter_map(|(&location,&node)| {
+                    if self.queue[self.headshard].contains(&(location as usize)) || self.comittee[self.headshard].contains(&(location as usize)) {
+                        Some((location,node))
+                    } else {
+                        None
+                    }
+                }).collect::<HashMap<_,_>>();
 
 
                 // send info to the gui
@@ -691,6 +682,58 @@ impl KhoraNode {
                 self.timekeeper = Instant::now();
                 self.usurpingtime = Instant::now();
                 println!("block reading process done!!!");
+
+
+
+
+
+
+
+
+
+
+
+
+                // this section tells you if you're on the comittee or not
+                // if you're on the comittee you need to pull on your inner node
+                // if you're not you need to poll on your user node
+                if self.keylocation.iter().all(|keylocation| !self.comittee[self.headshard].contains(&(*keylocation as usize)) ) { // if you're not in the comittee
+                    self.is_user = true;
+                    self.is_validator = false;
+                } else { // if you're in the comittee
+                    // println!("I'm in the comittee!");
+                    self.is_user = false;
+                    self.is_validator = true;
+                }
+                // if you're about to be in the comittee you need to take these actions
+                self.keylocation.clone().iter().for_each(|keylocation| {
+                    // announce yourself to the comittee because it's about to be your turn
+                    if self.queue[self.headshard].range(0..REPLACERATE).any(|&x| x as u64 != *keylocation) {
+                        self.is_user = true;
+                        self.is_validator = true;
+
+
+                        let message = bincode::serialize(self.inner.plumtree_node().id()).unwrap();
+                        let mut evidence = Signature::sign_message(&self.key, &message, &keylocation);
+                        evidence.push(118); // v
+                        self.inner.dm_now(evidence,&self.knownvalidators.iter().filter_map(|(&location,&node)| {
+                            if self.comittee[self.headshard].contains(&(location as usize)) && !(self.inner.plumtree_node().all_push_peers().contains(&node) || (node == self.inner.plumtree_node().id)) {
+                                println!("(((((((((((((((((((((((((((((((((((((((((((((((dm'ing validators)))))))))))))))))))))))))))))))))))))))))))))))))))))");
+                                Some(node)
+                            } else {
+                                None
+                            }
+                        }).collect::<Vec<_>>(), true);
+
+                        let message = bincode::serialize(self.inner.plumtree_node().id()).unwrap();
+                        if self.sent_onces.insert(message.clone().into_iter().chain(self.bnum.to_le_bytes().to_vec().into_iter()).collect::<Vec<_>>()) {
+                            println!("broadcasting name!");
+                            let mut evidence = Signature::sign_message(&self.key, &message, keylocation);
+                            evidence.push(118); // v
+                            self.outer.broadcast_now(evidence);
+                        }
+                    }
+                });
 
                 return true
             }
@@ -772,17 +815,7 @@ impl Future for KhoraNode {
             \*/
             /*\control box for outer and inner_______________________________control box for outer and inner_______________________________control box for outer and inner_______________________________|/
             \*/
-            // this section tells you if you're on the comittee or not
-            // if you're on the comittee you need to pull on your inner node
-            // if you're not you need to poll on your user node
-            if self.keylocation.iter().all(|keylocation| !self.comittee[self.headshard].contains(&(*keylocation as usize)) ) { // if you're not in the comittee
-                self.is_user = true;
-                self.is_validator = false;
-            } else { // if you're in the comittee
-                // println!("I'm in the comittee!");
-                self.is_user = false;
-                self.is_validator = true;
-
+            if self.is_validator {
                 // done early tells you if you need to wait before starting the next block stuff because you finished the last block early
                 if (self.doneerly.elapsed().as_secs() > self.blocktime as u64) && (self.doneerly.elapsed() > self.timekeeper.elapsed()) {
                     self.waitingforentrybool = true;
@@ -792,7 +825,7 @@ impl Future for KhoraNode {
                     self.timekeeper = Instant::now();
                     self.doneerly = Instant::now();
                     self.usurpingtime = Instant::now();
-
+    
                     // if you are the newest member of the comittee you're responcible for choosing the tx that goes into the next block
                     if self.keylocation.contains(&(self.newest as u64)) {
                         let m = bincode::serialize(&self.txses).unwrap();
@@ -809,43 +842,6 @@ impl Future for KhoraNode {
                     self.usurpingtime = Instant::now();
                 }
             }
-            // if you're about to be in the comittee you need to take these actions
-            self.keylocation.clone().iter().for_each(|keylocation| {
-                let headqueue = self.queue[self.headshard].clone();
-
-
-                if headqueue.range(REPLACERATE..WARNINGTIME).any(|&x| x as u64 != *keylocation) {
-                    self.is_user = true;
-                    let message = bincode::serialize(self.outer.plumtree_node().id()).unwrap();
-                    if self.sent_onces.insert(message.clone().into_iter().chain(self.bnum.to_le_bytes().to_vec().into_iter()).collect::<Vec<_>>()) {
-                        println!("broadcasting name!");
-                        let mut evidence = Signature::sign_message(&self.key, &message, keylocation);
-                        evidence.push(118); // v
-                        self.outer.broadcast(evidence);
-                    }
-                }
-                // every 10 seconds you say your name if you're about to be in the committee so people can easily send you their transactions
-                if headqueue.range(0..REPLACERATE).any(|&x| x as u64 != *keylocation) {
-                    self.is_user = true;
-                    self.is_validator = true;
-                    // attempt to join the committee every 10 seconds
-                    if self.announcevalidationtime.elapsed().as_secs() > 10 {
-                        let message = bincode::serialize(self.inner.plumtree_node().id()).unwrap();
-                        let mut evidence = Signature::sign_message(&self.key, &message, &keylocation);
-                        evidence.push(118); // v
-                        self.inner.dm_now(evidence,&self.knownvalidators.iter().filter_map(|(&location,node)| {
-                            let node = node.with_id(1);
-                            if self.comittee[self.headshard].contains(&(location as usize)) && !(self.inner.plumtree_node().all_push_peers().contains(&node) || (node == self.inner.plumtree_node().id)) {
-                                println!("(((((((((((((((((((((((((((((((((((((((((((((((dm'ing validators)))))))))))))))))))))))))))))))))))))))))))))))))))))");
-                                Some(node)
-                            } else {
-                                None
-                            }
-                        }).collect::<Vec<_>>(), true);
-                        self.announcevalidationtime = Instant::now();
-                    }
-                }
-            });
             // if you need to usurp shard 0 because of huge network failure
             if self.usurpingtime.elapsed().as_secs() > USURP_TIME {
                 self.timekeeper = self.usurpingtime;
@@ -932,6 +928,15 @@ impl Future for KhoraNode {
                             } else {
                                 self.inner.handle_gossip_now(fullmsg, false);
                             }
+                        } else if mtype == 118 /* v */ /* evidence someone announced is a validator */ {
+                            if let Some(who) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
+                                if let Ok(m) = bincode::deserialize::<NodeId>(&m) {
+                                    if self.queue[self.headshard].contains(&(who as usize)) {
+                                        self.inner.plumtree_node.lazy_push_peers.insert(m);
+                                    }
+                                }
+                            }
+                            self.inner.handle_gossip_now(fullmsg, false);
                         } else /* spam that you choose not to propegate */ {
                             // self.inner.kill(&fullmsg.sender);
                             self.inner.handle_gossip_now(fullmsg, false);
@@ -1116,11 +1121,16 @@ impl Future for KhoraNode {
                             self.outer.dm(x,&vec![msg.id.node()],false);
                         } else if mtype == 118 /* v */ { // someone announcing they're about to be in the comittee
                             if let Some(who) = Signature::recieve_signed_message(&mut m, &self.stkinfo) {
-                                let m = bincode::deserialize::<NodeId>(&m).unwrap();
-                                if self.queue[self.headshard].contains(&(who as usize)) {
-                                    self.knownvalidators.insert(who,m.with_id(0));
+                                if let Ok(m) = bincode::deserialize::<NodeId>(&m) {
+                                    if self.queue[self.headshard].contains(&(who as usize)) {
+                                        self.knownvalidators.insert(who,m);
+                                        self.outer.handle_gossip_now(fullmsg, true);
+                                    } else {
+                                        self.outer.handle_gossip_now(fullmsg, false);
+                                    }
+                                } else {
+                                    self.outer.handle_gossip_now(fullmsg, false);
                                 }
-                                self.outer.handle_gossip_now(fullmsg, true);
                             } else {
                                 self.outer.handle_gossip_now(fullmsg, false);
                             }
