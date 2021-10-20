@@ -187,7 +187,7 @@ fn main() -> Result<(), MainError> {
             doneerly: Instant::now(),
             headshard: 0,
             usurpingtime: Instant::now(),
-            is_validator: false,
+            is_validator: !smine.is_empty(),
             is_user: true,
             sent_onces: HashSet::new(),
             knownvalidators: HashMap::new(),
@@ -300,6 +300,7 @@ struct SavedNode {
     cumtime: f64,
     blocktime: f64,
     lightning_yielder: bool,
+    is_validator: bool,
 }
 
 /// the node used to run all the networking
@@ -391,6 +392,7 @@ impl KhoraNode {
                 cumtime: self.cumtime,
                 blocktime: self.blocktime,
                 lightning_yielder: self.lightning_yielder,
+                is_validator: self.is_validator,
             }; // just redo initial conditions on the rest
             let mut sn = bincode::serialize(&sn).unwrap();
             let mut f = File::create("myNode").unwrap();
@@ -414,7 +416,7 @@ impl KhoraNode {
             outer,
             gui_sender,
             gui_reciever,
-            timekeeper: Instant::now(),
+            timekeeper: Instant::now() - Duration::from_secs(1),
             waitingforentrybool: true,
             waitingforleaderbool: false,
             waitingforleadertime: Instant::now(),
@@ -443,7 +445,7 @@ impl KhoraNode {
             sheight: sn.sheight,
             alltagsever: sn.alltagsever.clone(),
             headshard: sn.headshard.clone(),
-            is_validator: false,
+            is_validator: sn.is_validator,
             is_user: true,
             sent_onces: HashSet::new(), // maybe occasionally clear this or replace with vecdeq?
             knownvalidators: HashMap::new(),
@@ -817,7 +819,7 @@ impl Future for KhoraNode {
             \*/
             if self.is_validator {
                 // done early tells you if you need to wait before starting the next block stuff because you finished the last block early
-                if (self.doneerly.elapsed().as_secs() > self.blocktime as u64) && (self.doneerly.elapsed() > self.timekeeper.elapsed()) {
+                if ((self.doneerly.elapsed().as_secs() > self.blocktime as u64) && (self.doneerly.elapsed() > self.timekeeper.elapsed())) || self.timekeeper.elapsed().as_secs() > self.blocktime as u64 {
                     self.waitingforentrybool = true;
                     self.waitingforleaderbool = false;
                     self.waitingforleadertime = Instant::now();
@@ -825,6 +827,7 @@ impl Future for KhoraNode {
                     self.timekeeper = Instant::now();
                     self.doneerly = Instant::now();
                     self.usurpingtime = Instant::now();
+                    println!("time thing happpened");
     
                     // if you are the newest member of the comittee you're responcible for choosing the tx that goes into the next block
                     if self.keylocation.contains(&(self.newest as u64)) {
@@ -834,12 +837,6 @@ impl Future for KhoraNode {
                         m.push(1u8);
                         self.inner.broadcast(m);
                     }
-                }
-                if self.doneerly.elapsed() > self.timekeeper.elapsed() {
-                    self.waitingforleadertime = Instant::now();
-                    self.waitingforentrytime = Instant::now();
-                    self.timekeeper = Instant::now();
-                    self.usurpingtime = Instant::now();
                 }
             }
             // if you need to usurp shard 0 because of huge network failure
@@ -856,7 +853,7 @@ impl Future for KhoraNode {
                 let mut friend = self.outer.plumtree_node().all_push_peers();
                 friend.remove(self.outer.plumtree_node().id());
                 let friend = friend.into_iter().collect::<Vec<_>>();
-                println!("friends: {:?}",friend);
+                // println!("friends: {:?}",friend);
                 let mut gm = (friend.len() as u16).to_le_bytes().to_vec();
                 gm.push(4);
                 self.gui_sender.send(gm).expect("should be working");
