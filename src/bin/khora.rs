@@ -1018,20 +1018,23 @@ impl Future for KhoraNode {
             if self.is_user {
                 // if you're syncing someone sync a few more blocks every loop time
                 if let Some(addr) = self.sync_returnaddr {
-                    for b in self.sync_theirnum..std::cmp::min(self.sync_theirnum+10, self.bnum) {
-                        println!("checking for file location for {}...",b);
+                    while self.sync_theirnum <= self.bnum {
+                        println!("checking for file location for {}...",self.sync_theirnum);
                         if self.sync_lightning {
-                            if let Ok(mut x) = LightningSyncBlock::read(&b) {
+                            if let Ok(mut x) = LightningSyncBlock::read(&self.sync_theirnum) {
                                 x.push(3);
                                 self.outer.dm(x,&vec![addr],false);
+                                self.sync_theirnum += 1;
+                                break;
                             }
                         } else {
-                            if let Ok(mut x) = NextBlock::read(&b) {
+                            if let Ok(mut x) = NextBlock::read(&self.sync_theirnum) {
                                 x.push(3);
                                 self.outer.dm(x,&vec![addr],false);
+                                self.sync_theirnum += 1;
+                                break;
                             }
                         }
-                        self.sync_theirnum += 1;
                     }
                 }
 
