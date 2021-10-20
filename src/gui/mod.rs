@@ -387,7 +387,7 @@ impl epi::App for TemplateApp {
 
             if !*setup {
                 ui.horizontal(|ui| {
-                    ui.add(Checkbox::new(pswd_shown,"show password"));
+                    ui.add(Checkbox::new(pswd_shown,"show password and secret key"));
                 });
             }
             if *pswd_shown || *setup {

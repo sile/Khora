@@ -851,9 +851,9 @@ impl Future for KhoraNode {
 
 
             if self.gui_timer.elapsed().as_secs() > 5 {
+                self.gui_timer = Instant::now();
                 let mut friend = self.outer.plumtree_node().all_push_peers();
                 friend.remove(self.outer.plumtree_node().id());
-                println!("{:?}",friend);
                 let friend = friend.into_iter().collect::<Vec<_>>();
                 println!("friends: {:?}",friend);
                 let mut gm = (friend.len() as u16).to_le_bytes().to_vec();
