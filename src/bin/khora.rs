@@ -1039,6 +1039,8 @@ impl Future for KhoraNode {
                                 self.outer.dm(x,&vec![addr],false);
                                 self.sync_theirnum += 1;
                                 break;
+                            } else {
+                                self.sync_theirnum += 1;
                             }
                         } else {
                             if let Ok(mut x) = NextBlock::read(&self.sync_theirnum) {
@@ -1046,6 +1048,8 @@ impl Future for KhoraNode {
                                 self.outer.dm(x,&vec![addr],false);
                                 self.sync_theirnum += 1;
                                 break;
+                            } else {
+                                self.sync_theirnum += 1;
                             }
                         }
                     }
