@@ -346,6 +346,7 @@ impl epi::App for TemplateApp {
                 });
                 ui.label("Connection Gate");
                 ui.add(TextEdit::singleline(entrypoint).hint_text("put entry here"));
+                ui.add(Label::new(":8334").text_color(egui::Color32::GRAY));
                 if ui.button("Mesh Network Gate IP").clicked() && !*setup {
                     let mut m = entrypoint.as_bytes().to_vec();
                     m.push(42);
@@ -373,10 +374,10 @@ impl epi::App for TemplateApp {
                 ));
             });
             if *setup {
-                ui.horizontal(|ui| {
-                    ui.label("Username");
-                    ui.text_edit_singleline(username);
-                });
+                if *setup {
+                    ui.heading("Username");
+                }
+                ui.text_edit_singleline(username);
             } else { 
                 ui.horizontal(|ui| {
                     ui.heading("HELLO");
@@ -390,6 +391,9 @@ impl epi::App for TemplateApp {
                 });
             }
             if *pswd_shown || *setup {
+                if *setup {
+                    ui.heading("Password");
+                }
                 ui.horizontal(|ui| {
                     ui.text_edit_singleline(pswd_guess0);
                     ui.label("-");
