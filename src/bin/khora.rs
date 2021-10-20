@@ -191,7 +191,6 @@ fn main() -> Result<(), MainError> {
             is_user: true,
             sent_onces: HashSet::new(),
             knownvalidators: HashMap::new(),
-            announcevalidationtime: Instant::now() - Duration::from_secs(10),
             newest: 0u64,
             rmems: HashMap::new(),
             rname: vec![],
@@ -342,7 +341,6 @@ struct KhoraNode {
     is_user: bool,
     sent_onces: HashSet<Vec<u8>>,
     knownvalidators: HashMap<u64,NodeId>,
-    announcevalidationtime: Instant,
     newest: u64,
     rmems: HashMap<u64,OTAccount>,
     rname: Vec<u8>,
@@ -447,7 +445,6 @@ impl KhoraNode {
             is_user: true,
             sent_onces: HashSet::new(), // maybe occasionally clear this or replace with vecdeq?
             knownvalidators: HashMap::new(),
-            announcevalidationtime: Instant::now() - Duration::from_secs(10),
             doneerly: Instant::now(),
             newest: 0u64,
             rmems: HashMap::new(),
