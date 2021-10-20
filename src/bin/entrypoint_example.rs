@@ -14,11 +14,10 @@ use trackable::error::MainError;
 
 #[derive(Debug, Clone, StructOpt)]
 struct Opt {
-    #[structopt(long, default_value = "8334")]
-    port: u16,
+    addr: std::net::IpAddr,
 
     #[structopt(long, default_value = "8334")]
-    peer_port: u16,
+    port: u16,
 }
 
 fn main() -> Result<(), MainError> {
@@ -30,7 +29,7 @@ fn main() -> Result<(), MainError> {
 
     /* server should use local ip or 0.0.0.0 client should connect through global ip address */
     println!("*{}", local_ipaddress::get().unwrap());
-    let addr: SocketAddr = format!("0.0.0.0:{}", opt.port).parse().unwrap();
+    let addr: SocketAddr = (opt.addr, opt.port).into();
 
     let executor = track_any_err!(ThreadPoolExecutor::new())?;
     let service = ServiceBuilder::new(addr)
@@ -108,7 +107,7 @@ impl Future for TestNode {
                     let addr: SocketAddr = track_any_err!(format!(
                         "{}:{}",
                         String::from_utf8_lossy(&msg[1..]),
-                        self.opt.peer_port
+                        self.opt.port
                     )
                     .parse())
                     .unwrap();
