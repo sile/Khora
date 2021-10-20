@@ -996,6 +996,20 @@ impl Future for KhoraNode {
                             did_something = true;
 
                         } else {
+                            let comittee = &self.comittee[self.headshard];
+                            self.sigs.retain(|x| !comittee.into_par_iter().all(|y| x.leader.pk != *y as u64));
+                            let a = self.leader.to_bytes().to_vec();
+                            let b = bincode::serialize(&vec![self.headshard as u16]).unwrap();
+                            let c = self.bnum.to_le_bytes().to_vec();
+                            let d = self.lastname.clone();
+                            let e = &self.stkinfo;
+                            self.sigs.retain(|x| {
+                                let m = vec![a.clone(),b.clone(),Syncedtx::to_sign(&x.txs),c.clone(),d.clone()].into_par_iter().flatten().collect::<Vec<u8>>();
+                                let mut s = Sha3_512::new();
+                                s.update(&m);
+                                Signature::verify(&x.leader, &mut s.clone(),&e)
+                            });
+
                             println!("failed to make block right now");
                         }
         
