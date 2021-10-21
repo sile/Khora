@@ -374,9 +374,7 @@ impl epi::App for TemplateApp {
                 ));
             });
             if *setup {
-                if *setup {
-                    ui.heading("Username");
-                }
+                ui.heading("Username");
                 ui.text_edit_singleline(username);
             } else { 
                 ui.horizontal(|ui| {
@@ -560,6 +558,7 @@ impl epi::App for TemplateApp {
                 ui.horizontal(|ui| {
                     if ui.add(Button::new("Login").enabled(bad_log_info)).clicked() {
                         *password0 = pswd_guess0.clone();
+                        *next_pswrd1 = username.clone();
                         loop {
                             if sender.send(get_pswrd(&*password0,&*username,&*secret_key)).is_ok() {
                                 break
