@@ -720,7 +720,7 @@ impl epi::App for TemplateApp {
                     ui.text_edit_singleline(panic_fee);
                 });
                 
-                if ui.button("PANIC").clicked() {
+                if ui.add(Button::new("PANIC").enabled(*unstaked != 0 || *staked != 0)).clicked() {
                     let mut x = vec![];
                     let pf = panic_fee.parse::<u64>().unwrap();
 
