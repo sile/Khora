@@ -51,7 +51,7 @@ pub const BETA: usize = 43; // pretty sure i got this right
 trait BinRep {
     fn to_binary(&self) -> Vec<Scalar>;
 }
-/* maybe there's a more efficient way to store these given they're either 0 or 1? */
+
 impl BinRep for Scalar {
     fn to_binary(&self) -> Vec<Scalar> {
         let bytes = self.to_bytes();
